@@ -16,6 +16,16 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
 
+## Artifacts
+
+### AlphaSource AI Website (`artifacts/alphasource-website`)
+- React + Vite multi-page marketing site
+- Routes: `/` (HomePage), `/alphascreen` (AlphaScreenPage), `/about` (AboutPage)
+- Brand colors: Navy #0A1547, Deep Navy #1A2460, Lilac #A380F6 (primary CTA), Teal #02ABE0, Green #02D99D
+- Uses framer-motion for animations, wouter for routing
+- Logo assets in `public/logo-dark-text.png` and `public/alpha-symbol.png`
+- No backend needed — pure frontend marketing site
+
 ## Key Commands
 
 - `pnpm run typecheck` — full typecheck across all packages
