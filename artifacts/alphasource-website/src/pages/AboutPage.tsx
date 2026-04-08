@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowRight, Heart, Lightbulb, Shield, Zap } from "lucide-react";
+import { ArrowRight, CheckCircle } from "lucide-react";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 28 },
@@ -12,7 +13,7 @@ const fadeUp = {
 
 function HeroSection() {
   return (
-    <section className="relative pt-28 pb-20 overflow-hidden">
+    <section className="relative pt-32 pb-20 overflow-hidden">
       <div className="absolute inset-0 gradient-hero-bg" />
       <div className="absolute inset-0 gradient-lilac-glow" />
 
@@ -25,13 +26,13 @@ function HeroSection() {
         >
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-[#A380F6]/30 text-sm font-medium text-[#A380F6] mb-6 shadow-sm">
             <span className="w-1.5 h-1.5 rounded-full bg-[#A380F6]" />
-            About AlphaSource AI
+            Meet the alphaSource Team
           </div>
           <h1 className="text-5xl lg:text-6xl font-black text-[#0A1547] leading-[1.05] tracking-tight mb-6">
-            We Believe the Best Hires Come from Better Conversations
+            Meet the alphaSource Team
           </h1>
           <p className="text-xl text-[#0A1547]/60 leading-relaxed">
-            AlphaSource AI was founded on a simple belief: talent acquisition deserves better tools. Not just faster tools — smarter ones that amplify human judgment rather than bypass it.
+            Hands-on leaders who've lived the problem — and built the solution.
           </p>
         </motion.div>
       </div>
@@ -39,11 +40,73 @@ function HeroSection() {
   );
 }
 
-function MissionSection() {
+function TeamSection() {
+  const team = [
+    {
+      name: "Jason Gardner",
+      role: "Co-Founder",
+      bio: "Dental operations veteran with deep tech insight. Jason saw the talent gaps and time drains up close — and decided to do something about it.",
+      initials: "JG",
+      color: "#A380F6",
+    },
+    {
+      name: "Brent Ford",
+      role: "Partner",
+      bio: "Brings a gift for connecting with and engaging diverse audiences. Brent widens the bridge between opportunity and the people who deserve a shot.",
+      initials: "BF",
+      color: "#02ABE0",
+    },
+    {
+      name: "Destinee Konecny",
+      role: "Co-Founder",
+      bio: "Dental operations veteran with a passion for people and strategy. Destinee turns real-world frustrations into tools that make work feel human again.",
+      initials: "DK",
+      color: "#02D99D",
+    },
+  ];
+
   return (
     <section className="py-24 bg-white">
       <div className="max-w-7xl mx-auto px-6 lg:px-8">
-        <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
+        <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+          {team.map((member, i) => (
+            <motion.div
+              key={member.name}
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true, amount: 0.2 }}
+              custom={i}
+              variants={fadeUp}
+              className="bg-[#F8F9FD] rounded-2xl p-7 border border-gray-100 text-center"
+              data-testid={`team-member-${i}`}
+            >
+              <div
+                className="w-20 h-20 rounded-2xl flex items-center justify-center text-white text-2xl font-black mx-auto mb-4"
+                style={{ backgroundColor: member.color }}
+              >
+                {member.initials}
+              </div>
+              <h3 className="text-lg font-bold text-[#0A1547] mb-0.5">{member.name}</h3>
+              <div
+                className="text-sm font-semibold mb-3"
+                style={{ color: member.color }}
+              >
+                {member.role}
+              </div>
+              <p className="text-sm text-[#0A1547]/60 leading-relaxed">{member.bio}</p>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MissionSection() {
+  return (
+    <section className="py-24 bg-[#F8F9FD]">
+      <div className="max-w-7xl mx-auto px-6 lg:px-8">
+        <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-start">
           <motion.div
             initial="hidden"
             whileInView="visible"
@@ -53,17 +116,17 @@ function MissionSection() {
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#A380F6]/10 text-sm font-medium text-[#A380F6] mb-5">
               Our Mission
             </div>
-            <h2 className="text-4xl font-black text-[#0A1547] leading-tight mb-5">
-              Putting the Human Back in Human Resources
+            <h2 className="text-4xl font-black text-[#0A1547] leading-tight mb-6">
+              We Exist to Give People the Freedom to Chase What Lights Them Up
             </h2>
-            <p className="text-[#0A1547]/60 leading-relaxed mb-5">
-              The irony of modern talent acquisition is that the humans tasked with evaluating other humans spend most of their time doing work that isn't human at all — sorting resumes, sending templated emails, scheduling calls, and reviewing the same information over and over.
+            <p className="text-[#0A1547]/70 leading-relaxed mb-4">
+              Through AI that amplifies human judgment, we create pathways where talent finds its place. Not by chance, but by design.
             </p>
-            <p className="text-[#0A1547]/60 leading-relaxed mb-5">
-              AlphaSource AI was built to change that. Our agentic AI handles the operational overhead so that talent professionals can spend their time on what only they can do: building relationships, making judgment calls, and creating the kind of candidate experience that builds lasting employer brands.
+            <p className="text-[#0A1547]/70 leading-relaxed mb-4">
+              Every tool, every conversation, every insight is built to deliver real impact: hours reclaimed, opportunities opened, and partnerships that endure.
             </p>
-            <p className="text-[#0A1547]/60 leading-relaxed">
-              We're not here to replace recruiters. We're here to make them extraordinarily effective.
+            <p className="text-[#0A1547] font-semibold leading-relaxed">
+              Because when you put the right people in position to succeed, everyone rises.
             </p>
           </motion.div>
 
@@ -73,113 +136,50 @@ function MissionSection() {
             viewport={{ once: true, amount: 0.3 }}
             custom={1}
             variants={fadeUp}
-            className="relative"
+            className="space-y-5"
           >
-            {/* Mission visual */}
-            <div className="bg-[#0A1547] rounded-3xl p-10 text-white">
-              <div className="mb-8">
-                <img src="/alpha-symbol.png" alt="AlphaSource" className="h-14 w-auto mb-4" />
-                <div className="text-3xl font-black leading-tight">
-                  Agentic AI for
-                  <br />
-                  <span className="text-[#A380F6]">Human Potential</span>
-                </div>
-              </div>
-              <div className="space-y-4">
-                {[
-                  { label: "Talent professionals freed from admin", value: "85%" },
-                  { label: "Faster candidate evaluation", value: "10x" },
-                  { label: "Reduction in screening bias", value: "Significant" },
-                ].map((item) => (
-                  <div key={item.label} className="flex items-center justify-between border-t border-white/10 pt-4">
-                    <span className="text-sm text-white/60">{item.label}</span>
-                    <span className="text-sm font-black text-[#02D99D]">{item.value}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function ValuesSection() {
-  const values = [
-    {
-      icon: <Heart className="w-6 h-6" />,
-      title: "Human-First, Always",
-      description:
-        "Every feature we build starts with a question: does this make talent professionals more effective, or does it diminish their role? AI should amplify human judgment, not replace it. We hold this line firmly.",
-      color: "#A380F6",
-    },
-    {
-      icon: <Lightbulb className="w-6 h-6" />,
-      title: "Insight Over Information",
-      description:
-        "Recruiters are drowning in data and starving for insight. We don't add to the noise — we translate raw information into clear, reasoned, actionable intelligence that helps teams make better decisions faster.",
-      color: "#02ABE0",
-    },
-    {
-      icon: <Shield className="w-6 h-6" />,
-      title: "Fairness by Design",
-      description:
-        "Bias in hiring has real consequences for real people. We design our systems with structured, consistent evaluation frameworks that help teams assess on merit — and we continuously audit our tools for fairness.",
-      color: "#02D99D",
-    },
-    {
-      icon: <Zap className="w-6 h-6" />,
-      title: "Speed Without Sacrifice",
-      description:
-        "Moving faster should not mean cutting corners on quality or candidate experience. AlphaSource AI is built to compress timelines while elevating the quality of every interaction, for teams and candidates alike.",
-      color: "#A380F6",
-    },
-  ];
-
-  return (
-    <section className="py-24 bg-[#F8F9FD]">
-      <div className="max-w-7xl mx-auto px-6 lg:px-8">
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.3 }}
-          variants={fadeUp}
-          className="text-center mb-16"
-        >
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#A380F6]/10 text-sm font-medium text-[#A380F6] mb-5">
-            Our Values
-          </div>
-          <h2 className="text-4xl lg:text-5xl font-black text-[#0A1547] leading-tight">
-            What We Stand For
-          </h2>
-          <p className="text-lg text-[#0A1547]/60 mt-4 max-w-2xl mx-auto">
-            These aren't just words on a wall — they're the principles that shape every product decision we make.
-          </p>
-        </motion.div>
-
-        <div className="grid md:grid-cols-2 gap-6">
-          {values.map((val, i) => (
-            <motion.div
-              key={val.title}
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, amount: 0.2 }}
-              custom={i}
-              variants={fadeUp}
-              className="group bg-white rounded-2xl p-8 border border-gray-100 hover:border-[#A380F6]/20 hover:shadow-lg transition-all duration-300"
-              data-testid={`value-card-${i}`}
-            >
-              <div
-                className="inline-flex w-12 h-12 rounded-xl items-center justify-center text-white mb-5 transition-transform group-hover:scale-110 duration-200"
-                style={{ backgroundColor: val.color }}
+            {[
+              {
+                label: "Human-First, Always",
+                description: "AI should amplify human judgment, not replace it. We hold this line firmly in everything we build.",
+                color: "#A380F6",
+              },
+              {
+                label: "Insight Over Information",
+                description: "We translate raw data into clear, reasoned, actionable intelligence that helps teams make better decisions faster.",
+                color: "#02ABE0",
+              },
+              {
+                label: "Fairness by Design",
+                description: "Structured, consistent evaluation frameworks that help teams assess on merit — opening doors for job seekers who deserve a real shot.",
+                color: "#02D99D",
+              },
+              {
+                label: "Speed Without Sacrifice",
+                description: "Moving faster should not mean cutting corners on quality or candidate experience. We believe in both.",
+                color: "#A380F6",
+              },
+            ].map((val, i) => (
+              <motion.div
+                key={val.label}
+                initial={{ opacity: 0, x: 16 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.1, duration: 0.5 }}
+                className="flex gap-4 items-start"
+                data-testid={`value-item-${i}`}
               >
-                {val.icon}
-              </div>
-              <h3 className="text-xl font-bold text-[#0A1547] mb-3">{val.title}</h3>
-              <p className="text-sm text-[#0A1547]/60 leading-relaxed">{val.description}</p>
-            </motion.div>
-          ))}
+                <div
+                  className="w-2 h-2 rounded-full mt-2 flex-shrink-0"
+                  style={{ backgroundColor: val.color }}
+                />
+                <div>
+                  <div className="text-sm font-bold text-[#0A1547] mb-1">{val.label}</div>
+                  <div className="text-sm text-[#0A1547]/60 leading-relaxed">{val.description}</div>
+                </div>
+              </motion.div>
+            ))}
+          </motion.div>
         </div>
       </div>
     </section>
@@ -189,176 +189,240 @@ function ValuesSection() {
 function StorySection() {
   return (
     <section className="py-24 bg-white">
-      <div className="max-w-4xl mx-auto px-6 lg:px-8">
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.3 }}
-          variants={fadeUp}
-          className="text-center mb-12"
-        >
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#0A1547]/8 text-sm font-medium text-[#0A1547] mb-5">
-            Our Story
-          </div>
-          <h2 className="text-4xl font-black text-[#0A1547]">Why We Built This</h2>
-        </motion.div>
+      <div className="max-w-7xl mx-auto px-6 lg:px-8">
+        <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
+          {/* Navy card */}
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.3 }}
+            variants={fadeUp}
+            className="bg-[#0A1547] rounded-3xl p-10 text-white order-2 lg:order-1"
+          >
+            <img src="/alpha-symbol.png" alt="alphaSource" className="h-12 w-auto mb-6" />
+            <blockquote className="text-xl font-medium leading-relaxed mb-6 italic text-white/90">
+              "alphaSource cut our screening time in half and uncovered candidates we'd have missed — people with real spark. They overdeliver every time."
+            </blockquote>
+            <div className="border-t border-white/10 pt-5">
+              <div className="text-sm font-semibold text-white/70">alphaSource Client</div>
+            </div>
+          </motion.div>
 
-        <div className="space-y-8">
-          {[
-            {
-              text: "AlphaSource AI grew out of a frustration shared by everyone who's worked in or alongside a talent team: too much time spent doing work that doesn't require human judgment, and not enough time spent on work that does.",
-            },
-            {
-              text: "Our founders came from backgrounds in AI research, enterprise software, and talent acquisition. They saw how companies were failing to capture the full value of their recruiters — brilliant, relationship-driven professionals stuck in a cycle of resume review and inbox management.",
-            },
-            {
-              text: "The breakthrough insight was simple: agentic AI — AI that can take autonomous, multi-step action — could handle most of the operational burden of recruiting, freeing humans to focus on the high-judgment work that actually determines whether a hire succeeds.",
-            },
-            {
-              text: "We built AlphaScreen first because screening is the highest-volume, lowest-leverage task in most talent pipelines. It's also where the most good candidates get lost — buried under volume, filtered by keyword matching, or simply never reviewed before a role closes.",
-            },
-            {
-              text: "Today, AlphaSource AI is used by talent teams across industries to screen faster, hire smarter, and deliver better experiences for both candidates and hiring managers. We're just getting started.",
-            },
-          ].map((para, i) => (
-            <motion.p
-              key={i}
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, amount: 0.3 }}
-              custom={i * 0.3}
-              variants={fadeUp}
-              className="text-lg text-[#0A1547]/70 leading-relaxed"
-            >
-              {para.text}
-            </motion.p>
-          ))}
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.3 }}
+            custom={1}
+            variants={fadeUp}
+            className="order-1 lg:order-2"
+          >
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#0A1547]/8 text-sm font-medium text-[#0A1547] mb-5">
+              Our Story
+            </div>
+            <h2 className="text-4xl font-black text-[#0A1547] leading-tight mb-6">
+              Born from Real-World Frustration
+            </h2>
+            <p className="text-[#0A1547]/70 leading-relaxed mb-4">
+              It started with a simple frustration: brilliant people sidelined by endless screening calls, and leaders buried in resumes and unclear data instead of strategy.
+            </p>
+            <p className="text-[#0A1547]/70 leading-relaxed mb-4">
+              Jason and Destinee, dental operations veterans with deep tech insight, saw the talent gaps, time drains, and data fatigue up close. Brent brought his gift for connecting with and engaging diverse audiences to widen the bridge.
+            </p>
+            <p className="text-[#0A1547]/70 leading-relaxed mb-4">
+              Together we're turning real-world problems into action — opening doors for job seekers and freeing focus for teams.
+            </p>
+            <p className="text-[#0A1547] font-semibold">
+              alphaSource is our promise to make work feel human again.
+            </p>
+          </motion.div>
         </div>
       </div>
     </section>
   );
 }
 
-function TeamSection() {
-  const team = [
-    {
-      name: "Alex Chen",
-      role: "Co-Founder & CEO",
-      bio: "Former VP of Engineering at a Series C HR tech startup. Built AI-powered recruitment tools for 6 years before co-founding AlphaSource.",
-      initials: "AC",
-      color: "#A380F6",
-    },
-    {
-      name: "Jordan Taylor",
-      role: "Co-Founder & CPO",
-      bio: "Led talent acquisition at two unicorn startups. Experienced firsthand the operational weight holding great recruiters back.",
-      initials: "JT",
-      color: "#02ABE0",
-    },
-    {
-      name: "Morgan Kim",
-      role: "Head of AI Research",
-      bio: "PhD in NLP. Previously led conversational AI research at a top-10 technology company. Obsessed with making AI feel genuinely human.",
-      initials: "MK",
-      color: "#02D99D",
-    },
-    {
-      name: "Casey Rivera",
-      role: "Head of Customer Success",
-      bio: "10 years in enterprise HR consulting. Ensures every AlphaSource customer achieves measurable impact within their first 30 days.",
-      initials: "CR",
-      color: "#A380F6",
-    },
-  ];
-
+function TechnologySection() {
   return (
     <section className="py-24 bg-[#F8F9FD]">
-      <div className="max-w-7xl mx-auto px-6 lg:px-8">
+      <div className="max-w-4xl mx-auto px-6 lg:px-8 text-center">
         <motion.div
           initial="hidden"
           whileInView="visible"
           viewport={{ once: true, amount: 0.3 }}
           variants={fadeUp}
-          className="text-center mb-16"
+          className="mb-8"
         >
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#A380F6]/10 text-sm font-medium text-[#A380F6] mb-5">
-            The Team
+            Technology
           </div>
-          <h2 className="text-4xl font-black text-[#0A1547]">Built by People Who've Been There</h2>
-          <p className="text-lg text-[#0A1547]/60 mt-4 max-w-2xl mx-auto">
-            Our team brings together expertise in AI research, talent acquisition, and enterprise software — all united by the same frustration with the status quo.
-          </p>
+          <h2 className="text-4xl font-black text-[#0A1547] leading-tight mb-5">
+            Tech That Stays in the Background
+          </h2>
         </motion.div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {team.map((member, i) => (
-            <motion.div
-              key={member.name}
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, amount: 0.2 }}
-              custom={i}
-              variants={fadeUp}
-              className="bg-white rounded-2xl p-6 border border-gray-100 text-center"
-              data-testid={`team-member-${i}`}
-            >
-              <div
-                className="w-16 h-16 rounded-2xl flex items-center justify-center text-white text-xl font-black mx-auto mb-4"
-                style={{ backgroundColor: member.color }}
-              >
-                {member.initials}
-              </div>
-              <h3 className="text-base font-bold text-[#0A1547] mb-0.5">{member.name}</h3>
-              <div
-                className="text-xs font-semibold mb-3"
-                style={{ color: member.color }}
-              >
-                {member.role}
-              </div>
-              <p className="text-xs text-[#0A1547]/60 leading-relaxed">{member.bio}</p>
-            </motion.div>
-          ))}
-        </div>
+        <motion.div
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+          custom={1}
+          variants={fadeUp}
+          className="bg-white rounded-2xl border border-gray-100 p-8 shadow-md text-left"
+        >
+          <p className="text-lg text-[#0A1547]/70 leading-relaxed mb-5">
+            Our tech isn't the star. It's the quiet partner that steps in for the grind so you can lead with brilliance. Think smart agents that converse like colleagues, sorting through possibilities with precision while you zero in on potential.
+          </p>
+          <p className="text-base text-[#0A1547]/60 leading-relaxed mb-5">
+            No black boxes or buzzwords. Just reliable tools that handle the tedious, grounded in real-world proof.
+          </p>
+          <p className="text-base text-[#0A1547] font-semibold leading-relaxed">
+            We're generous with what works and upfront about what doesn't — because tech should expand your world, not complicate it.
+          </p>
+        </motion.div>
       </div>
     </section>
   );
 }
 
-function JoinSection() {
+function CTASection() {
+  const [submitted, setSubmitted] = useState(false);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [message, setMessage] = useState("");
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitted(true);
+  };
+
   return (
-    <section className="py-24 bg-[#0A1547]">
-      <div className="max-w-3xl mx-auto px-6 lg:px-8 text-center">
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.3 }}
-          variants={fadeUp}
-        >
-          <h2 className="text-4xl lg:text-5xl font-black text-white leading-tight mb-5">
-            Join the Teams Hiring Smarter
-          </h2>
-          <p className="text-lg text-white/60 mb-8">
-            Ready to see what AlphaSource AI can do for your talent operation? We'd love to show you.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <a
-              href="/#contact"
-              className="inline-flex items-center justify-center gap-2 px-8 py-4 text-base font-semibold text-white rounded-xl transition-all hover:opacity-90 hover:shadow-lg"
-              style={{ backgroundColor: "#A380F6" }}
-              data-testid="about-cta-demo"
-            >
-              Request a Demo
-              <ArrowRight className="w-4 h-4" />
-            </a>
-            <a
-              href="/alphascreen"
-              className="inline-flex items-center justify-center gap-2 px-8 py-4 text-base font-semibold text-white border border-white/20 rounded-xl transition-all hover:border-white/40 hover:bg-white/5"
-              data-testid="about-cta-alphascreen"
-            >
-              Explore AlphaScreen
-            </a>
-          </div>
-        </motion.div>
+    <section id="contact" className="py-24 bg-[#0A1547]">
+      <div className="max-w-7xl mx-auto px-6 lg:px-8">
+        <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-start">
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.3 }}
+            variants={fadeUp}
+          >
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-sm font-medium text-white mb-5">
+              Get in Touch
+            </div>
+            <h2 className="text-4xl font-black text-white leading-tight mb-5">
+              To Schedule a Demo or Learn More
+            </h2>
+            <p className="text-lg text-white/60 leading-relaxed mb-8">
+              Provide your contact details and our team will reach out to schedule with you.
+            </p>
+            <div className="space-y-3">
+              {[
+                "Personalized demo at your convenience",
+                "No commitment required",
+                "Backed by real-world experience",
+                "We make work feel human again",
+              ].map((item) => (
+                <div key={item} className="flex items-center gap-3">
+                  <CheckCircle className="w-4 h-4 text-[#02D99D] flex-shrink-0" />
+                  <span className="text-white/70 text-sm">{item}</span>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.3 }}
+            custom={1}
+            variants={fadeUp}
+            className="bg-white rounded-2xl p-8"
+          >
+            {submitted ? (
+              <div className="text-center py-8">
+                <div className="w-14 h-14 rounded-full bg-[#02D99D]/15 flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle className="w-7 h-7 text-[#02D99D]" />
+                </div>
+                <h3 className="text-xl font-bold text-[#0A1547] mb-2">Thanks! We'll be in touch.</h3>
+                <p className="text-[#0A1547]/60 text-sm">Our team will reach out to schedule with you.</p>
+              </div>
+            ) : (
+              <>
+                <h3 className="text-xl font-bold text-[#0A1547] mb-6">Request a Demo</h3>
+                <form onSubmit={handleSubmit} className="space-y-4" data-testid="about-contact-form">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-[#0A1547] mb-1.5">First Name</label>
+                      <input
+                        type="text"
+                        required
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
+                        placeholder="Jane"
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-[#0A1547] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/40 focus:border-[#A380F6] transition-all"
+                        data-testid="input-first-name"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-[#0A1547] mb-1.5">Last Name</label>
+                      <input
+                        type="text"
+                        required
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                        placeholder="Smith"
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-[#0A1547] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/40 focus:border-[#A380F6] transition-all"
+                        data-testid="input-last-name"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#0A1547] mb-1.5">Email</label>
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="jane@company.com"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-[#0A1547] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/40 focus:border-[#A380F6] transition-all"
+                      data-testid="input-email"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#0A1547] mb-1.5">Phone</label>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="+1 (555) 000-0000"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-[#0A1547] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/40 focus:border-[#A380F6] transition-all"
+                      data-testid="input-phone"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#0A1547] mb-1.5">How can we help?</label>
+                    <textarea
+                      value={message}
+                      onChange={(e) => setMessage(e.target.value)}
+                      rows={3}
+                      placeholder="Let us know how we can help..."
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-[#0A1547] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/40 focus:border-[#A380F6] transition-all resize-none"
+                      data-testid="input-message"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full py-3.5 text-sm font-semibold text-white rounded-xl transition-all hover:opacity-90 hover:shadow-md active:scale-[0.99]"
+                    style={{ backgroundColor: "#A380F6" }}
+                    data-testid="button-submit"
+                  >
+                    Submit
+                  </button>
+                </form>
+              </>
+            )}
+          </motion.div>
+        </div>
       </div>
     </section>
   );
@@ -368,11 +432,11 @@ export default function AboutPage() {
   return (
     <div>
       <HeroSection />
-      <MissionSection />
-      <ValuesSection />
-      <StorySection />
       <TeamSection />
-      <JoinSection />
+      <MissionSection />
+      <StorySection />
+      <TechnologySection />
+      <CTASection />
     </div>
   );
 }

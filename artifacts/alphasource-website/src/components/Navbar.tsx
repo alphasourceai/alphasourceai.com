@@ -15,8 +15,7 @@ export default function Navbar() {
   const navLinks = [
     { label: "Home", href: "/" },
     { label: "About", href: "/about" },
-    { label: "AlphaScreen", href: "/alphascreen" },
-    { label: "AI Agents", href: "/#agents" },
+    { label: "alphaScreen", href: "/alphascreen" },
     { label: "How It Works", href: "/#how-it-works" },
     { label: "Get in Touch", href: "/#contact" },
   ];
