@@ -50,8 +50,7 @@ export default function Footer() {
               {[
                 { label: "Home", href: "/" },
                 { label: "About Us", href: "/about" },
-                { label: "AlphaScreen", href: "/alphascreen" },
-                { label: "AI Agents", href: "/#agents" },
+                { label: "alphaScreen", href: "/alphascreen" },
                 { label: "How It Works", href: "/#how-it-works" },
               ].map((link) => (
                 <li key={link.label}>
@@ -72,10 +71,10 @@ export default function Footer() {
             <ul className="space-y-3">
               <li>
                 <a
-                  href="mailto:hello@alphasourceai.com"
+                  href="mailto:info@alphasourceai.com"
                   className="text-sm text-white/60 hover:text-[#A380F6] transition-colors"
                 >
-                  hello@alphasourceai.com
+                  info@alphasourceai.com
                 </a>
               </li>
               <li>
@@ -96,8 +95,7 @@ export default function Footer() {
             &copy; {new Date().getFullYear()} AlphaSource AI. All rights reserved.
           </p>
           <div className="flex gap-6">
-            <a href="/privacy" className="text-white/40 text-sm hover:text-white/70 transition-colors">Privacy Policy</a>
-            <a href="/terms" className="text-white/40 text-sm hover:text-white/70 transition-colors">Terms of Service</a>
+            <a href="/terms" className="text-white/40 text-sm hover:text-white/70 transition-colors">Terms &amp; Conditions</a>
           </div>
         </div>
       </div>

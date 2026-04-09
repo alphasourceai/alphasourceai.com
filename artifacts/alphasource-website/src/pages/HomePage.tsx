@@ -36,7 +36,7 @@ function HeroSection() {
               className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-[#A380F6]/30 text-sm font-medium text-[#A380F6] mb-6 shadow-sm"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-[#02D99D] animate-pulse" />
-              AI-Powered Talent Solutions
+              AI-Powered Solutions
             </motion.div>
 
             <motion.h1
@@ -377,7 +377,7 @@ function AlphaScreenFeatureSection() {
             className="order-1 lg:order-2"
           >
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#A380F6]/10 text-sm font-medium text-[#A380F6] mb-5">
-              Our Product
+              Featured Solution
             </div>
             <h2 className="text-4xl lg:text-5xl font-black text-[#0A1547] leading-tight mb-5">
               Meet alphaScreen
@@ -388,8 +388,11 @@ function AlphaScreenFeatureSection() {
             <p className="text-base text-[#0A1547]/60 leading-relaxed mb-5">
               Providing a clearer picture of more candidates — freeing up your time to focus on what you do best.
             </p>
+            <p className="text-base text-[#0A1547]/60 leading-relaxed mb-5">
+              alphaScreen is one part of a broader suite of AI tools and consulting services we build for leaders who want their hours back.
+            </p>
             <p className="text-base text-[#0A1547]/70 leading-relaxed mb-8">
-              Less time screening. More time on the people who matter.
+              Less time on the grind. More time on what actually matters.
             </p>
             <a
               href="/alphascreen"

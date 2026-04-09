@@ -243,11 +243,11 @@
 }
 
 .gradient-hero-bg {
-  background: linear-gradient(135deg, #f0f2fa 0%, #e8ebf8 50%, #ede8fd 100%);
+  background: linear-gradient(135deg, #f0f2fa 0%, #e8ecf6 50%, #dde3f4 100%);
 }
 
 .gradient-lilac-glow {
-  background: radial-gradient(ellipse at center, rgba(163,128,246,0.15) 0%, transparent 70%);
+  background: radial-gradient(ellipse at center, rgba(10,21,71,0.06) 0%, transparent 70%);
 }
 
 .text-gradient-brand {

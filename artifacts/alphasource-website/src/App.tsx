@@ -7,6 +7,7 @@ import Footer from "@/components/Footer";
 import HomePage from "@/pages/HomePage";
 import AlphaScreenPage from "@/pages/AlphaScreenPage";
 import AboutPage from "@/pages/AboutPage";
+import TermsPage from "@/pages/TermsPage";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -20,6 +21,7 @@ function Router() {
           <Route path="/" component={HomePage} />
           <Route path="/alphascreen" component={AlphaScreenPage} />
           <Route path="/about" component={AboutPage} />
+          <Route path="/terms" component={TermsPage} />
           <Route component={NotFound} />
         </Switch>
       </main>
