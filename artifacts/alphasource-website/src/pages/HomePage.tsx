@@ -24,7 +24,7 @@ function HeroSection() {
         }}
       />
 
-      <div className="relative max-w-7xl mx-auto px-6 lg:px-8 pt-14 pb-10 lg:pt-16 lg:pb-14 w-full">
+      <div className="relative max-w-7xl mx-auto px-6 lg:px-8 pt-16 pb-14 lg:pt-20 lg:pb-20 w-full">
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
           {/* Left */}
           <div>
