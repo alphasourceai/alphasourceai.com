@@ -13,18 +13,18 @@ const fadeUp = {
 
 function HeroSection() {
   return (
-    <section className="relative min-h-screen flex items-center pt-16 overflow-hidden">
+    <section className="relative flex items-center pt-16 overflow-hidden" style={{ minHeight: "88vh" }}>
       <div className="absolute inset-0 gradient-hero-bg" />
       <div className="absolute inset-0 gradient-lilac-glow" />
       <div
-        className="absolute inset-0 opacity-25"
+        className="absolute inset-0 opacity-40"
         style={{
-          backgroundImage: `radial-gradient(circle at 1px 1px, rgba(163,128,246,0.15) 1px, transparent 0)`,
-          backgroundSize: "40px 40px",
+          backgroundImage: `radial-gradient(circle at 1px 1px, rgba(10,21,71,0.07) 1px, transparent 0)`,
+          backgroundSize: "36px 36px",
         }}
       />
 
-      <div className="relative max-w-7xl mx-auto px-6 lg:px-8 py-20 lg:py-28 w-full">
+      <div className="relative max-w-7xl mx-auto px-6 lg:px-8 py-14 lg:py-18 w-full">
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
           {/* Left */}
           <div>

@@ -58,14 +58,18 @@ export default function Navbar() {
           </div>
 
           {/* CTA Button */}
-          <div className="hidden md:flex items-center">
+          <div className="hidden md:flex items-center gap-3">
             <a
-              href="/#contact"
-              className="px-5 py-2.5 text-sm font-semibold text-white rounded-xl transition-all duration-200 hover:opacity-90 hover:shadow-md active:scale-95"
-              style={{ backgroundColor: "#A380F6" }}
-              data-testid="nav-cta-button"
+              href="/dashboard"
+              className="px-5 py-2.5 text-sm font-semibold text-[#0A1547] border border-[#0A1547]/15 rounded-xl transition-all duration-200 hover:border-[#A380F6] hover:text-[#A380F6] hover:shadow-sm active:scale-95 flex items-center gap-2"
+              data-testid="nav-login-button"
             >
-              Request a Demo
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                <polyline points="10 17 15 12 10 7"/>
+                <line x1="15" y1="12" x2="3" y2="12"/>
+              </svg>
+              Log In
             </a>
           </div>
 
@@ -112,12 +116,11 @@ export default function Navbar() {
           ))}
           <div className="pt-2">
             <a
-              href="/#contact"
-              className="block text-center px-5 py-2.5 text-sm font-semibold text-white rounded-xl"
-              style={{ backgroundColor: "#A380F6" }}
+              href="/dashboard"
+              className="block text-center px-5 py-2.5 text-sm font-semibold text-[#0A1547] border border-[#0A1547]/15 rounded-xl"
               onClick={() => setMobileOpen(false)}
             >
-              Request a Demo
+              Log In
             </a>
           </div>
         </div>

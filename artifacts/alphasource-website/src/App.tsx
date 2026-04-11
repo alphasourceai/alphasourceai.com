@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -8,11 +8,23 @@ import HomePage from "@/pages/HomePage";
 import AlphaScreenPage from "@/pages/AlphaScreenPage";
 import AboutPage from "@/pages/AboutPage";
 import TermsPage from "@/pages/TermsPage";
+import DashboardPage from "@/pages/DashboardPage";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
 
 function Router() {
+  const [location] = useLocation();
+  const isFullScreen = location === "/dashboard";
+
+  if (isFullScreen) {
+    return (
+      <Switch>
+        <Route path="/dashboard" component={DashboardPage} />
+      </Switch>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
