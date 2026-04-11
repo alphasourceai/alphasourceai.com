@@ -669,7 +669,7 @@ function CTASection() {
           {/* Left — dark navy panel */}
           <div
             className="lg:w-[40%] flex-shrink-0 p-10 flex flex-col justify-between"
-            style={{ backgroundColor: "#0A1547" }}
+            style={{ background: "linear-gradient(145deg, #1B2B7A 0%, #0A1547 55%, #070E36 100%)" }}
           >
             <div>
               <h2 className="text-3xl font-black text-white leading-tight mb-4">
