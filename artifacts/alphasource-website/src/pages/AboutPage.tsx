@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowRight, CheckCircle } from "lucide-react";
+import { CheckCircle, Users, BarChart2, Scale, Zap, Shield, Globe } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 28 },
@@ -16,7 +17,6 @@ function HeroSection() {
     <section className="relative pt-32 pb-20 overflow-hidden">
       <div className="absolute inset-0 gradient-hero-bg" />
       <div className="absolute inset-0 gradient-lilac-glow" />
-
       <div className="relative max-w-7xl mx-auto px-6 lg:px-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -26,7 +26,7 @@ function HeroSection() {
         >
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-[#A380F6]/30 text-sm font-medium text-[#A380F6] mb-6 shadow-sm">
             <span className="w-1.5 h-1.5 rounded-full bg-[#A380F6]" />
-            Meet the alphaSource Team
+            About Us
           </div>
           <h1 className="text-5xl lg:text-6xl font-black text-[#0A1547] leading-[1.05] tracking-tight mb-6">
             Meet the alphaSource Team
@@ -44,23 +44,23 @@ function TeamSection() {
   const team = [
     {
       name: "Jason Gardner",
-      role: "Co-Founder",
+      role: "Founder",
+      photo: "/headshot-jason.jpg",
       bio: "Dental operations veteran with deep tech insight. Jason saw the talent gaps and time drains up close — and decided to do something about it.",
-      initials: "JG",
       color: "#A380F6",
     },
     {
       name: "Brent Ford",
       role: "Partner",
+      photo: "/headshot-brent.jpg",
       bio: "Brings a gift for connecting with and engaging diverse audiences. Brent widens the bridge between opportunity and the people who deserve a shot.",
-      initials: "BF",
       color: "#02ABE0",
     },
     {
       name: "Destinee Konecny",
-      role: "Co-Founder",
+      role: "Partner",
+      photo: "/headshot-destinee.jpg",
       bio: "Dental operations veteran with a passion for people and strategy. Destinee turns real-world frustrations into tools that make work feel human again.",
-      initials: "DK",
       color: "#02D99D",
     },
   ];
@@ -77,23 +77,24 @@ function TeamSection() {
               viewport={{ once: true, amount: 0.2 }}
               custom={i}
               variants={fadeUp}
-              className="bg-[#F8F9FD] rounded-2xl p-7 border border-gray-100 text-center"
+              className="bg-[#F8F9FD] rounded-2xl overflow-hidden"
               data-testid={`team-member-${i}`}
             >
-              <div
-                className="w-20 h-20 rounded-2xl flex items-center justify-center text-white text-2xl font-black mx-auto mb-4"
-                style={{ backgroundColor: member.color }}
-              >
-                {member.initials}
+              <div className="relative h-56 overflow-hidden">
+                <img
+                  src={member.photo}
+                  alt={member.name}
+                  className="w-full h-full object-cover object-top"
+                />
+                <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-[#F8F9FD] to-transparent" />
               </div>
-              <h3 className="text-lg font-bold text-[#0A1547] mb-0.5">{member.name}</h3>
-              <div
-                className="text-sm font-semibold mb-3"
-                style={{ color: member.color }}
-              >
-                {member.role}
+              <div className="px-6 pb-6 pt-3 text-center">
+                <h3 className="text-lg font-bold text-[#0A1547] mb-0.5">{member.name}</h3>
+                <div className="text-sm font-semibold mb-3" style={{ color: member.color }}>
+                  {member.role}
+                </div>
+                <p className="text-sm text-[#0A1547]/60 leading-relaxed">{member.bio}</p>
               </div>
-              <p className="text-sm text-[#0A1547]/60 leading-relaxed">{member.bio}</p>
             </motion.div>
           ))}
         </div>
@@ -103,6 +104,33 @@ function TeamSection() {
 }
 
 function MissionSection() {
+  const values = [
+    {
+      Icon: Users,
+      label: "Human-First, Always",
+      description: "AI should amplify human judgment, not replace it. We hold this line firmly in everything we build.",
+      color: "#A380F6",
+    },
+    {
+      Icon: BarChart2,
+      label: "Insight Over Information",
+      description: "We translate raw data into clear, reasoned, actionable intelligence that helps teams make better decisions faster.",
+      color: "#02ABE0",
+    },
+    {
+      Icon: Scale,
+      label: "Fairness by Design",
+      description: "Structured, consistent evaluation frameworks that help teams assess on merit — opening doors for job seekers who deserve a real shot.",
+      color: "#02D99D",
+    },
+    {
+      Icon: Zap,
+      label: "Speed Without Sacrifice",
+      description: "Moving faster should not mean cutting corners on quality or candidate experience. We believe in both.",
+      color: "#A380F6",
+    },
+  ];
+
   return (
     <section className="py-24 bg-[#F8F9FD]">
       <div className="max-w-7xl mx-auto px-6 lg:px-8">
@@ -119,67 +147,45 @@ function MissionSection() {
             <h2 className="text-4xl font-black text-[#0A1547] leading-tight mb-6">
               We Exist to Give People the Freedom to Chase What Lights Them Up
             </h2>
-            <p className="text-[#0A1547]/70 leading-relaxed mb-4">
-              Through AI that amplifies human judgment, we create pathways where talent finds its place. Not by chance, but by design.
-            </p>
-            <p className="text-[#0A1547]/70 leading-relaxed mb-4">
-              Every tool, every conversation, every insight is built to deliver real impact: hours reclaimed, opportunities opened, and partnerships that endure.
-            </p>
-            <p className="text-[#0A1547] font-semibold leading-relaxed">
-              Because when you put the right people in position to succeed, everyone rises.
-            </p>
+            <div className="space-y-4">
+              {[
+                { text: "Through AI that amplifies human judgment, we create pathways where talent finds its place. Not by chance, but by design.", color: "#A380F6" },
+                { text: "Every tool, every conversation, every insight is built to deliver real impact: hours reclaimed, opportunities opened, and partnerships that endure.", color: "#02ABE0" },
+              ].map((item, i) => (
+                <div key={i} className="flex items-start gap-3">
+                  <div className="w-1.5 h-1.5 rounded-full mt-2.5 flex-shrink-0" style={{ backgroundColor: item.color }} />
+                  <p className="text-[#0A1547]/70 leading-relaxed">{item.text}</p>
+                </div>
+              ))}
+              <p
+                className="text-[#0A1547] font-semibold leading-relaxed pl-4 border-l-2 py-1"
+                style={{ borderColor: "#02D99D" }}
+              >
+                Because when you put the right people in position to succeed, everyone rises.
+              </p>
+            </div>
           </motion.div>
 
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, amount: 0.3 }}
-            custom={1}
-            variants={fadeUp}
-            className="space-y-5"
-          >
-            {[
-              {
-                label: "Human-First, Always",
-                description: "AI should amplify human judgment, not replace it. We hold this line firmly in everything we build.",
-                color: "#A380F6",
-              },
-              {
-                label: "Insight Over Information",
-                description: "We translate raw data into clear, reasoned, actionable intelligence that helps teams make better decisions faster.",
-                color: "#02ABE0",
-              },
-              {
-                label: "Fairness by Design",
-                description: "Structured, consistent evaluation frameworks that help teams assess on merit — opening doors for job seekers who deserve a real shot.",
-                color: "#02D99D",
-              },
-              {
-                label: "Speed Without Sacrifice",
-                description: "Moving faster should not mean cutting corners on quality or candidate experience. We believe in both.",
-                color: "#A380F6",
-              },
-            ].map((val, i) => (
+          <div className="grid grid-cols-2 gap-4">
+            {values.map((val, i) => (
               <motion.div
                 key={val.label}
-                initial={{ opacity: 0, x: 16 }}
-                whileInView={{ opacity: 1, x: 0 }}
+                initial={{ opacity: 0, y: 16 }}
+                whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.1, duration: 0.5 }}
-                className="flex gap-4 items-start"
+                className="bg-white rounded-2xl p-5"
                 data-testid={`value-item-${i}`}
               >
-                <div
-                  className="w-2 h-2 rounded-full mt-2 flex-shrink-0"
-                  style={{ backgroundColor: val.color }}
+                <val.Icon
+                  className="mb-4"
+                  style={{ color: val.color, width: 24, height: 24, strokeWidth: 1.75 }}
                 />
-                <div>
-                  <div className="text-sm font-bold text-[#0A1547] mb-1">{val.label}</div>
-                  <div className="text-sm text-[#0A1547]/60 leading-relaxed">{val.description}</div>
-                </div>
+                <div className="text-[14px] font-bold text-[#0A1547] mb-1.5">{val.label}</div>
+                <div className="text-xs text-gray-500 leading-relaxed">{val.description}</div>
               </motion.div>
             ))}
-          </motion.div>
+          </div>
         </div>
       </div>
     </section>
@@ -191,7 +197,6 @@ function StorySection() {
     <section className="py-24 bg-white">
       <div className="max-w-7xl mx-auto px-6 lg:px-8">
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
-          {/* Navy card */}
           <motion.div
             initial="hidden"
             whileInView="visible"
@@ -244,40 +249,65 @@ function StorySection() {
 function TechnologySection() {
   return (
     <section className="py-24 bg-[#F8F9FD]">
-      <div className="max-w-4xl mx-auto px-6 lg:px-8 text-center">
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.3 }}
-          variants={fadeUp}
-          className="mb-8"
-        >
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#A380F6]/10 text-sm font-medium text-[#A380F6] mb-5">
-            Technology
-          </div>
-          <h2 className="text-4xl font-black text-[#0A1547] leading-tight mb-5">
-            Tech That Stays in the Background
-          </h2>
-        </motion.div>
+      <div className="max-w-7xl mx-auto px-6 lg:px-8">
+        <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.3 }}
+            variants={fadeUp}
+          >
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#A380F6]/10 text-sm font-medium text-[#A380F6] mb-5">
+              Technology
+            </div>
+            <h2 className="text-4xl font-black text-[#0A1547] leading-tight mb-5">
+              Tech That Stays in the Background
+            </h2>
+            <p className="text-lg text-[#0A1547]/70 leading-relaxed">
+              Our tech isn't the star. It's the quiet partner that steps in for the grind so you can lead with brilliance. Think smart agents that converse like colleagues, sorting through possibilities with precision while you zero in on potential.
+            </p>
+          </motion.div>
 
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.2 }}
-          custom={1}
-          variants={fadeUp}
-          className="bg-white rounded-2xl border border-gray-100 p-8 shadow-md text-left"
-        >
-          <p className="text-lg text-[#0A1547]/70 leading-relaxed mb-5">
-            Our tech isn't the star. It's the quiet partner that steps in for the grind so you can lead with brilliance. Think smart agents that converse like colleagues, sorting through possibilities with precision while you zero in on potential.
-          </p>
-          <p className="text-base text-[#0A1547]/60 leading-relaxed mb-5">
-            No black boxes or buzzwords. Just reliable tools that handle the tedious, grounded in real-world proof.
-          </p>
-          <p className="text-base text-[#0A1547] font-semibold leading-relaxed">
-            We're generous with what works and upfront about what doesn't — because tech should expand your world, not complicate it.
-          </p>
-        </motion.div>
+          <div className="space-y-4">
+            {[
+              {
+                Icon: Shield,
+                color: "#02ABE0",
+                text: "No black boxes or buzzwords. Just reliable tools that handle the tedious, grounded in real-world proof.",
+                weight: "medium",
+              },
+              {
+                Icon: Globe,
+                color: "#02D99D",
+                text: "We're generous with what works and upfront about what doesn't — because tech should expand your world, not complicate it.",
+                weight: "semibold",
+              },
+            ].map((item, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 16 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.15, duration: 0.5 }}
+                className="bg-white rounded-2xl p-6"
+              >
+                <item.Icon
+                  className="mb-4"
+                  style={{ color: item.color, width: 24, height: 24, strokeWidth: 1.75 }}
+                />
+                <p
+                  className="text-sm leading-relaxed"
+                  style={{
+                    color: item.weight === "semibold" ? "#0A1547" : "rgba(10,21,71,0.7)",
+                    fontWeight: item.weight === "semibold" ? 600 : 400,
+                  }}
+                >
+                  {item.text}
+                </p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
       </div>
     </section>
   );
@@ -297,51 +327,48 @@ function CTASection() {
   };
 
   return (
-    <section id="contact" className="py-24 bg-[#0A1547]">
-      <div className="max-w-7xl mx-auto px-6 lg:px-8">
-        <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-start">
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, amount: 0.3 }}
-            variants={fadeUp}
+    <section id="contact" className="py-24 bg-[#F8F9FD]">
+      <div className="max-w-5xl mx-auto px-6 lg:px-8">
+        <motion.div
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+          variants={fadeUp}
+          className="overflow-hidden rounded-2xl flex flex-col lg:flex-row"
+          style={{ boxShadow: "0 12px 48px rgba(10,21,71,0.13), 0 0 0 1px rgba(10,21,71,0.06)" }}
+        >
+          <div
+            className="lg:w-[40%] flex-shrink-0 p-10 flex flex-col justify-between"
+            style={{ background: "linear-gradient(145deg, #1B2B7A 0%, #0A1547 55%, #070E36 100%)" }}
           >
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-sm font-medium text-white mb-5">
-              Get in Touch
+            <div>
+              <h2 className="text-3xl font-black text-white leading-tight mb-4">
+                To Schedule a Demo or Learn More
+              </h2>
+              <p className="text-white/60 text-sm leading-relaxed mb-8">
+                Provide your contact details and our team will reach out to schedule with you.
+              </p>
+              <div className="space-y-3">
+                {[
+                  "Personalized demo at your convenience",
+                  "No commitment required",
+                  "Backed by real-world experience",
+                  "We make work feel human again",
+                ].map((item) => (
+                  <div key={item} className="flex items-center gap-3">
+                    <CheckCircle className="w-4 h-4 flex-shrink-0" style={{ color: "#02D99D" }} />
+                    <span className="text-white/70 text-sm">{item}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <h2 className="text-4xl font-black text-white leading-tight mb-5">
-              To Schedule a Demo or Learn More
-            </h2>
-            <p className="text-lg text-white/60 leading-relaxed mb-8">
-              Provide your contact details and our team will reach out to schedule with you.
-            </p>
-            <div className="space-y-3">
-              {[
-                "Personalized demo at your convenience",
-                "No commitment required",
-                "Backed by real-world experience",
-                "We make work feel human again",
-              ].map((item) => (
-                <div key={item} className="flex items-center gap-3">
-                  <CheckCircle className="w-4 h-4 text-[#02D99D] flex-shrink-0" />
-                  <span className="text-white/70 text-sm">{item}</span>
-                </div>
-              ))}
-            </div>
-          </motion.div>
+          </div>
 
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, amount: 0.3 }}
-            custom={1}
-            variants={fadeUp}
-            className="bg-white rounded-2xl p-8"
-          >
+          <div className="flex-1 bg-white p-10">
             {submitted ? (
-              <div className="text-center py-8">
-                <div className="w-14 h-14 rounded-full bg-[#02D99D]/15 flex items-center justify-center mx-auto mb-4">
-                  <CheckCircle className="w-7 h-7 text-[#02D99D]" />
+              <div className="h-full flex flex-col items-center justify-center text-center py-8">
+                <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: "#02D99D18" }}>
+                  <CheckCircle className="w-7 h-7" style={{ color: "#02D99D" }} />
                 </div>
                 <h3 className="text-xl font-bold text-[#0A1547] mb-2">Thanks! We'll be in touch.</h3>
                 <p className="text-[#0A1547]/60 text-sm">Our team will reach out to schedule with you.</p>
@@ -421,8 +448,8 @@ function CTASection() {
                 </form>
               </>
             )}
-          </motion.div>
-        </div>
+          </div>
+        </motion.div>
       </div>
     </section>
   );
