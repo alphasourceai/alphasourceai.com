@@ -195,76 +195,82 @@ function MissionSection() {
 function StorySection() {
   return (
     <section className="py-24 bg-white">
-      <div className="max-w-5xl mx-auto px-6 lg:px-8">
-        {/* Header */}
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.3 }}
-          variants={fadeUp}
-          className="mb-10"
-        >
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#0A1547]/8 text-sm font-medium text-[#0A1547] mb-5">
-            Our Story
-          </div>
-          <h2 className="text-4xl font-black text-[#0A1547] leading-tight">
-            Born from Real-World Frustration
-          </h2>
-        </motion.div>
+      <div className="max-w-7xl mx-auto px-6 lg:px-8">
+        <div className="grid lg:grid-cols-[1fr_1fr] gap-10 lg:gap-16 items-start">
 
-        {/* Body — 2-column paragraph grid */}
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.2 }}
-          custom={1}
-          variants={fadeUp}
-          className="grid md:grid-cols-2 gap-8 mb-8"
-        >
-          <p className="text-[#0A1547]/70 leading-relaxed">
-            It started with a simple frustration: brilliant people sidelined by endless screening calls, and leaders buried in resumes and unclear data instead of strategy.
-          </p>
-          <p className="text-[#0A1547]/70 leading-relaxed">
-            Jason and Destinee, dental operations veterans with deep tech insight, saw the talent gaps, time drains, and data fatigue up close. Brent brought his gift for connecting with and engaging diverse audiences to widen the bridge.
-          </p>
-        </motion.div>
-
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.2 }}
-          custom={2}
-          variants={fadeUp}
-          className="grid md:grid-cols-2 gap-8 mb-12"
-        >
-          <p className="text-[#0A1547]/70 leading-relaxed">
-            Together we're turning real-world problems into action — opening doors for job seekers and freeing focus for teams.
-          </p>
-          <p className="text-[#0A1547] font-semibold leading-relaxed">
-            alphaSource is our promise to make work feel human again.
-          </p>
-        </motion.div>
-
-        {/* Testimonial — wide horizontal card */}
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.2 }}
-          custom={3}
-          variants={fadeUp}
-          className="bg-[#0A1547] rounded-2xl p-8 flex flex-col md:flex-row md:items-center gap-8"
-        >
-          <div className="flex-shrink-0 flex flex-col items-start gap-3">
-            <img src="/alpha-symbol.png" alt="alphaSource" className="h-10 w-auto" />
-            <div className="text-xs font-semibold text-white/50 uppercase tracking-widest whitespace-nowrap">
-              alphaSource Client
+          {/* Left — prominent testimonial card */}
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.3 }}
+            variants={fadeUp}
+            className="relative overflow-hidden rounded-3xl p-10 lg:p-12"
+            style={{ background: "linear-gradient(145deg, #1B2B7A 0%, #0A1547 55%, #070E36 100%)" }}
+          >
+            <div
+              className="absolute top-4 right-6 font-serif text-white/5 select-none leading-none"
+              style={{ fontSize: "10rem" }}
+            >
+              "
             </div>
-          </div>
-          <div className="w-px bg-white/10 self-stretch hidden md:block" />
-          <blockquote className="text-lg font-medium leading-relaxed italic text-white/90 flex-1">
-            "alphaSource cut our screening time in half and uncovered candidates we'd have missed — people with real spark. They overdeliver every time."
-          </blockquote>
-        </motion.div>
+            <img src="/alpha-symbol.png" alt="alphaSource" className="h-10 w-auto mb-8" />
+            <blockquote className="text-2xl font-medium leading-relaxed italic text-white/90 mb-8 relative z-10">
+              "alphaSource cut our screening time in half and uncovered candidates we'd have missed — people with real spark. They overdeliver every time."
+            </blockquote>
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-px bg-white/30" />
+              <span className="text-sm font-semibold text-white/50">alphaSource Client</span>
+            </div>
+          </motion.div>
+
+          {/* Right — scannable story beats */}
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.3 }}
+            custom={1}
+            variants={fadeUp}
+          >
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#0A1547]/8 text-sm font-medium text-[#0A1547] mb-5">
+              Our Story
+            </div>
+            <h2 className="text-4xl font-black text-[#0A1547] leading-tight mb-8">
+              Born from Real-World Frustration
+            </h2>
+            <div className="space-y-6">
+              {[
+                {
+                  text: "Brilliant people sidelined by endless screening calls. Leaders buried in resumes instead of strategy. It started with a frustration we couldn't ignore.",
+                  color: "#A380F6",
+                },
+                {
+                  text: "Jason and Destinee, dental operations veterans, saw the talent gaps and data fatigue up close. Brent widened the bridge between opportunity and the people who deserve a real shot.",
+                  color: "#02ABE0",
+                },
+                {
+                  text: "Together we're turning real-world problems into action — opening doors for job seekers and freeing focus for teams.",
+                  color: "#02D99D",
+                },
+              ].map((beat, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, x: 12 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: i * 0.1, duration: 0.5 }}
+                  className="pl-5"
+                  style={{ borderLeft: `2.5px solid ${beat.color}` }}
+                >
+                  <p className="text-[#0A1547]/70 leading-relaxed">{beat.text}</p>
+                </motion.div>
+              ))}
+              <p className="text-[#0A1547] font-semibold leading-relaxed pt-1">
+                alphaSource is our promise to make work feel human again.
+              </p>
+            </div>
+          </motion.div>
+
+        </div>
       </div>
     </section>
   );
