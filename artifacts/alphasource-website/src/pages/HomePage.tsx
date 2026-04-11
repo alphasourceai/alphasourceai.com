@@ -352,10 +352,34 @@ function PeopleDrivenSection() {
 }
 
 function AlphaScreenFeatureSection() {
+  const logLines = [
+    { text: "> Loading candidate profile...", color: "rgba(255,255,255,0.55)", delay: 0.2 },
+    { text: "> Analyzing interview responses...", color: "rgba(255,255,255,0.55)", delay: 0.7 },
+    { text: "> 94% match confidence detected.", color: "#02D99D", delay: 1.2 },
+    { text: "> Cross-referencing resume data...", color: "rgba(255,255,255,0.55)", delay: 1.7 },
+  ];
+
+  const featureCards = [
+    {
+      title: "A Clearer Picture",
+      description: "Providing a clearer picture of more candidates — freeing up your time to focus on what you do best.",
+    },
+    {
+      title: "Part of a Broader Suite",
+      description: "alphaScreen is one part of a broader suite of AI tools and consulting services we build for leaders who want their hours back.",
+    },
+    {
+      title: "More Time for What Matters",
+      description: "Less time on the grind. More time on what actually matters.",
+    },
+  ];
+
   return (
     <section id="agents" className="py-24 bg-[#F8F9FD]">
       <div className="max-w-7xl mx-auto px-6 lg:px-8">
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+
+          {/* Left — terminal card */}
           <motion.div
             initial="hidden"
             whileInView="visible"
@@ -364,65 +388,61 @@ function AlphaScreenFeatureSection() {
             variants={fadeUp}
             className="order-2 lg:order-1"
           >
-            {/* alphaScreen card */}
-            <div className="bg-white rounded-2xl p-8 border border-gray-100 shadow-md">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: "#A380F620" }}>
-                  <img src="/alpha-symbol.png" alt="alpha" className="w-7 h-7" />
+            <div
+              className="bg-white rounded-2xl overflow-hidden"
+              style={{ boxShadow: "0 8px 40px rgba(10,21,71,0.10), 0 0 0 1px rgba(10,21,71,0.05)" }}
+            >
+              {/* Card header */}
+              <div className="px-5 py-4 flex items-center gap-3 border-b border-gray-100">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "#A380F618" }}>
+                  <img src="/alpha-symbol.png" alt="alpha" className="w-5 h-5" />
                 </div>
                 <div>
-                  <div className="text-base font-bold text-[#0A1547]">alphaScreen</div>
-                  <div className="text-xs text-gray-400">AI Interview Agent</div>
+                  <div className="text-sm font-bold text-[#0A1547]">alphaScreen</div>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-[#02D99D] animate-pulse" />
+                    <span className="text-xs font-medium" style={{ color: "#02D99D" }}>Analyzing now</span>
+                  </div>
                 </div>
               </div>
 
-              <div className="space-y-4">
-                {[
-                  {
-                    label: "AI Avatar Interviews",
-                    detail: "Structured, consistent conversations with every applicant",
-                    color: "#A380F6",
-                  },
-                  {
-                    label: "Resume + Interview Analysis",
-                    detail: "Deep evaluation of experience and fit",
-                    color: "#02ABE0",
-                  },
-                  {
-                    label: "Non-verbal Cue Detection",
-                    detail: "A complete, unbiased read on every candidate",
-                    color: "#02D99D",
-                  },
-                  {
-                    label: "Flexible Scheduling",
-                    detail: "Candidates interview anytime, day or night",
-                    color: "#A380F6",
-                  },
-                ].map((item) => (
-                  <div key={item.label} className="flex items-start gap-3">
-                    <div
-                      className="w-1.5 h-1.5 rounded-full mt-2 flex-shrink-0"
-                      style={{ backgroundColor: item.color }}
-                    />
-                    <div>
-                      <div className="text-sm font-semibold text-[#0A1547]">{item.label}</div>
-                      <div className="text-xs text-gray-400 mt-0.5">{item.detail}</div>
-                    </div>
-                  </div>
+              {/* Terminal body */}
+              <div className="bg-[#0D1A5C] px-5 py-5 font-mono space-y-2">
+                {logLines.map((line, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, x: -8 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: line.delay, duration: 0.4 }}
+                    className="text-[12px] leading-relaxed"
+                    style={{ color: line.color }}
+                  >
+                    {line.text}
+                  </motion.div>
                 ))}
               </div>
 
-              <a
-                href="/alphascreen"
-                className="mt-6 inline-flex items-center gap-2 text-sm font-semibold"
-                style={{ color: "#A380F6" }}
-                data-testid="alphascreen-feature-link"
+              {/* Insight section */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: 2.2, duration: 0.5 }}
+                className="px-5 py-4"
+                style={{ backgroundColor: "#2D1B6B" }}
               >
-                Learn about alphaScreen <ArrowRight className="w-3.5 h-3.5" />
-              </a>
+                <div className="text-[9px] font-bold uppercase tracking-widest mb-2" style={{ color: "#A380F6" }}>
+                  Screening Complete
+                </div>
+                <p className="text-[13px] leading-relaxed text-white/90 font-mono">
+                  Candidate ranks in top 8%. Recommend advancing to final interview round.
+                </p>
+              </motion.div>
             </div>
           </motion.div>
 
+          {/* Right — text + feature cards */}
           <motion.div
             initial="hidden"
             whileInView="visible"
@@ -436,28 +456,41 @@ function AlphaScreenFeatureSection() {
             <h2 className="text-4xl lg:text-5xl font-black text-[#0A1547] leading-tight mb-5">
               Meet alphaScreen
             </h2>
-            <p className="text-lg text-[#0A1547]/60 leading-relaxed mb-5">
+            <p className="text-lg text-[#0A1547]/60 leading-relaxed mb-6">
               A subscription-based AI interview agent that lets you create job roles and conduct automated screening interviews with AI avatars.
             </p>
-            <p className="text-base text-[#0A1547]/60 leading-relaxed mb-5">
-              Providing a clearer picture of more candidates — freeing up your time to focus on what you do best.
-            </p>
-            <p className="text-base text-[#0A1547]/60 leading-relaxed mb-5">
-              alphaScreen is one part of a broader suite of AI tools and consulting services we build for leaders who want their hours back.
-            </p>
-            <p className="text-base text-[#0A1547]/70 leading-relaxed mb-8">
-              Less time on the grind. More time on what actually matters.
-            </p>
+
+            <div className="space-y-3 mb-7">
+              {featureCards.map((card, i) => (
+                <motion.div
+                  key={card.title}
+                  initial={{ opacity: 0, y: 12 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: i * 0.1, duration: 0.4 }}
+                  className="flex items-start gap-3 bg-white rounded-xl px-4 py-3.5 border border-gray-100"
+                >
+                  <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ backgroundColor: "#02D99D18" }}>
+                    <CheckCircle className="w-4 h-4" style={{ color: "#02D99D" }} />
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-[#0A1547] mb-0.5">{card.title}</div>
+                    <div className="text-sm text-gray-500 leading-relaxed">{card.description}</div>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+
             <a
               href="/alphascreen"
-              className="inline-flex items-center justify-center gap-2 px-6 py-3.5 text-base font-semibold text-white rounded-full transition-all hover:opacity-90 hover:shadow-lg active:scale-95"
-              style={{ backgroundColor: "#A380F6" }}
+              className="inline-flex items-center gap-1.5 text-base font-semibold transition-all hover:gap-2.5"
+              style={{ color: "#A380F6" }}
               data-testid="alphascreen-section-cta"
             >
-              See alphaScreen
-              <ArrowRight className="w-4 h-4" />
+              See alphaScreen <ArrowRight className="w-4 h-4" />
             </a>
           </motion.div>
+
         </div>
       </div>
     </section>
