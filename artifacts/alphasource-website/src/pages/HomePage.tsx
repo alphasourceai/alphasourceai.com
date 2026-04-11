@@ -389,56 +389,58 @@ function AlphaScreenFeatureSection() {
             className="order-2 lg:order-1"
           >
             <div
-              className="bg-white rounded-2xl overflow-hidden"
+              className="bg-white rounded-2xl p-5"
               style={{ boxShadow: "0 8px 40px rgba(10,21,71,0.10), 0 0 0 1px rgba(10,21,71,0.05)" }}
             >
               {/* Card header */}
-              <div className="px-5 py-4 flex items-center gap-3 border-b border-gray-100">
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "#A380F618" }}>
-                  <img src="/alpha-symbol.png" alt="alpha" className="w-5 h-5" />
+              <div className="flex items-center gap-3 pb-4 mb-4 border-b border-gray-100">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "#A380F618" }}>
+                  <img src="/alpha-symbol.png" alt="alpha" className="w-6 h-6" />
                 </div>
                 <div>
                   <div className="text-sm font-bold text-[#0A1547]">alphaScreen</div>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <div className="w-1.5 h-1.5 rounded-full bg-[#02D99D] animate-pulse" />
-                    <span className="text-xs font-medium" style={{ color: "#02D99D" }}>Analyzing now</span>
+                    <span className="text-xs font-semibold" style={{ color: "#02D99D" }}>Executing analysis</span>
                   </div>
                 </div>
               </div>
 
-              {/* Terminal body */}
-              <div className="bg-[#0D1A5C] px-5 py-5 font-mono space-y-2">
-                {logLines.map((line, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, x: -8 }}
-                    whileInView={{ opacity: 1, x: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ delay: line.delay, duration: 0.4 }}
-                    className="text-[12px] leading-relaxed"
-                    style={{ color: line.color }}
-                  >
-                    {line.text}
-                  </motion.div>
-                ))}
-              </div>
-
-              {/* Insight section */}
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: 2.2, duration: 0.5 }}
-                className="px-5 py-4"
-                style={{ backgroundColor: "#2D1B6B" }}
-              >
-                <div className="text-[9px] font-bold uppercase tracking-widest mb-2" style={{ color: "#A380F6" }}>
-                  Screening Complete
+              {/* Dark terminal container — single block with rounded corners inside the card */}
+              <div className="bg-[#0D1A5C] rounded-xl px-5 pt-5 pb-4 font-mono">
+                <div className="space-y-3 mb-4">
+                  {logLines.map((line, i) => (
+                    <motion.div
+                      key={i}
+                      initial={{ opacity: 0, x: -8 }}
+                      whileInView={{ opacity: 1, x: 0 }}
+                      viewport={{ once: true }}
+                      transition={{ delay: line.delay, duration: 0.4 }}
+                      className="text-[12px] leading-relaxed"
+                      style={{ color: line.color }}
+                    >
+                      {line.text}
+                    </motion.div>
+                  ))}
                 </div>
-                <p className="text-[13px] leading-relaxed text-white/90 font-mono">
-                  Candidate ranks in top 8%. Recommend advancing to final interview round.
-                </p>
-              </motion.div>
+
+                {/* Insight box — nested inside the dark block */}
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: 2.2, duration: 0.5 }}
+                  className="rounded-lg px-4 py-3"
+                  style={{ backgroundColor: "#1E2E7A" }}
+                >
+                  <div className="text-[9px] font-bold uppercase tracking-widest mb-1.5" style={{ color: "#A380F6" }}>
+                    Screening Complete
+                  </div>
+                  <p className="text-[12px] leading-relaxed text-white/85">
+                    Candidate ranks in top 8%. Recommend advancing to final interview round.
+                  </p>
+                </motion.div>
+              </div>
             </div>
           </motion.div>
 
