@@ -13,7 +13,7 @@ const fadeUp = {
 
 function HeroSection() {
   return (
-    <section className="relative flex items-center pt-16 overflow-hidden" style={{ minHeight: "88vh" }}>
+    <section className="relative pt-16 overflow-hidden">
       <div className="absolute inset-0 gradient-hero-bg" />
       <div className="absolute inset-0 gradient-lilac-glow" />
       <div
@@ -24,7 +24,7 @@ function HeroSection() {
         }}
       />
 
-      <div className="relative max-w-7xl mx-auto px-6 lg:px-8 py-14 lg:py-18 w-full">
+      <div className="relative max-w-7xl mx-auto px-6 lg:px-8 pt-14 pb-10 lg:pt-16 lg:pb-14 w-full">
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
           {/* Left */}
           <div>
@@ -87,7 +87,7 @@ function HeroSection() {
               animate="visible"
               custom={4}
               variants={fadeUp}
-              className="flex flex-col sm:flex-row gap-4"
+              className="flex flex-col sm:flex-row gap-4 mb-10"
             >
               <a
                 href="#contact"
@@ -105,6 +105,31 @@ function HeroSection() {
               >
                 Explore alphaScreen
               </a>
+            </motion.div>
+
+            {/* Trust indicators */}
+            <motion.div
+              initial="hidden"
+              animate="visible"
+              custom={5}
+              variants={fadeUp}
+              className="flex flex-col gap-3 border-t border-[#0A1547]/8 pt-8"
+            >
+              {[
+                { Icon: Clock, label: "Reclaim Your Time", sub: "Hours back per week", color: "#A380F6" },
+                { Icon: Scale, label: "Unbiased, Every Time", sub: "Consistent structured evaluation", color: "#02ABE0" },
+                { Icon: Target, label: "Precision Candidate Fit", sub: "Role-specific criteria, every role", color: "#02D99D" },
+              ].map(({ Icon, label, sub, color }) => (
+                <div key={label} className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${color}14` }}>
+                    <Icon className="w-4 h-4" style={{ color }} strokeWidth={1.75} />
+                  </div>
+                  <div>
+                    <span className="text-sm font-semibold text-[#0A1547]">{label}</span>
+                    <span className="text-sm text-[#0A1547]/40 ml-2">{sub}</span>
+                  </div>
+                </div>
+              ))}
             </motion.div>
           </div>
 
