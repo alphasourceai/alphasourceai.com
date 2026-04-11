@@ -657,53 +657,49 @@ function CTASection() {
 
   return (
     <section id="contact" className="py-24 bg-[#F8F9FD]">
-      <div className="max-w-7xl mx-auto px-6 lg:px-8">
-        <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-start">
-          {/* Left */}
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, amount: 0.3 }}
-            variants={fadeUp}
+      <div className="max-w-5xl mx-auto px-6 lg:px-8">
+        <motion.div
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+          variants={fadeUp}
+          className="overflow-hidden rounded-2xl flex flex-col lg:flex-row"
+          style={{ boxShadow: "0 12px 48px rgba(10,21,71,0.13), 0 0 0 1px rgba(10,21,71,0.06)" }}
+        >
+          {/* Left — dark navy panel */}
+          <div
+            className="lg:w-[40%] flex-shrink-0 p-10 flex flex-col justify-between"
+            style={{ backgroundColor: "#0A1547" }}
           >
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#A380F6]/10 text-sm font-medium text-[#A380F6] mb-5">
-              Get in Touch
+            <div>
+              <h2 className="text-3xl font-black text-white leading-tight mb-4">
+                Want to See It in Action?
+              </h2>
+              <p className="text-white/60 text-sm leading-relaxed mb-8">
+                Drop your details and we'll be in touch to schedule a personalized demo.
+              </p>
+              <div className="space-y-3">
+                {[
+                  "Personalized demo at your convenience",
+                  "See alphaScreen evaluate real candidates",
+                  "No commitment required",
+                  "Backed by real-world experience",
+                ].map((item) => (
+                  <div key={item} className="flex items-center gap-3">
+                    <CheckCircle className="w-4 h-4 flex-shrink-0" style={{ color: "#02D99D" }} />
+                    <span className="text-white/70 text-sm">{item}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <h2 className="text-4xl lg:text-5xl font-black text-[#0A1547] leading-tight mb-5">
-              Want to See It in Action?
-            </h2>
-            <p className="text-lg text-[#0A1547]/60 leading-relaxed mb-8">
-              Drop your details and we'll be in touch to schedule a personalized demo.
-            </p>
+          </div>
 
-            <div className="space-y-3">
-              {[
-                "Personalized demo at your convenience",
-                "See alphaScreen evaluate real candidates",
-                "No commitment required",
-                "Backed by real-world experience",
-              ].map((item) => (
-                <div key={item} className="flex items-center gap-3">
-                  <CheckCircle className="w-4 h-4 text-[#02D99D] flex-shrink-0" />
-                  <span className="text-[#0A1547]/70 text-sm">{item}</span>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-
-          {/* Right — form */}
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, amount: 0.3 }}
-            custom={1}
-            variants={fadeUp}
-            className="bg-white rounded-2xl p-8 border border-gray-100 shadow-md"
-          >
+          {/* Right — white form panel */}
+          <div className="flex-1 bg-white p-10">
             {submitted ? (
-              <div className="text-center py-8">
-                <div className="w-14 h-14 rounded-full bg-[#02D99D]/15 flex items-center justify-center mx-auto mb-4">
-                  <CheckCircle className="w-7 h-7 text-[#02D99D]" />
+              <div className="h-full flex flex-col items-center justify-center text-center py-8">
+                <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: "#02D99D18" }}>
+                  <CheckCircle className="w-7 h-7" style={{ color: "#02D99D" }} />
                 </div>
                 <h3 className="text-xl font-bold text-[#0A1547] mb-2">Thanks! We'll be in touch.</h3>
                 <p className="text-[#0A1547]/60 text-sm">
@@ -785,8 +781,8 @@ function CTASection() {
                 </form>
               </>
             )}
-          </motion.div>
-        </div>
+          </div>
+        </motion.div>
       </div>
     </section>
   );

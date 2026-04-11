@@ -80,10 +80,10 @@ export default function Footer() {
               <li>
                 <a
                   href="/#contact"
-                  className="inline-flex items-center gap-2 mt-2 px-4 py-2 text-sm font-semibold text-white rounded-lg transition-all hover:opacity-90"
-                  style={{ backgroundColor: "#A380F6" }}
+                  className="text-sm font-semibold transition-colors hover:text-white"
+                  style={{ color: "#A380F6" }}
                 >
-                  Request a Demo
+                  Request a Demo →
                 </a>
               </li>
             </ul>
