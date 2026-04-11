@@ -1,8 +1,9 @@
+import { useEffect } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { AuthProvider } from "@/context/AuthContext";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import HomePage from "@/pages/HomePage";
@@ -18,21 +19,36 @@ import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
 
+function DashboardGuard() {
+  const { isLoggedIn } = useAuth();
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setLocation("/");
+    }
+  }, [isLoggedIn, setLocation]);
+
+  if (!isLoggedIn) return null;
+
+  return (
+    <Switch>
+      <Route path="/dashboard" component={OverviewPage} />
+      <Route path="/dashboard/roles" component={RolesPage} />
+      <Route path="/dashboard/candidates" component={CandidatesPage} />
+      <Route path="/dashboard/members" component={MembersPage} />
+      <Route path="/dashboard/billing" component={BillingPage} />
+      <Route component={NotFound} />
+    </Switch>
+  );
+}
+
 function Router() {
   const [location] = useLocation();
   const isDashboard = location === "/dashboard" || location.startsWith("/dashboard/");
 
   if (isDashboard) {
-    return (
-      <Switch>
-        <Route path="/dashboard" component={OverviewPage} />
-        <Route path="/dashboard/roles" component={RolesPage} />
-        <Route path="/dashboard/candidates" component={CandidatesPage} />
-        <Route path="/dashboard/members" component={MembersPage} />
-        <Route path="/dashboard/billing" component={BillingPage} />
-        <Route component={NotFound} />
-      </Switch>
-    );
+    return <DashboardGuard />;
   }
 
   return (
