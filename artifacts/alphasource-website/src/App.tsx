@@ -2,25 +2,35 @@ import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AuthProvider } from "@/context/AuthContext";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import HomePage from "@/pages/HomePage";
 import AlphaScreenPage from "@/pages/AlphaScreenPage";
 import AboutPage from "@/pages/AboutPage";
 import TermsPage from "@/pages/TermsPage";
-import DashboardPage from "@/pages/DashboardPage";
+import OverviewPage from "@/pages/dashboard/OverviewPage";
+import RolesPage from "@/pages/dashboard/RolesPage";
+import CandidatesPage from "@/pages/dashboard/CandidatesPage";
+import MembersPage from "@/pages/dashboard/MembersPage";
+import BillingPage from "@/pages/dashboard/BillingPage";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
 
 function Router() {
   const [location] = useLocation();
-  const isFullScreen = location === "/dashboard";
+  const isDashboard = location === "/dashboard" || location.startsWith("/dashboard/");
 
-  if (isFullScreen) {
+  if (isDashboard) {
     return (
       <Switch>
-        <Route path="/dashboard" component={DashboardPage} />
+        <Route path="/dashboard" component={OverviewPage} />
+        <Route path="/dashboard/roles" component={RolesPage} />
+        <Route path="/dashboard/candidates" component={CandidatesPage} />
+        <Route path="/dashboard/members" component={MembersPage} />
+        <Route path="/dashboard/billing" component={BillingPage} />
+        <Route component={NotFound} />
       </Switch>
     );
   }
@@ -47,7 +57,9 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router />
+          <AuthProvider>
+            <Router />
+          </AuthProvider>
         </WouterRouter>
         <Toaster />
       </TooltipProvider>

@@ -1,16 +1,40 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "wouter";
+import { useAuth } from "@/context/AuthContext";
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [location] = useLocation();
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [location, setLocation] = useLocation();
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const { login } = useAuth();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", onScroll);
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setLoginOpen(false);
+      }
+    };
+    if (loginOpen) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [loginOpen]);
+
+  const handleSignIn = (e: React.FormEvent) => {
+    e.preventDefault();
+    login();
+    setLoginOpen(false);
+    setMobileOpen(false);
+    setLocation("/dashboard");
+  };
 
   const navLinks = [
     { label: "Home", href: "/" },
@@ -57,20 +81,62 @@ export default function Navbar() {
             ))}
           </div>
 
-          {/* CTA Button */}
-          <div className="hidden md:flex items-center gap-3">
-            <a
-              href="/dashboard"
-              className="px-5 py-2.5 text-sm font-semibold text-[#0A1547] border border-[#0A1547]/15 rounded-full transition-all duration-200 hover:border-[#A380F6] hover:text-[#A380F6] hover:shadow-sm active:scale-95 flex items-center gap-2"
-              data-testid="nav-login-button"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
-                <polyline points="10 17 15 12 10 7"/>
-                <line x1="15" y1="12" x2="3" y2="12"/>
-              </svg>
-              Log In
-            </a>
+          {/* Log In button + popout */}
+          <div className="hidden md:flex items-center gap-3" ref={dropdownRef}>
+            <div className="relative">
+              <button
+                onClick={() => setLoginOpen(!loginOpen)}
+                className="px-5 py-2.5 text-sm font-semibold text-[#0A1547] border border-[#0A1547]/15 rounded-full transition-all duration-200 hover:border-[#A380F6] hover:text-[#A380F6] hover:shadow-sm active:scale-95 flex items-center gap-2"
+                data-testid="nav-login-button"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                  <polyline points="10 17 15 12 10 7"/>
+                  <line x1="15" y1="12" x2="3" y2="12"/>
+                </svg>
+                Log In
+              </button>
+
+              {loginOpen && (
+                <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-2xl shadow-xl border border-gray-100 p-6 z-50">
+                  <div className="mb-5">
+                    <h3 className="text-base font-black text-[#0A1547] mb-1">Sign In to alphaSource</h3>
+                    <p className="text-xs text-[#0A1547]/50">Access your client dashboard</p>
+                  </div>
+
+                  <form onSubmit={handleSignIn} className="space-y-3">
+                    <input
+                      type="email"
+                      placeholder="Email address"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/30 focus:border-[#A380F6] transition-all"
+                    />
+                    <input
+                      type="password"
+                      placeholder="Password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/30 focus:border-[#A380F6] transition-all"
+                    />
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 text-sm font-semibold text-white rounded-full transition-all hover:opacity-90 active:scale-[0.99]"
+                      style={{ backgroundColor: "#A380F6" }}
+                    >
+                      Sign In
+                    </button>
+                  </form>
+
+                  <p className="mt-4 text-center text-xs text-[#0A1547]/40">
+                    Need access?{" "}
+                    <a href="/#contact" className="text-[#A380F6] hover:underline" onClick={() => setLoginOpen(false)}>
+                      Get in touch
+                    </a>
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Mobile hamburger */}
@@ -114,14 +180,31 @@ export default function Navbar() {
               {link.label}
             </a>
           ))}
-          <div className="pt-2">
-            <a
-              href="/dashboard"
-              className="block text-center px-5 py-2.5 text-sm font-semibold text-[#0A1547] border border-[#0A1547]/15 rounded-full"
-              onClick={() => setMobileOpen(false)}
-            >
-              Log In
-            </a>
+          <div className="pt-3 border-t border-gray-100 mt-3">
+            <p className="text-xs font-semibold text-[#0A1547]/40 uppercase tracking-wider mb-3 px-3">Client Login</p>
+            <form onSubmit={handleSignIn} className="space-y-2 px-3">
+              <input
+                type="email"
+                placeholder="Email address"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm placeholder-gray-400 focus:outline-none"
+              />
+              <input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm placeholder-gray-400 focus:outline-none"
+              />
+              <button
+                type="submit"
+                className="w-full py-2.5 text-sm font-semibold text-white rounded-full"
+                style={{ backgroundColor: "#A380F6" }}
+              >
+                Sign In
+              </button>
+            </form>
           </div>
         </div>
       )}
