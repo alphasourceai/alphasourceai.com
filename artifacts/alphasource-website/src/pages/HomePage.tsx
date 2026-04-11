@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowRight, CheckCircle } from "lucide-react";
+import { ArrowRight, CheckCircle, Target, Sprout, Clock, Scale } from "lucide-react";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 28 },
@@ -299,28 +299,28 @@ function PeopleDrivenSection() {
             custom={1}
             variants={fadeUp}
           >
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-5">
               {[
                 {
-                  icon: "🎯",
+                  Icon: Target,
                   title: "Find the Right Fit",
                   description: "Surface candidates who align with your role and culture — not just keywords on a page.",
                   color: "#A380F6",
                 },
                 {
-                  icon: "🌱",
+                  Icon: Sprout,
                   title: "Develop Raw Talent",
                   description: "Give overlooked candidates the chance to show what they're truly capable of.",
                   color: "#02D99D",
                 },
                 {
-                  icon: "⏱",
+                  Icon: Clock,
                   title: "Reclaim Your Time",
                   description: "AI handles the screening grind so your team can focus on relationships and decisions.",
                   color: "#02ABE0",
                 },
                 {
-                  icon: "⚖️",
+                  Icon: Scale,
                   title: "Fair for Everyone",
                   description: "Every candidate gets the same interview. Consistent, unbiased, and respectful.",
                   color: "#A380F6",
@@ -332,12 +332,15 @@ function PeopleDrivenSection() {
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
                   transition={{ delay: i * 0.1, duration: 0.5 }}
-                  className="bg-[#F8F9FD] rounded-2xl p-5 border border-gray-100"
+                  className="bg-gray-50 rounded-2xl p-6"
                   data-testid={`pillar-card-${i}`}
                 >
-                  <div className="text-2xl mb-3">{card.icon}</div>
-                  <h3 className="text-sm font-bold text-[#0A1547] mb-1.5">{card.title}</h3>
-                  <p className="text-xs text-[#0A1547]/60 leading-relaxed">{card.description}</p>
+                  <card.Icon
+                    className="mb-5"
+                    style={{ color: card.color, width: 28, height: 28, strokeWidth: 1.75 }}
+                  />
+                  <h3 className="text-[15px] font-bold text-[#0A1547] mb-2">{card.title}</h3>
+                  <p className="text-sm text-gray-500 leading-relaxed">{card.description}</p>
                 </motion.div>
               ))}
             </div>
