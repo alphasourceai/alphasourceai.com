@@ -412,7 +412,7 @@ function CTASection() {
                   </div>
                   <button
                     type="submit"
-                    className="w-full py-3.5 text-sm font-semibold text-white rounded-xl transition-all hover:opacity-90 hover:shadow-md active:scale-[0.99]"
+                    className="w-full py-3.5 text-sm font-semibold text-white rounded-full transition-all hover:opacity-90 hover:shadow-md active:scale-[0.99]"
                     style={{ backgroundColor: "#A380F6" }}
                     data-testid="button-submit"
                   >

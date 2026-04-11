@@ -9,7 +9,7 @@ export default function NotFound() {
         <p className="text-[#0A1547]/60 mb-8">The page you're looking for doesn't exist.</p>
         <Link
           href="/"
-          className="inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold text-white rounded-xl"
+          className="inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold text-white rounded-full"
           style={{ backgroundColor: "#A380F6" }}
         >
           Back to Home

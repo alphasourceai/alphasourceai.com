@@ -66,7 +66,7 @@ export default function DashboardPage() {
           </div>
 
           <button
-            className="w-full py-3 text-sm font-semibold text-white rounded-xl transition-all hover:opacity-90 active:scale-[0.99] mb-4"
+            className="w-full py-3 text-sm font-semibold text-white rounded-full transition-all hover:opacity-90 active:scale-[0.99] mb-4"
             style={{ backgroundColor: "#A380F6" }}
             onClick={() => {}}
           >

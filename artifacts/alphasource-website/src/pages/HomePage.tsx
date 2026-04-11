@@ -91,7 +91,7 @@ function HeroSection() {
             >
               <a
                 href="#contact"
-                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 text-base font-semibold text-white rounded-xl transition-all hover:opacity-90 hover:shadow-lg active:scale-95"
+                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 text-base font-semibold text-white rounded-full transition-all hover:opacity-90 hover:shadow-lg active:scale-95"
                 style={{ backgroundColor: "#A380F6" }}
                 data-testid="hero-cta-primary"
               >
@@ -100,7 +100,7 @@ function HeroSection() {
               </a>
               <a
                 href="/alphascreen"
-                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 text-base font-semibold text-[#0A1547] bg-white border border-[#0A1547]/10 rounded-xl transition-all hover:border-[#A380F6] hover:text-[#A380F6] hover:shadow-md active:scale-95"
+                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 text-base font-semibold text-[#0A1547] bg-white border border-[#0A1547]/10 rounded-full transition-all hover:border-[#A380F6] hover:text-[#A380F6] hover:shadow-md active:scale-95"
                 data-testid="hero-cta-secondary"
               >
                 Explore alphaScreen
@@ -108,103 +108,154 @@ function HeroSection() {
             </motion.div>
           </div>
 
-          {/* Right — UI Mockup */}
+          {/* Right — AI Agent Panel */}
           <motion.div
-            initial={{ opacity: 0, x: 30, scale: 0.97 }}
+            initial={{ opacity: 0, x: 36, scale: 0.95 }}
             animate={{ opacity: 1, x: 0, scale: 1 }}
             transition={{ delay: 0.3, duration: 0.7, ease: "easeOut" }}
-            className="relative"
+            className="relative px-6 py-8"
           >
-            <div
-              className="relative bg-white rounded-2xl shadow-2xl overflow-hidden"
-              style={{ boxShadow: "0 0 0 1.5px rgba(2,171,224,0.3), 0 24px 64px rgba(10,21,71,0.15)" }}
+            {/* Main floating card */}
+            <motion.div
+              animate={{ y: [0, -10, 0] }}
+              transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+              style={{ rotate: -2 }}
+              className="relative"
             >
-              {/* Panel header */}
-              <div className="bg-white border-b border-gray-100 px-5 py-4 flex items-center gap-3">
-                <img src="/alpha-symbol.png" alt="Alpha" className="h-8 w-8" />
-                <div>
-                  <div className="text-sm font-semibold text-[#0A1547]">alphaScreen</div>
-                  <div className="text-xs text-gray-400">AI Interview Agent</div>
+              <div
+                className="bg-white rounded-2xl overflow-hidden"
+                style={{ boxShadow: "0 28px 80px rgba(10,21,71,0.18), 0 0 0 1px rgba(10,21,71,0.06)" }}
+              >
+                {/* Window chrome */}
+                <div className="bg-gray-50 border-b border-gray-100 px-4 py-3 flex items-center gap-3">
+                  <div className="flex gap-1.5 flex-shrink-0">
+                    <div className="w-3 h-3 rounded-full bg-[#FF5F57]" />
+                    <div className="w-3 h-3 rounded-full bg-[#FFBD2E]" />
+                    <div className="w-3 h-3 rounded-full bg-[#28C840]" />
+                  </div>
+                  <div className="flex-1 text-center">
+                    <span className="text-xs font-semibold text-gray-400">alphaScreen Agent Panel</span>
+                  </div>
                 </div>
-              </div>
 
-              {/* Panel body */}
-              <div className="p-5 space-y-3">
-                <div className="bg-gray-50 rounded-xl px-4 py-3 text-sm font-medium text-[#0A1547] text-center border border-gray-100">
-                  Candidate Interview in Progress
-                </div>
-
-                {[
-                  {
-                    icon: "🎙",
-                    title: "AI Avatar Interview",
-                    sub: "Consistent. Unbiased. Thorough.",
-                    color: "#A380F6",
-                  },
-                  {
-                    icon: "📊",
-                    title: "Resume + Interview Analysis",
-                    sub: "Complete candidate picture",
-                    color: "#02D99D",
-                  },
-                  {
-                    icon: "👁",
-                    title: "Non-verbal cue detection",
-                    sub: "Deeper insight, faster decisions",
-                    color: "#02ABE0",
-                  },
-                ].map((item, i) => (
-                  <motion.div
-                    key={item.title}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.6 + i * 0.1, duration: 0.4 }}
-                    className="flex items-start gap-3 p-3 rounded-xl border border-gray-100 bg-white hover:border-[#A380F6]/30 transition-colors"
-                  >
-                    <span className="text-lg">{item.icon}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold text-[#0A1547]">{item.title}</div>
-                      <div className="text-xs text-gray-400 mt-0.5">{item.sub}</div>
+                {/* Body */}
+                <div className="p-4 space-y-3">
+                  {/* Agent row */}
+                  <div className="flex items-start gap-3 p-3 bg-[#F8F9FD] rounded-xl">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "#A380F615" }}>
+                      <img src="/alpha-symbol.png" alt="alpha" className="w-5 h-5" />
                     </div>
-                    <div
-                      className="text-xs font-medium px-2 py-1 rounded-lg"
-                      style={{ backgroundColor: `${item.color}18`, color: item.color }}
-                    >
-                      Live
+                    <div>
+                      <div className="text-sm font-bold text-[#0A1547]">AI Interview Agent</div>
+                      <div className="text-xs text-gray-400 mt-0.5">Evaluating candidates now.</div>
                     </div>
-                  </motion.div>
-                ))}
+                  </div>
 
-                <div className="flex justify-end">
-                  <div
-                    className="text-sm font-semibold px-4 py-2 rounded-lg text-white"
-                    style={{ backgroundColor: "#02D99D" }}
-                  >
-                    Analyzing &rsaquo;
+                  {/* Active evaluations */}
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Active Evaluations</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: "#02D99D18", color: "#02D99D" }}>Optimal</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {[
+                      { label: "Candidate Screening", pct: 78, from: "#A380F6", to: "#c8a8f8", icon: (
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#A380F6" strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+                      )},
+                      { label: "Fit Analysis", pct: 91, from: "#02ABE0", to: "#02D99D", icon: (
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#02ABE0" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                      )},
+                    ].map((row, i) => (
+                      <motion.div
+                        key={row.label}
+                        initial={{ opacity: 0, x: 8 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.7 + i * 0.15, duration: 0.4 }}
+                        className="bg-white border border-gray-100 rounded-xl p-2.5"
+                      >
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <div className="w-5 h-5 rounded-md flex items-center justify-center" style={{ backgroundColor: `${row.from}18` }}>
+                            {row.icon}
+                          </div>
+                          <span className="text-xs font-semibold text-[#0A1547]">{row.label}</span>
+                        </div>
+                        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${row.pct}%` }}
+                            transition={{ delay: 0.9 + i * 0.15, duration: 0.8, ease: "easeOut" }}
+                            className="h-full rounded-full"
+                            style={{ background: `linear-gradient(90deg, ${row.from}, ${row.to})` }}
+                          />
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+
+                  {/* Terminal */}
+                  <div className="bg-[#0A1547] rounded-xl p-3">
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-[#02D99D]" />
+                      <span className="text-[10px] font-bold font-mono tracking-wide" style={{ color: "#02D99D" }}>System Logs</span>
+                    </div>
+                    {[
+                      { text: "> Analyzing resume content...", color: "rgba(255,255,255,0.5)", delay: 1.0 },
+                      { text: "> 94% match confidence detected.", color: "#02D99D", delay: 1.2 },
+                      { text: "> Initiating recommendation report.", color: "rgba(255,255,255,0.5)", delay: 1.4 },
+                    ].map((line) => (
+                      <motion.div
+                        key={line.text}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: line.delay, duration: 0.4 }}
+                        className="text-[10px] font-mono leading-relaxed"
+                        style={{ color: line.color }}
+                      >
+                        {line.text}
+                      </motion.div>
+                    ))}
                   </div>
                 </div>
               </div>
-            </div>
-
-            {/* Floating badges */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.8, duration: 0.4 }}
-              className="absolute -top-4 -right-4 bg-white rounded-xl shadow-lg px-3 py-2 flex items-center gap-2 border border-gray-100"
-            >
-              <div className="w-2 h-2 rounded-full bg-[#02D99D] animate-pulse" />
-              <span className="text-xs font-semibold text-[#0A1547]">Interview Active</span>
             </motion.div>
 
+            {/* Floating badge — top right */}
             <motion.div
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 1.0, duration: 0.4 }}
-              className="absolute -bottom-4 -left-4 bg-white rounded-xl shadow-lg px-3 py-2 border border-gray-100"
+              initial={{ opacity: 0, x: 12, scale: 0.85 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              transition={{ delay: 0.9, duration: 0.5 }}
+              className="absolute top-0 right-0"
             >
-              <div className="text-xs font-semibold text-[#0A1547]">Anytime. Anywhere.</div>
-              <div className="text-[10px] text-gray-400 mt-0.5">Candidates interview on their schedule</div>
+              <motion.div
+                animate={{ y: [0, -7, 0] }}
+                transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut", delay: 0.8 }}
+                className="bg-white rounded-2xl shadow-xl px-4 py-3 flex items-center gap-3 border border-gray-100"
+              >
+                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ border: "2px solid #A380F6" }}>
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: "#A380F6" }} />
+                </div>
+                <div>
+                  <div className="text-[9px] uppercase tracking-widest font-bold text-gray-400">Match Score</div>
+                  <div className="text-sm font-black text-[#0A1547]">94.3% Fit</div>
+                </div>
+              </motion.div>
+            </motion.div>
+
+            {/* Floating badge — bottom left */}
+            <motion.div
+              initial={{ opacity: 0, x: -12, scale: 0.85 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              transition={{ delay: 1.1, duration: 0.5 }}
+              className="absolute bottom-0 left-0"
+            >
+              <motion.div
+                animate={{ y: [0, -7, 0] }}
+                transition={{ duration: 3.8, repeat: Infinity, ease: "easeInOut", delay: 1.5 }}
+                className="bg-white rounded-2xl shadow-xl px-4 py-3 flex items-center gap-2 border border-gray-100"
+              >
+                <div className="w-2 h-2 rounded-full bg-[#02D99D] animate-pulse flex-shrink-0" />
+                <span className="text-sm font-bold text-[#0A1547]">Interviews Active</span>
+              </motion.div>
             </motion.div>
           </motion.div>
         </div>
@@ -396,7 +447,7 @@ function AlphaScreenFeatureSection() {
             </p>
             <a
               href="/alphascreen"
-              className="inline-flex items-center justify-center gap-2 px-6 py-3.5 text-base font-semibold text-white rounded-xl transition-all hover:opacity-90 hover:shadow-lg active:scale-95"
+              className="inline-flex items-center justify-center gap-2 px-6 py-3.5 text-base font-semibold text-white rounded-full transition-all hover:opacity-90 hover:shadow-lg active:scale-95"
               style={{ backgroundColor: "#A380F6" }}
               data-testid="alphascreen-section-cta"
             >
@@ -687,7 +738,7 @@ function CTASection() {
                   </div>
                   <button
                     type="submit"
-                    className="w-full py-3.5 text-sm font-semibold text-white rounded-xl transition-all hover:opacity-90 hover:shadow-md active:scale-[0.99]"
+                    className="w-full py-3.5 text-sm font-semibold text-white rounded-full transition-all hover:opacity-90 hover:shadow-md active:scale-[0.99]"
                     style={{ backgroundColor: "#A380F6" }}
                     data-testid="button-submit"
                   >

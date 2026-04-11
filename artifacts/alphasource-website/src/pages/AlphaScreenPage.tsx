@@ -80,7 +80,7 @@ function HeroSection() {
           >
             <a
               href="#request-demo"
-              className="inline-flex items-center justify-center gap-2 px-6 py-3.5 text-base font-semibold text-white rounded-xl transition-all hover:opacity-90 hover:shadow-lg active:scale-95"
+              className="inline-flex items-center justify-center gap-2 px-6 py-3.5 text-base font-semibold text-white rounded-full transition-all hover:opacity-90 hover:shadow-lg active:scale-95"
               style={{ backgroundColor: "#A380F6" }}
               data-testid="alphascreen-hero-cta"
             >
@@ -89,7 +89,7 @@ function HeroSection() {
             </a>
             <a
               href="#how-it-works"
-              className="inline-flex items-center justify-center gap-2 px-6 py-3.5 text-base font-semibold text-[#0A1547] bg-white border border-[#0A1547]/10 rounded-xl transition-all hover:border-[#A380F6] hover:text-[#A380F6] hover:shadow-md active:scale-95"
+              className="inline-flex items-center justify-center gap-2 px-6 py-3.5 text-base font-semibold text-[#0A1547] bg-white border border-[#0A1547]/10 rounded-full transition-all hover:border-[#A380F6] hover:text-[#A380F6] hover:shadow-md active:scale-95"
               data-testid="alphascreen-how-it-works"
             >
               See How It Works
@@ -476,7 +476,7 @@ function DemoSection() {
               </div>
               <button
                 type="submit"
-                className="w-full py-3.5 text-sm font-semibold text-white rounded-xl transition-all hover:opacity-90 hover:shadow-md active:scale-[0.99]"
+                className="w-full py-3.5 text-sm font-semibold text-white rounded-full transition-all hover:opacity-90 hover:shadow-md active:scale-[0.99]"
                 style={{ backgroundColor: "#A380F6" }}
                 data-testid="button-submit"
               >
