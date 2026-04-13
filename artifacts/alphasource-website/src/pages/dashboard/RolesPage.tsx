@@ -172,8 +172,12 @@ export default function RolesPage() {
 
             {/* Interview Type */}
             <div className="w-44">
-              <label className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 block mb-1.5">
+              <label className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 flex items-center gap-1 mb-1.5">
                 Interview Type
+                <InfoTooltip
+                  content="Basic: quick screening questions. Detailed: in-depth competency questions. Technical: role-specific skills and domain knowledge."
+                  side="bottom"
+                />
               </label>
               <div className="relative">
                 <select
@@ -221,7 +225,7 @@ export default function RolesPage() {
                   ) : (
                     <>
                       <Upload className="w-4 h-4 flex-shrink-0 text-gray-400" />
-                      <span className="text-xs text-gray-400">Drag JD here or click to browse</span>
+                      <span className="text-xs text-gray-400">PDF, DOCX, or DOC — drag here or click to browse</span>
                     </>
                   )}
                 </div>
