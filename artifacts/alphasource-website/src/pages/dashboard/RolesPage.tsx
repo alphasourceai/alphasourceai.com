@@ -4,11 +4,11 @@ import {
   Upload,
   Trash2,
   Copy,
-  Info,
   X,
   ChevronDown,
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
+import InfoTooltip from "@/components/InfoTooltip";
 
 type InterviewType = "Basic" | "Detailed" | "Technical";
 
@@ -229,25 +229,25 @@ export default function RolesPage() {
                 <th className="text-left px-4 py-3.5 whitespace-nowrap">
                   <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">
                     Usage
-                    <Info className="w-3 h-3 text-[#0A1547]/25" />
+                    <InfoTooltip content="Interviews used vs. remaining quota for this role" />
                   </span>
                 </th>
                 <th className="text-center px-4 py-3.5 whitespace-nowrap">
                   <span className="flex items-center justify-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">
                     Rubric
-                    <Info className="w-3 h-3 text-[#0A1547]/25" />
+                    <InfoTooltip content="AI-generated scoring rubric for evaluating candidates" />
                   </span>
                 </th>
                 <th className="text-center px-4 py-3.5 whitespace-nowrap">
                   <span className="flex items-center justify-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">
                     JD
-                    <Info className="w-3 h-3 text-[#0A1547]/25" />
+                    <InfoTooltip content="Job description document attached to this role" />
                   </span>
                 </th>
                 <th className="text-left px-4 py-3.5 whitespace-nowrap">
                   <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">
                     Interview Link
-                    <Info className="w-3 h-3 text-[#0A1547]/25" />
+                    <InfoTooltip content="Shareable link for candidates to start their AI interview" />
                   </span>
                 </th>
                 <th className="text-center px-4 py-3.5 pr-6 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 whitespace-nowrap">

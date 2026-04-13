@@ -7,9 +7,9 @@ import {
   Download,
   FileDown,
   X,
-  Info,
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
+import InfoTooltip from "@/components/InfoTooltip";
 
 /* ── Types ──────────────────────────────────────────── */
 interface SubScore {
@@ -475,17 +475,17 @@ export default function CandidatesPage() {
                 </th>
                 <th className="text-left px-4 py-3.5 whitespace-nowrap">
                   <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">
-                    Resume <Info className="w-3 h-3 text-[#0A1547]/20" />
+                    Resume <InfoTooltip content="AI-analyzed resume score out of 100" />
                   </span>
                 </th>
                 <th className="text-left px-4 py-3.5 whitespace-nowrap">
                   <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">
-                    Interview <Info className="w-3 h-3 text-[#0A1547]/20" />
+                    Interview <InfoTooltip content="AI-scored interview performance out of 100" />
                   </span>
                 </th>
                 <th className="text-left px-4 py-3.5 whitespace-nowrap">
                   <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">
-                    Overall <Info className="w-3 h-3 text-[#0A1547]/20" />
+                    Overall <InfoTooltip content="Combined weighted score from resume and interview" />
                   </span>
                 </th>
                 <th className="text-left px-4 py-3.5 pr-6 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 whitespace-nowrap hidden sm:table-cell">
