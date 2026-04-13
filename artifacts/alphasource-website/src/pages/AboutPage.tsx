@@ -56,19 +56,12 @@ function TeamSection() {
       bio: "Brings a gift for connecting with and engaging diverse audiences. Brent widens the bridge between opportunity and the people who deserve a shot.",
       color: "#02ABE0",
     },
-    {
-      name: "Destinee Konecny",
-      role: "Partner",
-      photo: "/headshot-destinee.jpg",
-      bio: "Dental operations veteran with a passion for people and strategy. Destinee turns real-world frustrations into tools that make work feel human again.",
-      color: "#02D99D",
-    },
   ];
 
   return (
     <section className="py-24 bg-white">
       <div className="max-w-7xl mx-auto px-6 lg:px-8">
-        <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+        <div className="grid md:grid-cols-2 gap-6 max-w-2xl mx-auto">
           {team.map((member, i) => (
             <motion.div
               key={member.name}
@@ -244,7 +237,7 @@ function StorySection() {
                   color: "#A380F6",
                 },
                 {
-                  text: "Jason and Destinee, dental operations veterans, saw the talent gaps and data fatigue up close. Brent widened the bridge between opportunity and the people who deserve a real shot.",
+                  text: "Jason, a dental operations veteran, saw the talent gaps and data fatigue up close. Brent widened the bridge between opportunity and the people who deserve a real shot.",
                   color: "#02ABE0",
                 },
                 {

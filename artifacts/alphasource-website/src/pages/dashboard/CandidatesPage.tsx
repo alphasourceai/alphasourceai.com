@@ -232,12 +232,33 @@ function riskColor(risk: "Low" | "Medium" | "High"): string {
   return risk === "Low" ? "#02D99D" : risk === "Medium" ? "#F0A500" : "#FF6B6B";
 }
 
+/* ── Sub-score color by value ───────────────────────── */
+function subScoreColor(score: number): string {
+  if (score >= 85) return "#02D99D";
+  if (score >= 70) return "#02ABE0";
+  return "#A380F6";
+}
+
+const LABEL_TOOLTIPS: Record<string, string> = {
+  Experience:  "Depth and relevance of prior work history to this role",
+  Skills:      "Technical and role-specific competency alignment",
+  Education:   "Credential match against stated educational requirements",
+  Clarity:     "How clearly the candidate expressed their thoughts",
+  Confidence:  "Composure and assurance demonstrated throughout the interview",
+  Engagement:  "Level of enthusiasm and active participation shown",
+};
+
 /* ── Sub-components ─────────────────────────────────── */
-function ScoreBar({ label, score, color }: SubScore) {
+function ScoreBar({ label, score }: SubScore) {
+  const color = subScoreColor(score);
+  const tip = LABEL_TOOLTIPS[label];
   return (
     <div className="mb-3 last:mb-0">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-semibold text-[#0A1547]/60">{label}</span>
+        <span className="flex items-center gap-1 text-xs font-semibold text-[#0A1547]/60">
+          {label}
+          {tip && <InfoTooltip content={tip} side="top" iconClassName="w-2.5 h-2.5 text-[#0A1547]/20" />}
+        </span>
         <span className="text-xs font-black" style={{ color }}>{score}%</span>
       </div>
       <div className="w-full bg-gray-100 rounded-full h-1.5">
@@ -636,7 +657,7 @@ export default function CandidatesPage() {
                           {c.overall !== null ? (
                             <div className="min-w-[52px]">
                               <span
-                                className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-black"
+                                className="inline-flex items-center px-3.5 py-1.5 rounded-xl text-sm font-black"
                                 style={{ backgroundColor: scoreBg(c.overall), color: scoreColor(c.overall) }}
                               >
                                 {c.overall}%
