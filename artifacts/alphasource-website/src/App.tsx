@@ -16,6 +16,7 @@ import RolesPage from "@/pages/dashboard/RolesPage";
 import CandidatesPage from "@/pages/dashboard/CandidatesPage";
 import MembersPage from "@/pages/dashboard/MembersPage";
 import BillingPage from "@/pages/dashboard/BillingPage";
+import InterviewPage from "@/pages/InterviewPage";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -47,9 +48,18 @@ function DashboardGuard() {
 function Router() {
   const [location] = useLocation();
   const isDashboard = location === "/dashboard" || location.startsWith("/dashboard/");
+  const isInterview = location === "/interview" || location.startsWith("/interview/");
 
   if (isDashboard) {
     return <DashboardGuard />;
+  }
+
+  if (isInterview) {
+    return (
+      <Switch>
+        <Route path="/interview" component={InterviewPage} />
+      </Switch>
+    );
   }
 
   return (
