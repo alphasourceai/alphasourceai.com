@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Trash2, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import AdminLayout from "@/components/AdminLayout";
 import { useAdminClient } from "@/context/AdminClientContext";
@@ -56,20 +56,31 @@ const inputCls =
   "placeholder:text-[#0A1547]/30 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/20 " +
   "focus:border-[#A380F6] transition-all";
 
+function seedForClient(id: string): Member[] {
+  return id === "all" ? ALL_MEMBERS : (SEED[id] ?? []);
+}
+
 export default function AdminMembersPage() {
   const { selectedClient } = useAdminClient();
 
-  const initial = selectedClient.id === "all"
-    ? ALL_MEMBERS
-    : (SEED[selectedClient.id] ?? []);
-
-  const [members, setMembers]     = useState<Member[]>(initial);
+  const [members, setMembers]     = useState<Member[]>(() => seedForClient(selectedClient.id));
   const [name, setName]           = useState("");
   const [email, setEmail]         = useState("");
   const [role, setRole]           = useState<MemberRole>("Member");
   const [submitted, setSubmitted] = useState(false);
   const [sortKey, setSortKey]     = useState<SortKey | null>(null);
   const [sortDir, setSortDir]     = useState<SortDir>("asc");
+
+  /* Reset the list whenever the selected client changes */
+  useEffect(() => {
+    setMembers(seedForClient(selectedClient.id));
+    setName("");
+    setEmail("");
+    setRole("Member");
+    setSubmitted(false);
+    setSortKey(null);
+    setSortDir("asc");
+  }, [selectedClient.id]);
 
   const nameErr  = submitted && name.trim() === "";
   const emailErr = submitted && !isValidEmail(email);
