@@ -1,4 +1,6 @@
 import { Info } from "lucide-react";
+import { useState, useRef } from "react";
+import { createPortal } from "react-dom";
 
 interface InfoTooltipProps {
   content: string;
@@ -11,29 +13,62 @@ export default function InfoTooltip({
   side = "bottom",
   iconClassName = "w-3 h-3 text-[#0A1547]/25",
 }: InfoTooltipProps) {
+  const [visible, setVisible] = useState(false);
+  const [coords, setCoords] = useState({ top: 0, left: 0 });
+  const triggerRef = useRef<HTMLSpanElement>(null);
+
+  const show = () => {
+    if (triggerRef.current) {
+      const r = triggerRef.current.getBoundingClientRect();
+      setCoords({
+        top:  side === "bottom" ? r.bottom + 8 : r.top - 8,
+        left: r.left + r.width / 2,
+      });
+    }
+    setVisible(true);
+  };
+
+  const hide = () => setVisible(false);
+
+  const translateY = side === "top" ? "-100%" : "0%";
+
   return (
-    <span className="relative group/tip inline-flex items-center cursor-default">
+    <span
+      ref={triggerRef}
+      className="inline-flex items-center cursor-default"
+      onMouseEnter={show}
+      onMouseLeave={hide}
+      onFocus={show}
+      onBlur={hide}
+    >
       <Info className={iconClassName} />
-      <span
-        className={[
-          "pointer-events-none absolute z-50 w-max max-w-[220px] rounded-xl px-3 py-2.5",
-          "bg-[#0A1547] text-white text-[11px] font-medium leading-snug shadow-xl whitespace-normal",
-          "opacity-0 group-hover/tip:opacity-100 transition-opacity duration-150",
-          "left-1/2 -translate-x-1/2",
-          side === "top" ? "bottom-full mb-2" : "top-full mt-2",
-        ].join(" ")}
-        role="tooltip"
-      >
-        {content}
-        <span
-          className={[
-            "absolute left-1/2 -translate-x-1/2 border-4 border-transparent",
-            side === "top"
-              ? "top-full border-t-[#0A1547]"
-              : "bottom-full border-b-[#0A1547]",
-          ].join(" ")}
-        />
-      </span>
+
+      {visible &&
+        createPortal(
+          <span
+            role="tooltip"
+            className="fixed z-[9999] w-max max-w-[260px] rounded-xl px-3 py-2.5
+                       bg-[#0A1547] text-white text-[11px] font-medium leading-snug
+                       shadow-xl whitespace-normal pointer-events-none"
+            style={{
+              top:       coords.top,
+              left:      coords.left,
+              transform: `translateX(-50%) translateY(${translateY})`,
+            }}
+          >
+            {content}
+            {/* Arrow */}
+            <span
+              className={[
+                "absolute left-1/2 -translate-x-1/2 border-4 border-transparent",
+                side === "top"
+                  ? "top-full border-t-[#0A1547]"
+                  : "bottom-full border-b-[#0A1547]",
+              ].join(" ")}
+            />
+          </span>,
+          document.body
+        )}
     </span>
   );
 }

@@ -84,17 +84,20 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
         <div className={`flex items-center border-b border-gray-100 flex-shrink-0 h-14
           ${collapsed ? "justify-center px-0" : "justify-between px-4"}`}>
           {collapsed ? (
+            /* Collapsed: alpha symbol + expand carets stacked */
             <button
-              className="hidden lg:flex p-2 rounded-lg text-[#0A1547]/30 hover:text-[#0A1547] transition-colors"
+              className="hidden lg:flex flex-col items-center gap-0.5 py-1.5 px-2 rounded-xl
+                         text-[#0A1547]/30 hover:text-[#A380F6] transition-colors group"
               onClick={() => setCollapsed(false)}
               title="Expand sidebar"
             >
-              <img src="/alpha-symbol.png" alt="αS" className="w-6 h-6 object-contain" />
+              <img src="/alpha-symbol.png" alt="αS" className="w-8 h-8 object-contain" />
+              <ChevronsRight className="w-3.5 h-3.5 text-[#A380F6]/50 group-hover:text-[#A380F6] transition-colors" />
             </button>
           ) : (
             <>
               <Link href="/" onClick={() => setMobileOpen(false)}>
-                <img src="/logo-dark-text.png" alt="alphaSource AI" className="h-6 w-auto" />
+                <img src="/logo-dark-text.png" alt="alphaSource AI" className="h-8 w-auto" />
               </Link>
               <div className="flex items-center gap-1">
                 <button
