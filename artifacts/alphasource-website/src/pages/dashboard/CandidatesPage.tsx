@@ -523,7 +523,7 @@ export default function CandidatesPage() {
         <div className="flex items-center gap-2">
           <label className="text-xs font-semibold text-[#0A1547]/50">Role</label>
           <select
-            className="text-xs font-semibold text-[#0A1547] bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] cursor-pointer"
+            className="w-24 text-xs font-semibold text-[#0A1547] bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] cursor-pointer"
             value="all"
             onChange={() => {}}
           >
