@@ -6,11 +6,22 @@ import {
   Copy,
   X,
   ChevronDown,
+  ChevronUp,
+  ChevronsUpDown,
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import InfoTooltip from "@/components/InfoTooltip";
 
 type InterviewType = "Basic" | "Detailed" | "Technical";
+type RoleSortKey = "name" | "type" | "left" | "used" | "date";
+type SortDir = "asc" | "desc";
+
+function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
+  if (!active) return <ChevronsUpDown className="w-3 h-3 text-[#0A1547]/20 flex-shrink-0" />;
+  return dir === "asc"
+    ? <ChevronUp className="w-3 h-3 text-[#A380F6] flex-shrink-0" />
+    : <ChevronDown className="w-3 h-3 text-[#A380F6] flex-shrink-0" />;
+}
 
 interface Role {
   id: number;
@@ -89,7 +100,35 @@ export default function RolesPage() {
   const [interviewType, setInterviewType] = useState<InterviewType>("Basic");
   const [jdFile, setJdFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [sortKey, setSortKey] = useState<RoleSortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleSort = (key: RoleSortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const sortedRoles = sortKey
+    ? [...PLACEHOLDER_ROLES].sort((a, b) => {
+        let av: string | number;
+        let bv: string | number;
+        switch (sortKey) {
+          case "name": av = a.name; bv = b.name; break;
+          case "type": av = a.type; bv = b.type; break;
+          case "left": av = a.left; bv = b.left; break;
+          case "used": av = a.used; bv = b.used; break;
+          case "date": av = a.id; bv = b.id; break;
+          default:     av = 0; bv = 0;
+        }
+        const cmp = typeof av === "string" ? av.localeCompare(bv as string) : (av - (bv as number));
+        return sortDir === "asc" ? cmp : -cmp;
+      })
+    : PLACEHOLDER_ROLES;
 
   const handleFile = (file: File) => {
     setJdFile(file);
@@ -220,47 +259,70 @@ export default function RolesPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100">
-                <th className="text-left px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 whitespace-nowrap">
-                  Role
+                {/* Role — sortable */}
+                <th className="text-left px-6 py-3.5 whitespace-nowrap">
+                  <button
+                    onClick={() => handleSort("name")}
+                    className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 hover:text-[#0A1547]/70 transition-colors"
+                  >
+                    Role
+                    <SortIcon active={sortKey === "name"} dir={sortDir} />
+                  </button>
                 </th>
-                <th className="text-left px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 whitespace-nowrap">
-                  Type
-                </th>
+                {/* Type — sortable */}
                 <th className="text-left px-4 py-3.5 whitespace-nowrap">
-                  <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">
+                  <button
+                    onClick={() => handleSort("type")}
+                    className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 hover:text-[#0A1547]/70 transition-colors"
+                  >
+                    Type
+                    <SortIcon active={sortKey === "type"} dir={sortDir} />
+                  </button>
+                </th>
+                {/* Usage — sortable */}
+                <th className="text-left px-4 py-3.5 whitespace-nowrap">
+                  <button
+                    onClick={() => handleSort("left")}
+                    className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 hover:text-[#0A1547]/70 transition-colors"
+                  >
                     Usage
                     <InfoTooltip content="Interviews used vs. remaining quota for this role" />
-                  </span>
+                    <SortIcon active={sortKey === "left"} dir={sortDir} />
+                  </button>
                 </th>
+                {/* Rubric — not sortable (boolean doc) */}
                 <th className="text-center px-4 py-3.5 whitespace-nowrap">
                   <span className="flex items-center justify-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">
                     Rubric
                     <InfoTooltip content="AI-generated scoring rubric for evaluating candidates" />
                   </span>
                 </th>
+                {/* JD — not sortable */}
                 <th className="text-center px-4 py-3.5 whitespace-nowrap">
                   <span className="flex items-center justify-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">
                     JD
                     <InfoTooltip content="Job description document attached to this role" />
                   </span>
                 </th>
+                {/* Interview Link */}
                 <th className="text-left px-4 py-3.5 whitespace-nowrap">
                   <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">
                     Interview Link
                     <InfoTooltip content="Shareable link for candidates to start their AI interview" />
                   </span>
                 </th>
+                {/* Delete */}
                 <th className="text-center px-4 py-3.5 pr-6 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 whitespace-nowrap">
                   Delete
                 </th>
               </tr>
             </thead>
             <tbody>
-              {PLACEHOLDER_ROLES.map((role, idx) => (
+              {sortedRoles.map((role, idx) => (
                 <tr
                   key={role.id}
                   className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors"
-                  style={idx === PLACEHOLDER_ROLES.length - 1 ? { borderBottom: "none" } : {}}
+                  style={idx === sortedRoles.length - 1 ? { borderBottom: "none" } : {}}
                 >
                   {/* Role name + date */}
                   <td className="px-6 py-4">

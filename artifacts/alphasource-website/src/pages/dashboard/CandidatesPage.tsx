@@ -2,6 +2,7 @@ import React, { useState, useRef } from "react";
 import {
   ChevronDown,
   ChevronUp,
+  ChevronsUpDown,
   RefreshCw,
   FileText,
   Download,
@@ -34,7 +35,11 @@ interface Candidate {
   unanswered: string;
   reliability: number;
   risk: "Low" | "Medium" | "High";
+  riskText: string;
 }
+
+type SortKey = "name" | "email" | "role" | "resume" | "interview" | "overall" | "created";
+type SortDir = "asc" | "desc";
 
 /* ── Placeholder data ───────────────────────────────── */
 const CANDIDATES: Candidate[] = [
@@ -64,6 +69,7 @@ const CANDIDATES: Candidate[] = [
     unanswered: "None captured.",
     reliability: 78,
     risk: "Low",
+    riskText: "Responses were consistent, specific, and authentic throughout the interview. No patterns of scripted or rehearsed answers detected.",
   },
   {
     id: 2,
@@ -90,6 +96,7 @@ const CANDIDATES: Candidate[] = [
     unanswered: "Interview not yet completed.",
     reliability: 0,
     risk: "Low",
+    riskText: "Interview not yet completed. Risk analysis will populate after the interview is finished.",
   },
   {
     id: 3,
@@ -117,6 +124,7 @@ const CANDIDATES: Candidate[] = [
     unanswered: "Q: Describe your sterilization process. — Response was incomplete.",
     reliability: 55,
     risk: "Medium",
+    riskText: "Several responses lacked specificity and occasionally repeated phrasing across multiple questions. Recommend a follow-up conversation to clarify key answers.",
   },
   {
     id: 4,
@@ -144,6 +152,7 @@ const CANDIDATES: Candidate[] = [
     unanswered: "None captured.",
     reliability: 91,
     risk: "Low",
+    riskText: "High response quality with detailed, role-specific examples throughout. Answers were natural and varied in structure, strongly indicating authentic, unprompted responses.",
   },
   {
     id: 5,
@@ -172,6 +181,7 @@ const CANDIDATES: Candidate[] = [
       "Q: Describe your patient charting workflow. — No substantive response given.\nQ: How do you handle nervous patients? — Response was incomplete.",
     reliability: 42,
     risk: "High",
+    riskText: "Multiple responses exhibited repeated generic phrasing and lacked role-specific detail. Patterns are consistent with scripted or AI-assisted answers. A live screening call is strongly recommended before proceeding.",
   },
   {
     id: 6,
@@ -199,6 +209,7 @@ const CANDIDATES: Candidate[] = [
     unanswered: "None captured.",
     reliability: 70,
     risk: "Low",
+    riskText: "Responses were generally authentic and well-grounded. Minor hesitations were contextually appropriate and not indicative of scripted patterns.",
   },
 ];
 
@@ -221,7 +232,7 @@ function riskColor(risk: "Low" | "Medium" | "High"): string {
   return risk === "Low" ? "#02D99D" : risk === "Medium" ? "#F0A500" : "#FF6B6B";
 }
 
-/* ── Sub-component: score bar ───────────────────────── */
+/* ── Sub-components ─────────────────────────────────── */
 function ScoreBar({ label, score, color }: SubScore) {
   return (
     <div className="mb-3 last:mb-0">
@@ -239,22 +250,28 @@ function ScoreBar({ label, score, color }: SubScore) {
   );
 }
 
-/* ── Sub-component: mini score cell ────────────────────*/
 function ScoreCell({ score }: { score: number | null }) {
   if (score === null) return <span className="text-[#0A1547]/25 text-sm font-semibold">—</span>;
   const color = scoreColor(score);
-  const pct = score;
   return (
     <div className="min-w-[52px]">
       <p className="text-sm font-black leading-none mb-1.5" style={{ color }}>{score}%</p>
       <div className="w-full bg-gray-100 rounded-full h-1">
-        <div className="h-1 rounded-full" style={{ width: `${pct}%`, backgroundColor: color }} />
+        <div className="h-1 rounded-full" style={{ width: `${score}%`, backgroundColor: color }} />
       </div>
     </div>
   );
 }
 
-/* ── Sub-component: expanded row ───────────────────── */
+/* ── Sort icon ──────────────────────────────────────── */
+function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
+  if (!active) return <ChevronsUpDown className="w-3 h-3 text-[#0A1547]/20 flex-shrink-0" />;
+  return dir === "asc"
+    ? <ChevronUp className="w-3 h-3 text-[#A380F6] flex-shrink-0" />
+    : <ChevronDown className="w-3 h-3 text-[#A380F6] flex-shrink-0" />;
+}
+
+/* ── Expanded row panel ─────────────────────────────── */
 function ExpandedPanel({ c }: { c: Candidate }) {
   const hasInterview = c.interview !== null;
   return (
@@ -262,20 +279,16 @@ function ExpandedPanel({ c }: { c: Candidate }) {
       {/* Action buttons */}
       <div className="flex flex-wrap gap-2 mb-5">
         {[
-          { label: "Refresh",       icon: RefreshCw },
-          { label: "Transcript",    icon: FileText },
-          { label: "Resume",        icon: Download },
-          { label: "Download PDF",  icon: FileDown },
+          { label: "Refresh",      icon: RefreshCw },
+          { label: "Transcript",   icon: FileText },
+          { label: "Resume",       icon: Download },
+          { label: "Download PDF", icon: FileDown },
         ].map(({ label, icon: Icon }) => (
           <button
             key={label}
             onClick={() => {}}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-full border transition-all hover:shadow-sm active:scale-[0.98]"
-            style={{
-              backgroundColor: "white",
-              borderColor: "rgba(10,21,71,0.12)",
-              color: "#0A1547",
-            }}
+            style={{ backgroundColor: "white", borderColor: "rgba(10,21,71,0.12)", color: "#0A1547" }}
           >
             <Icon className="w-3.5 h-3.5" />
             {label}
@@ -283,14 +296,17 @@ function ExpandedPanel({ c }: { c: Candidate }) {
         ))}
       </div>
 
-      {/* 2×2 grid of analysis cards */}
+      {/* 2×2 analysis grid */}
       <div className="grid md:grid-cols-2 gap-4">
         {/* Resume Analysis */}
         <div
           className="bg-white rounded-2xl p-5"
           style={{ border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 2px 10px rgba(10,21,71,0.04)" }}
         >
-          <p className="text-xs font-black uppercase tracking-widest text-[#0A1547]/40 mb-4">Resume Analysis</p>
+          <div className="flex items-center gap-1.5 mb-4">
+            <p className="text-xs font-black uppercase tracking-widest text-[#0A1547]/75">Resume Analysis</p>
+            <InfoTooltip content="AI analysis of the candidate's submitted resume across key evaluation dimensions" side="bottom" />
+          </div>
           <div className="mb-4">
             {c.resumeSubs.map((s) => <ScoreBar key={s.label} {...s} />)}
           </div>
@@ -305,7 +321,10 @@ function ExpandedPanel({ c }: { c: Candidate }) {
           className="bg-white rounded-2xl p-5"
           style={{ border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 2px 10px rgba(10,21,71,0.04)" }}
         >
-          <p className="text-xs font-black uppercase tracking-widest text-[#0A1547]/40 mb-4">Interview Analysis</p>
+          <div className="flex items-center gap-1.5 mb-4">
+            <p className="text-xs font-black uppercase tracking-widest text-[#0A1547]/75">Interview Analysis</p>
+            <InfoTooltip content="AI-scored evaluation of the candidate's interview performance across verbal and communication dimensions" side="bottom" />
+          </div>
           {hasInterview ? (
             <>
               <div className="mb-4">
@@ -326,7 +345,10 @@ function ExpandedPanel({ c }: { c: Candidate }) {
           className="bg-white rounded-2xl p-5"
           style={{ border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 2px 10px rgba(10,21,71,0.04)" }}
         >
-          <p className="text-xs font-black uppercase tracking-widest text-[#0A1547]/40 mb-3">Unanswered Questions</p>
+          <div className="flex items-center gap-1.5 mb-3">
+            <p className="text-xs font-black uppercase tracking-widest text-[#0A1547]/75">Unanswered Questions</p>
+            <InfoTooltip content="Interview questions the candidate did not answer or skipped during the AI session" side="bottom" />
+          </div>
           <p className="text-xs leading-relaxed text-[#0A1547]/60 whitespace-pre-line">{c.unanswered}</p>
         </div>
 
@@ -335,12 +357,19 @@ function ExpandedPanel({ c }: { c: Candidate }) {
           className="bg-white rounded-2xl p-5"
           style={{ border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 2px 10px rgba(10,21,71,0.04)" }}
         >
-          <p className="text-xs font-black uppercase tracking-widest text-[#0A1547]/40 mb-4">Signals</p>
+          <div className="flex items-center gap-1.5 mb-4">
+            <p className="text-xs font-black uppercase tracking-widest text-[#0A1547]/75">Signals</p>
+            <InfoTooltip content="Behavioral signals detected during the interview, including response reliability and AI-assisted answer risk" side="bottom" />
+          </div>
           {hasInterview ? (
             <div className="space-y-3">
+              {/* Evaluation Reliability */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-semibold text-[#0A1547]/60">Evaluation Reliability</span>
+                  <span className="flex items-center gap-1 text-xs font-semibold text-[#0A1547]/60">
+                    Evaluation Reliability
+                    <InfoTooltip content="Confidence score for the overall AI evaluation based on response completeness and consistency" side="top" />
+                  </span>
                   <span className="text-xs font-black text-[#0A1547]">{c.reliability}%</span>
                 </div>
                 <div className="w-full bg-gray-100 rounded-full h-1.5">
@@ -353,19 +382,24 @@ function ExpandedPanel({ c }: { c: Candidate }) {
                   />
                 </div>
               </div>
+
+              {/* AI-aided interview risk */}
               <div className="flex items-center gap-2 pt-1">
-                <span className="text-xs font-semibold text-[#0A1547]/60">AI-aided interview risk:</span>
+                <span className="flex items-center gap-1 text-xs font-semibold text-[#0A1547]/60">
+                  AI-aided interview risk
+                  <InfoTooltip content="Likelihood that the candidate used AI tools or scripted assistance during the interview" side="top" />
+                </span>
                 <span
                   className="w-2 h-2 rounded-full flex-shrink-0"
                   style={{ backgroundColor: riskColor(c.risk) }}
                 />
                 <span className="text-xs font-bold" style={{ color: riskColor(c.risk) }}>{c.risk}</span>
               </div>
-              {c.risk !== "Low" && (
-                <p className="text-[11px] text-[#0A1547]/40 leading-relaxed">
-                  Some responses lacked specificity and depth, suggesting potential scripted patterns.
-                </p>
-              )}
+
+              {/* Risk narrative text */}
+              <p className="text-[11px] text-[#0A1547]/50 leading-relaxed border-t border-gray-100 pt-3">
+                {c.riskText}
+              </p>
             </div>
           ) : (
             <p className="text-xs text-[#0A1547]/40 italic">Signals will appear after the interview is completed.</p>
@@ -378,12 +412,26 @@ function ExpandedPanel({ c }: { c: Candidate }) {
 
 /* ── Main page ──────────────────────────────────────── */
 export default function CandidatesPage() {
-  const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [minScore, setMinScore] = useState("");
-  const minScoreInputRef = useRef<HTMLInputElement>(null);
+  const [expandedId, setExpandedId]     = useState<number | null>(null);
+  const [minScore, setMinScore]         = useState("");
+  const [sortKey, setSortKey]           = useState<SortKey | null>(null);
+  const [sortDir, setSortDir]           = useState<SortDir>("asc");
+  const minScoreInputRef                = useRef<HTMLInputElement>(null);
 
   const minScoreNum = minScore === "" ? null : parseInt(minScore, 10);
 
+  const toggle = (id: number) => setExpandedId((prev) => (prev === id ? null : id));
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  /* Filter */
   const filtered = CANDIDATES.filter((c) => {
     if (minScoreNum !== null && !isNaN(minScoreNum)) {
       if (c.overall === null || c.overall < minScoreNum) return false;
@@ -391,7 +439,55 @@ export default function CandidatesPage() {
     return true;
   });
 
-  const toggle = (id: number) => setExpandedId((prev) => (prev === id ? null : id));
+  /* Sort */
+  const sorted = sortKey
+    ? [...filtered].sort((a, b) => {
+        let av: string | number | null;
+        let bv: string | number | null;
+        switch (sortKey) {
+          case "name":      av = a.name; bv = b.name; break;
+          case "email":     av = a.email; bv = b.email; break;
+          case "role":      av = a.role; bv = b.role; break;
+          case "resume":    av = a.resume ?? -1; bv = b.resume ?? -1; break;
+          case "interview": av = a.interview ?? -1; bv = b.interview ?? -1; break;
+          case "overall":   av = a.overall ?? -1; bv = b.overall ?? -1; break;
+          case "created":   av = a.id; bv = b.id; break;
+          default:          av = 0; bv = 0;
+        }
+        if (av === null) av = "";
+        if (bv === null) bv = "";
+        const cmp = typeof av === "string"
+          ? av.localeCompare(bv as string)
+          : (av as number) - (bv as number);
+        return sortDir === "asc" ? cmp : -cmp;
+      })
+    : filtered;
+
+  /* Column header button helper */
+  const Th = ({
+    col,
+    label,
+    align = "left",
+    className = "",
+    tooltip,
+  }: {
+    col: SortKey;
+    label: string;
+    align?: "left" | "center";
+    className?: string;
+    tooltip?: string;
+  }) => (
+    <th className={`px-4 py-3.5 whitespace-nowrap ${className}`}>
+      <button
+        onClick={() => handleSort(col)}
+        className={`flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 hover:text-[#0A1547]/70 transition-colors ${align === "center" ? "mx-auto" : ""}`}
+      >
+        {label}
+        {tooltip && <InfoTooltip content={tooltip} />}
+        <SortIcon active={sortKey === col} dir={sortDir} />
+      </button>
+    </th>
+  );
 
   return (
     <DashboardLayout title="Candidates">
@@ -440,7 +536,7 @@ export default function CandidatesPage() {
           </div>
         </div>
 
-        {/* Spacer + Export */}
+        {/* Export */}
         <div className="ml-auto">
           <button
             onClick={() => {}}
@@ -458,52 +554,33 @@ export default function CandidatesPage() {
         className="bg-white rounded-2xl overflow-hidden"
         style={{ border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 2px 12px rgba(10,21,71,0.04)" }}
       >
-        {/* Table header */}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100">
+                {/* Expand toggle — not sortable */}
                 <th className="w-10 px-4 py-3.5" />
-                <th className="text-left px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 whitespace-nowrap">
-                  Name
-                </th>
-                <th className="text-left px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 whitespace-nowrap hidden md:table-cell">
-                  Email
-                </th>
-                <th className="text-left px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 whitespace-nowrap hidden lg:table-cell">
-                  Role
-                </th>
-                <th className="text-left px-4 py-3.5 whitespace-nowrap">
-                  <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">
-                    Resume <InfoTooltip content="AI-analyzed resume score out of 100" />
-                  </span>
-                </th>
-                <th className="text-left px-4 py-3.5 whitespace-nowrap">
-                  <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">
-                    Interview <InfoTooltip content="AI-scored interview performance out of 100" />
-                  </span>
-                </th>
-                <th className="text-left px-4 py-3.5 whitespace-nowrap">
-                  <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">
-                    Overall <InfoTooltip content="Combined weighted score from resume and interview" />
-                  </span>
-                </th>
-                <th className="text-left px-4 py-3.5 pr-6 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 whitespace-nowrap hidden sm:table-cell">
-                  Created
-                </th>
+
+                <Th col="name"      label="Name" />
+                <Th col="email"     label="Email"     className="hidden md:table-cell" />
+                <Th col="role"      label="Role"      className="hidden lg:table-cell" />
+                <Th col="resume"    label="Resume"    tooltip="AI-analyzed resume score out of 100" />
+                <Th col="interview" label="Interview" tooltip="AI-scored interview performance out of 100" />
+                <Th col="overall"   label="Overall"   tooltip="Combined weighted score from resume and interview" />
+                <Th col="created"   label="Created"   className="hidden sm:table-cell pr-6" />
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {sorted.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="text-center py-12 text-sm text-[#0A1547]/35 font-semibold">
                     No candidates match your filters.
                   </td>
                 </tr>
               ) : (
-                filtered.map((c, idx) => {
+                sorted.map((c, idx) => {
                   const isExpanded = expandedId === c.id;
-                  const isLast = idx === filtered.length - 1;
+                  const isLast = idx === sorted.length - 1;
                   return (
                     <React.Fragment key={c.id}>
                       <tr
@@ -549,14 +626,10 @@ export default function CandidatesPage() {
                         </td>
 
                         {/* Resume score */}
-                        <td className="px-4 py-4">
-                          <ScoreCell score={c.resume} />
-                        </td>
+                        <td className="px-4 py-4"><ScoreCell score={c.resume} /></td>
 
                         {/* Interview score */}
-                        <td className="px-4 py-4">
-                          <ScoreCell score={c.interview} />
-                        </td>
+                        <td className="px-4 py-4"><ScoreCell score={c.interview} /></td>
 
                         {/* Overall score */}
                         <td className="px-4 py-4">
@@ -564,10 +637,7 @@ export default function CandidatesPage() {
                             <div className="min-w-[52px]">
                               <span
                                 className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-black"
-                                style={{
-                                  backgroundColor: scoreBg(c.overall),
-                                  color: scoreColor(c.overall),
-                                }}
+                                style={{ backgroundColor: scoreBg(c.overall), color: scoreColor(c.overall) }}
                               >
                                 {c.overall}%
                               </span>
@@ -588,7 +658,7 @@ export default function CandidatesPage() {
                         </td>
                       </tr>
 
-                      {/* Expanded panel — rendered as a full-width row */}
+                      {/* Expanded panel */}
                       {isExpanded && (
                         <tr className={!isLast ? "border-b border-gray-100" : ""}>
                           <td colSpan={8} className="p-0">
@@ -607,7 +677,7 @@ export default function CandidatesPage() {
         {/* Footer row count */}
         <div className="px-6 py-3 border-t border-gray-100 flex items-center">
           <p className="text-[11px] text-[#0A1547]/35 font-semibold">
-            {filtered.length} of {CANDIDATES.length} candidate{CANDIDATES.length !== 1 ? "s" : ""}
+            {sorted.length} of {CANDIDATES.length} candidate{CANDIDATES.length !== 1 ? "s" : ""}
           </p>
         </div>
       </div>

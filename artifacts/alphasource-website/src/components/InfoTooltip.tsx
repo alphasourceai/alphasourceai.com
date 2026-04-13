@@ -16,18 +16,15 @@ export default function InfoTooltip({
       <Info className={iconClassName} />
       <span
         className={[
-          "pointer-events-none absolute z-50 w-48 rounded-xl px-3 py-2.5",
-          "bg-[#0A1547] text-white text-[11px] font-medium leading-snug shadow-xl",
+          "pointer-events-none absolute z-50 w-max max-w-[220px] rounded-xl px-3 py-2.5",
+          "bg-[#0A1547] text-white text-[11px] font-medium leading-snug shadow-xl whitespace-normal",
           "opacity-0 group-hover/tip:opacity-100 transition-opacity duration-150",
           "left-1/2 -translate-x-1/2",
-          side === "top"
-            ? "bottom-full mb-2"
-            : "top-full mt-2",
+          side === "top" ? "bottom-full mb-2" : "top-full mt-2",
         ].join(" ")}
         role="tooltip"
       >
         {content}
-        {/* Arrow */}
         <span
           className={[
             "absolute left-1/2 -translate-x-1/2 border-4 border-transparent",
