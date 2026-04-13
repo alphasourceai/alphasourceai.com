@@ -523,7 +523,7 @@ export default function CandidatesPage() {
         <div className="flex items-center gap-2">
           <label className="text-xs font-semibold text-[#0A1547]/50">Role</label>
           <select
-            className="w-24 text-xs font-semibold text-[#0A1547] bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] cursor-pointer"
+            className="w-24 h-[30px] text-xs font-semibold text-[#0A1547] bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] cursor-pointer"
             value="all"
             onChange={() => {}}
           >
@@ -543,7 +543,7 @@ export default function CandidatesPage() {
               value={minScore}
               onChange={(e) => setMinScore(e.target.value)}
               placeholder="e.g. 70"
-              className="text-xs font-semibold text-[#0A1547] bg-gray-50 border border-gray-200 rounded-lg pl-3 pr-7 py-1.5 w-24 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] placeholder-gray-400"
+              className="text-xs font-semibold text-[#0A1547] bg-gray-50 border border-gray-200 rounded-lg pl-3 pr-7 py-1.5 w-24 h-[30px] focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] placeholder-gray-400"
             />
             {minScore !== "" && (
               <button
