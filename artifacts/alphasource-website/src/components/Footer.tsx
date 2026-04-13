@@ -1,6 +1,32 @@
-import { Link } from "wouter";
+import { useState, useRef, useEffect } from "react";
+import { useLocation } from "wouter";
+import { useAuth } from "@/context/AuthContext";
 
 export default function Footer() {
+  const [adminLoginOpen, setAdminLoginOpen] = useState(false);
+  const [email, setEmail]                   = useState("");
+  const [password, setPassword]             = useState("");
+  const dropdownRef                         = useRef<HTMLDivElement>(null);
+  const { loginAdmin }                      = useAuth();
+  const [, setLocation]                     = useLocation();
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setAdminLoginOpen(false);
+      }
+    };
+    if (adminLoginOpen) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [adminLoginOpen]);
+
+  const handleAdminSignIn = (e: React.FormEvent) => {
+    e.preventDefault();
+    loginAdmin();
+    setAdminLoginOpen(false);
+    setLocation("/admin");
+  };
+
   return (
     <footer className="bg-[#0A1547] text-white">
       <div className="max-w-7xl mx-auto px-6 lg:px-8 py-16">
@@ -8,11 +34,7 @@ export default function Footer() {
           {/* Brand */}
           <div className="md:col-span-2">
             <div className="mb-4">
-              <img
-                src="/alpha-symbol.png"
-                alt="AlphaSource AI"
-                className="h-10 w-auto"
-              />
+              <img src="/alpha-symbol.png" alt="AlphaSource AI" className="h-10 w-auto" />
             </div>
             <p className="text-white/60 text-sm leading-relaxed max-w-xs">
               Agentic AI that enhances human judgment — helping teams reclaim time and spot potential in every talent interaction.
@@ -48,16 +70,13 @@ export default function Footer() {
             <h4 className="text-sm font-semibold text-white mb-4 uppercase tracking-wider">Company</h4>
             <ul className="space-y-3">
               {[
-                { label: "Home", href: "/" },
-                { label: "About Us", href: "/about" },
-                { label: "alphaScreen", href: "/alphascreen" },
+                { label: "Home",         href: "/" },
+                { label: "About Us",     href: "/about" },
+                { label: "alphaScreen",  href: "/alphascreen" },
                 { label: "How It Works", href: "/#how-it-works" },
               ].map((link) => (
                 <li key={link.label}>
-                  <a
-                    href={link.href}
-                    className="text-sm text-white/60 hover:text-[#A380F6] transition-colors"
-                  >
+                  <a href={link.href} className="text-sm text-white/60 hover:text-[#A380F6] transition-colors">
                     {link.label}
                   </a>
                 </li>
@@ -70,19 +89,12 @@ export default function Footer() {
             <h4 className="text-sm font-semibold text-white mb-4 uppercase tracking-wider">Get in Touch</h4>
             <ul className="space-y-3">
               <li>
-                <a
-                  href="mailto:info@alphasourceai.com"
-                  className="text-sm text-white/60 hover:text-[#A380F6] transition-colors"
-                >
+                <a href="mailto:info@alphasourceai.com" className="text-sm text-white/60 hover:text-[#A380F6] transition-colors">
                   info@alphasourceai.com
                 </a>
               </li>
               <li>
-                <a
-                  href="/#contact"
-                  className="text-sm font-semibold transition-colors hover:text-white"
-                  style={{ color: "#A380F6" }}
-                >
+                <a href="/#contact" className="text-sm font-semibold transition-colors hover:text-white" style={{ color: "#A380F6" }}>
                   Request a Demo →
                 </a>
               </li>
@@ -90,12 +102,73 @@ export default function Footer() {
           </div>
         </div>
 
+        {/* Bottom bar */}
         <div className="border-t border-white/10 mt-12 pt-8 flex flex-col sm:flex-row justify-between items-center gap-4">
           <p className="text-white/40 text-sm">
             &copy; {new Date().getFullYear()} AlphaSource AI. All rights reserved.
           </p>
-          <div className="flex gap-6">
-            <a href="/terms" className="text-white/40 text-sm hover:text-white/70 transition-colors">Terms &amp; Conditions</a>
+          <div className="flex items-center gap-6">
+            <a href="/terms" className="text-white/40 text-sm hover:text-white/70 transition-colors">
+              Terms &amp; Conditions
+            </a>
+
+            {/* Admin Login */}
+            <div className="relative" ref={dropdownRef}>
+              <button
+                onClick={() => setAdminLoginOpen((o) => !o)}
+                className="text-white/25 text-xs hover:text-white/50 transition-colors font-semibold"
+              >
+                Admin Login
+              </button>
+
+              {adminLoginOpen && (
+                <div
+                  className="absolute right-0 bottom-full mb-3 w-72 bg-white rounded-2xl shadow-2xl border border-gray-100 p-5 z-50"
+                  style={{ fontFamily: "'Raleway', sans-serif" }}
+                >
+                  {/* Small arrow pointing down */}
+                  <div
+                    className="absolute bottom-[-6px] right-4 w-3 h-3 bg-white border-b border-r border-gray-100 rotate-45"
+                  />
+                  <div className="mb-4">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="text-sm font-black text-[#0A1547]">Admin Sign In</h3>
+                      <span
+                        className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full"
+                        style={{ backgroundColor: "rgba(163,128,246,0.12)", color: "#7C5FCC" }}
+                      >
+                        Admin
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-[#0A1547]/45">Access the AlphaSource admin dashboard</p>
+                  </div>
+
+                  <form onSubmit={handleAdminSignIn} className="space-y-2.5">
+                    <input
+                      type="email"
+                      placeholder="Email address"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all"
+                    />
+                    <input
+                      type="password"
+                      placeholder="Password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all"
+                    />
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 text-sm font-bold text-white rounded-full transition-all hover:opacity-90 active:scale-[0.99]"
+                      style={{ backgroundColor: "#A380F6" }}
+                    >
+                      Sign In
+                    </button>
+                  </form>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
