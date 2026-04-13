@@ -159,6 +159,9 @@ export default function AdminClientsPage() {
   const [overrides,  setOverrides]            = useState<Record<string, AccessOverride>>({});
   const [checkoutPlan, setCheckoutPlan]       = useState<Record<string, string>>({});
   const [checkoutCycle, setCheckoutCycle]     = useState<Record<string, string>>({});
+  const [autoRenewStates, setAutoRenewStates] = useState<Record<string, boolean>>(
+    Object.fromEntries(CLIENTS.map((c) => [c.id, c.autoRenew]))
+  );
 
   /* form state */
   const [form, setForm] = useState({
@@ -310,7 +313,8 @@ export default function AdminClientsPage() {
             const override = overrides[client.id] ?? "Inherit";
             const cpPlan   = checkoutPlan[client.id]  ?? "basic";
             const cpCycle  = checkoutCycle[client.id] ?? "Monthly";
-            const isActive = client.billingStatus === "active";
+            const isActive   = client.billingStatus === "active";
+            const autoRenew  = autoRenewStates[client.id] ?? client.autoRenew;
 
             return (
               <div key={client.id}>
@@ -354,19 +358,24 @@ export default function AdminClientsPage() {
 
                   {/* Auto-renew checkbox */}
                   <div className="flex items-center">
-                    <div
-                      className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
-                        client.autoRenew
+                    <button
+                      className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all cursor-pointer hover:scale-105 ${
+                        autoRenew
                           ? "border-[#A380F6] bg-[#A380F6]"
-                          : "border-[rgba(10,21,71,0.15)] bg-transparent"
+                          : "border-[rgba(10,21,71,0.15)] bg-transparent hover:border-[#A380F6]/50"
                       }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setAutoRenewStates((prev) => ({ ...prev, [client.id]: !autoRenew }));
+                      }}
+                      title={autoRenew ? "Disable auto-renew" : "Enable auto-renew"}
                     >
-                      {client.autoRenew && (
-                        <svg viewBox="0 0 10 8" className="w-2.5 h-2 fill-white">
+                      {autoRenew && (
+                        <svg viewBox="0 0 10 8" className="w-2.5 h-2">
                           <path d="M1 4l2.5 2.5L9 1" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                       )}
-                    </div>
+                    </button>
                   </div>
 
                   {/* Remove */}
@@ -399,7 +408,7 @@ export default function AdminClientsPage() {
                             ["Billing cycle",      client.billingCycle ?? "—"],
                             ["Contract",           client.contract ?? "—"],
                             ["Current billing period ends", client.periodEnds ?? "—"],
-                            ["Renewal",            client.autoRenew ? "Auto-renew on" : "Auto-renew off"],
+                            ["Renewal",            autoRenew ? "Auto-renew on" : "Auto-renew off"],
                           ].map(([label, value]) => (
                             <div key={String(label)} className="flex items-baseline gap-1.5 text-xs">
                               <span className="text-[#0A1547]/40 font-semibold flex-shrink-0">{String(label)}:</span>
@@ -486,7 +495,7 @@ export default function AdminClientsPage() {
                             {/* Enterprise extra fields */}
                             {cpPlan === "enterprise" && (
                               <div className="grid grid-cols-2 gap-2 mb-2">
-                                {["Membership ($)", "Per-role fee ($)", "Included interviews", "Additional interview fee ($)"].map((ph) => (
+                                {["Membership ($)", "Per-role fee ($)", "Included interviews", "Add'l Interview Fee ($)"].map((ph) => (
                                   <input key={ph} className={inputCls} placeholder={ph} />
                                 ))}
                               </div>
