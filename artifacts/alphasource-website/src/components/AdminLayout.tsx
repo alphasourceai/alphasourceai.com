@@ -264,7 +264,7 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
       )}
 
       {/* ── Main content ──────────────────────────────────────── */}
-      <div className={`flex-1 min-h-screen flex flex-col transition-all duration-300 ${contentML}`}>
+      <div className={`flex-1 min-w-0 min-h-screen flex flex-col transition-all duration-300 ${contentML}`}>
         {/* Top bar */}
         <header className="sticky top-0 z-20 bg-white border-b border-gray-100 flex items-center h-14 px-5">
           <button
