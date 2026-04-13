@@ -319,6 +319,56 @@ export default function AdminOverviewPage() {
         </div>
 
       </div>
+
+      {/* ── Client name scroller ──────────────────────────── */}
+      <div className="mt-4">
+        <div
+          className="bg-white rounded-2xl overflow-hidden py-5"
+          style={{ border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 2px 12px rgba(10,21,71,0.04)" }}
+        >
+          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-[#0A1547]/25 text-center mb-4">
+            Active Client Network
+          </p>
+
+          {/* Fade masks + scrolling track */}
+          <div className="relative overflow-hidden">
+            {/* Left fade */}
+            <div
+              className="absolute left-0 top-0 bottom-0 w-16 z-10 pointer-events-none"
+              style={{ background: "linear-gradient(to right, white, transparent)" }}
+            />
+            {/* Right fade */}
+            <div
+              className="absolute right-0 top-0 bottom-0 w-16 z-10 pointer-events-none"
+              style={{ background: "linear-gradient(to left, white, transparent)" }}
+            />
+
+            {/* Scrolling strip — items duplicated for seamless loop */}
+            <div className="flex animate-marquee w-max">
+              {[...clientBreakdown, ...clientBreakdown].map((client, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-2.5 mx-8 flex-shrink-0"
+                >
+                  <div
+                    className="w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-black text-white flex-shrink-0"
+                    style={{ backgroundColor: client.color }}
+                  >
+                    {client.letter}
+                  </div>
+                  <span
+                    className="text-sm font-bold whitespace-nowrap"
+                    style={{ color: "rgba(10,21,71,0.45)" }}
+                  >
+                    {client.name}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
     </AdminLayout>
   );
 }
