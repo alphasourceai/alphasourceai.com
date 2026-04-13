@@ -331,7 +331,7 @@ export default function AdminOverviewPage() {
           </p>
 
           {/* Fade masks + scrolling track */}
-          <div className="relative overflow-hidden">
+          <div className="relative overflow-hidden w-full">
             {/* Left fade */}
             <div
               className="absolute left-0 top-0 bottom-0 w-16 z-10 pointer-events-none"
