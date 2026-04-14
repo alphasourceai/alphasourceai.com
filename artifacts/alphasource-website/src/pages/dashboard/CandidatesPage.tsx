@@ -523,13 +523,16 @@ export default function CandidatesPage() {
         {/* Role filter */}
         <div className="flex items-center gap-2">
           <label className="text-xs font-semibold text-[#0A1547]/50">Role</label>
-          <select
-            className="w-24 h-[30px] text-xs font-semibold text-[#0A1547] bg-gray-50 border border-gray-200 rounded-full px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] cursor-pointer"
-            value="all"
-            onChange={() => {}}
-          >
-            <option value="all">All roles</option>
-          </select>
+          <div className="relative">
+            <select
+              className="appearance-none w-36 px-4 py-2 rounded-full bg-gray-50 border border-gray-200 text-[#0A1547] text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all cursor-pointer pr-9"
+              value="all"
+              onChange={() => {}}
+            >
+              <option value="all">All roles</option>
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/40 pointer-events-none" />
+          </div>
         </div>
 
         {/* Min Overall Score */}
