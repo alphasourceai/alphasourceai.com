@@ -232,11 +232,12 @@ function riskColor(risk: "Low" | "Medium" | "High"): string {
   return risk === "Low" ? "#02D99D" : risk === "Medium" ? "#F0A500" : "#FF6B6B";
 }
 
-/* ── Sub-score color by value ───────────────────────── */
-function subScoreColor(score: number): string {
-  if (score >= 85) return "#02D99D";
-  if (score >= 70) return "#02ABE0";
-  return "#A380F6";
+/* ── Score number color: dynamic by value ───────────── */
+function subScoreNumColor(score: number): string {
+  if (score === 0) return "rgba(10,21,71,0.25)";
+  if (score >= 80) return "#02D99D";
+  if (score >= 70) return "#F0A500";
+  return "#FF6B6B";
 }
 
 const LABEL_TOOLTIPS: Record<string, string> = {
@@ -249,8 +250,8 @@ const LABEL_TOOLTIPS: Record<string, string> = {
 };
 
 /* ── Sub-components ─────────────────────────────────── */
-function ScoreBar({ label, score }: SubScore) {
-  const color = subScoreColor(score);
+function ScoreBar({ label, score, barColor }: SubScore & { barColor: string }) {
+  const numColor = subScoreNumColor(score);
   const tip = LABEL_TOOLTIPS[label];
   return (
     <div className="mb-3 last:mb-0">
@@ -259,12 +260,12 @@ function ScoreBar({ label, score }: SubScore) {
           {label}
           {tip && <InfoTooltip content={tip} side="top" iconClassName="w-2.5 h-2.5 text-[#0A1547]/20" />}
         </span>
-        <span className="text-xs font-black" style={{ color }}>{score}%</span>
+        <span className="text-xs font-black" style={{ color: numColor }}>{score > 0 ? `${score}%` : "—"}</span>
       </div>
       <div className="w-full bg-gray-100 rounded-full h-1.5">
         <div
           className="h-1.5 rounded-full transition-all duration-500"
-          style={{ width: `${score}%`, backgroundColor: color }}
+          style={{ width: `${score}%`, backgroundColor: score > 0 ? barColor : "transparent" }}
         />
       </div>
     </div>
@@ -329,7 +330,7 @@ function ExpandedPanel({ c }: { c: Candidate }) {
             <InfoTooltip content="AI analysis of the candidate's submitted resume across key evaluation dimensions" side="bottom" />
           </div>
           <div className="mb-4">
-            {c.resumeSubs.map((s) => <ScoreBar key={s.label} {...s} />)}
+            {c.resumeSubs.map((s) => <ScoreBar key={s.label} {...s} barColor="#02ABE0" />)}
           </div>
           <p className="text-xs leading-relaxed text-[#0A1547]/60">
             <span className="font-black text-[#0A1547]/80">Summary: </span>
@@ -349,7 +350,7 @@ function ExpandedPanel({ c }: { c: Candidate }) {
           {hasInterview ? (
             <>
               <div className="mb-4">
-                {c.interviewSubs.map((s) => <ScoreBar key={s.label} {...s} />)}
+                {c.interviewSubs.map((s) => <ScoreBar key={s.label} {...s} barColor="#A380F6" />)}
               </div>
               <p className="text-xs leading-relaxed text-[#0A1547]/60">
                 <span className="font-black text-[#0A1547]/80">Summary: </span>
