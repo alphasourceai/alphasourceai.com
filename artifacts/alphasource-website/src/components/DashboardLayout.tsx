@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, ReactNode } from "react";
+import { useState, useRef, useEffect, useCallback, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link, useLocation } from "wouter";
 import {
@@ -22,6 +22,7 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { useClient, CLIENTS } from "@/context/ClientContext";
 
+/* ── Nav items ───────────────────────────────────────────────── */
 interface NavItem {
   label: string;
   href:  string;
@@ -29,11 +30,11 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { label: "Overview",   href: "/dashboard",            icon: LayoutDashboard },
-  { label: "Roles",      href: "/dashboard/roles",       icon: Briefcase       },
-  { label: "Candidates", href: "/dashboard/candidates",  icon: Users           },
-  { label: "Members",    href: "/dashboard/members",     icon: UserCheck       },
-  { label: "Billing",    href: "/dashboard/billing",     icon: CreditCard      },
+  { label: "Overview",   href: "/dashboard",           icon: LayoutDashboard },
+  { label: "Roles",      href: "/dashboard/roles",      icon: Briefcase       },
+  { label: "Candidates", href: "/dashboard/candidates", icon: Users           },
+  { label: "Members",    href: "/dashboard/members",    icon: UserCheck       },
+  { label: "Billing",    href: "/dashboard/billing",    icon: CreditCard      },
 ];
 
 /* ── Tour steps ──────────────────────────────────────────────── */
@@ -47,176 +48,221 @@ interface TourStep {
 
 const TOUR_STEPS: TourStep[] = [
   {
-    navIndex: 0,
-    title: "Overview",
-    emoji: "📊",
-    desc: "Your command center. See your hiring pipeline at a glance — active roles, recent candidate activity, score distributions, and top performers across your account.",
-    bullets: ["Hiring pipeline summary", "Recent candidate submissions", "Score distribution at a glance"],
+    navIndex: 0, title: "Overview", emoji: "📊",
+    desc: "Your command center — see active roles, recent candidate submissions, score distributions, and top performers at a glance.",
+    bullets: ["Hiring pipeline summary", "Recent candidate activity", "Score distribution charts"],
   },
   {
-    navIndex: 1,
-    title: "Roles",
-    emoji: "💼",
+    navIndex: 1, title: "Roles", emoji: "💼",
     desc: "Create and manage open positions. Each role links to its AlphaScreen interview session and tracks every candidate assigned to it.",
-    bullets: ["Create & publish new roles", "Track role status (open / closed)", "View candidates per role"],
+    bullets: ["Create & publish new roles", "Track open vs. closed roles", "View candidates per role"],
   },
   {
-    navIndex: 2,
-    title: "Candidates",
-    emoji: "👥",
-    desc: "Review everyone who has applied or been invited. Expand any row to see their full resume and interview analysis, AI scores, and behavioral risk signals.",
-    bullets: ["Resume & interview AI analysis", "Dynamic scoring with risk signals", "Sort, filter, and export results"],
+    navIndex: 2, title: "Candidates", emoji: "👥",
+    desc: "Review every applicant. Expand any row to see AI-scored resume and interview analyses, behavioral signals, and risk flags.",
+    bullets: ["Resume & interview AI analysis", "Dynamic score coloring", "Sort, filter, and export results"],
   },
   {
-    navIndex: 3,
-    title: "Members",
-    emoji: "🛡️",
-    desc: "Control who has access to your AlphaSource dashboard. Invite teammates, assign roles, and remove users who no longer need access.",
-    bullets: ["Invite team members by email", "Assign Admin or Viewer roles", "Remove or reset member access"],
+    navIndex: 3, title: "Members", emoji: "🛡️",
+    desc: "Control who can access your AlphaSource dashboard. Invite teammates, assign roles, and remove users when needed.",
+    bullets: ["Invite team members by email", "Assign Admin or Viewer roles", "Remove or reset access"],
   },
   {
-    navIndex: 4,
-    title: "Billing",
-    emoji: "💳",
-    desc: "Manage your subscription, review past invoices, and update payment details — all in one place.",
-    bullets: ["View your current plan", "Access full invoice history", "Update payment methods"],
+    navIndex: 4, title: "Billing", emoji: "💳",
+    desc: "Manage your subscription plan, review past invoices, and update payment details — all in one place.",
+    bullets: ["View your current plan", "Full invoice history", "Update payment methods"],
   },
 ];
 
-interface DashboardLayoutProps {
-  children: ReactNode;
-  title:    string;
-}
+/* ── Spotlight + callout tour overlay ───────────────────────── */
+interface SpotRect { top: number; left: number; width: number; height: number }
 
-/* ── Tour overlay component ──────────────────────────────────── */
-function TourOverlay({
+function TourSpotlight({
+  spotRect,
   step,
+  stepIndex,
   total,
-  tourStep,
+  sidebarRight,
   onPrev,
   onNext,
   onFinish,
+  onClose,
 }: {
-  step:      TourStep;
-  total:     number;
-  tourStep:  number;
+  spotRect:     SpotRect;
+  step:         TourStep;
+  stepIndex:    number;
+  total:        number;
+  sidebarRight: number;
   onPrev:    () => void;
   onNext:    () => void;
   onFinish:  () => void;
+  onClose:   () => void;
 }) {
-  const isLast = tourStep === total - 1;
+  const isFirst = stepIndex === 0;
+  const isLast  = stepIndex === total - 1;
+
+  /* Vertical position of callout: center on the nav item, clamped to viewport */
+  const CALLOUT_HEIGHT = 260;
+  const rawTop  = spotRect.top + spotRect.height / 2 - CALLOUT_HEIGHT / 2;
+  const calloutTop = Math.min(
+    Math.max(rawTop, 12),
+    (typeof window !== "undefined" ? window.innerHeight : 800) - CALLOUT_HEIGHT - 12
+  );
+  const calloutLeft = sidebarRight + 20;
+
+  /* Arrow vertical: keep it pointing at the nav item center */
+  const arrowTop = Math.max(
+    20,
+    Math.min(
+      CALLOUT_HEIGHT - 28,
+      spotRect.top + spotRect.height / 2 - calloutTop - 8
+    )
+  );
 
   return createPortal(
     <>
-      {/* Dim backdrop */}
+      {/* ── Full-screen backdrop — click to close ── */}
       <div
-        className="fixed inset-0 z-50"
-        style={{ backgroundColor: "rgba(10,21,71,0.45)", backdropFilter: "blur(2px)" }}
+        className="fixed inset-0 z-[60]"
+        style={{ backgroundColor: "rgba(10,21,71,0.0)" }}
+        onClick={onClose}
       />
 
-      {/* Tour card */}
+      {/* ── Spotlight ring around nav item ── */}
       <div
-        className="fixed z-50 w-[360px]"
+        className="fixed z-[61] pointer-events-none"
         style={{
-          bottom: "40px",
-          right:  "40px",
-          borderRadius: "20px",
+          top:          spotRect.top    - 4,
+          left:         spotRect.left   - 6,
+          width:        spotRect.width  + 12,
+          height:       spotRect.height + 8,
+          borderRadius: "14px",
+          /* Box-shadow creates the full-screen dim + lilac ring */
+          boxShadow:    "0 0 0 9999px rgba(10,21,71,0.52), 0 0 0 2.5px #A380F6, 0 0 18px 4px rgba(163,128,246,0.35)",
+          transition:   "top 0.25s ease, left 0.25s ease, width 0.25s ease, height 0.25s ease",
+        }}
+      />
+
+      {/* ── Callout card ── */}
+      <div
+        className="fixed z-[62] w-[308px]"
+        style={{
+          top:          calloutTop,
+          left:         calloutLeft,
+          borderRadius: "18px",
           backgroundColor: "white",
-          boxShadow: "0 24px 64px rgba(10,21,71,0.22)",
-          border: "1px solid rgba(163,128,246,0.18)",
+          boxShadow:    "0 16px 48px rgba(10,21,71,0.18), 0 0 0 1px rgba(163,128,246,0.18)",
+          transition:   "top 0.25s ease",
         }}
       >
-        {/* Header */}
+        {/* Left-pointing arrow (triangle) */}
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            left:         "-9px",
+            top:          arrowTop,
+            width:        0,
+            height:       0,
+            borderTop:    "9px solid transparent",
+            borderBottom: "9px solid transparent",
+            borderRight:  "9px solid white",
+            filter:       "drop-shadow(-2px 0 2px rgba(10,21,71,0.08))",
+            transition:   "top 0.25s ease",
+          }}
+        />
+
+        {/* ── Card header ── */}
         <div
           className="px-5 pt-5 pb-4"
           style={{ borderBottom: "1px solid rgba(10,21,71,0.06)" }}
         >
+          {/* Step dots + count */}
           <div className="flex items-center justify-between mb-3">
-            {/* Step dots */}
             <div className="flex items-center gap-1.5">
               {TOUR_STEPS.map((_, i) => (
                 <span
                   key={i}
                   className="rounded-full transition-all duration-300"
                   style={{
-                    width:  i === tourStep ? "18px" : "6px",
-                    height: "6px",
-                    backgroundColor: i === tourStep
+                    width:           i === stepIndex ? "20px" : "6px",
+                    height:          "6px",
+                    backgroundColor: i === stepIndex
                       ? "#A380F6"
-                      : i < tourStep
+                      : i < stepIndex
                       ? "#02D99D"
                       : "rgba(10,21,71,0.12)",
                   }}
                 />
               ))}
             </div>
-            <span className="text-[11px] font-bold text-[#0A1547]/35">
-              {tourStep + 1} / {total}
-            </span>
+            <button
+              onClick={onClose}
+              className="p-1 rounded-lg text-[#0A1547]/25 hover:text-[#0A1547]/50 transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
 
+          {/* Title row */}
           <div className="flex items-center gap-2.5">
-            <span className="text-2xl leading-none">{step.emoji}</span>
+            <span className="text-xl leading-none">{step.emoji}</span>
             <div>
-              <p className="text-base font-black text-[#0A1547]">{step.title}</p>
-              <p
-                className="text-[10px] font-black uppercase tracking-widest"
-                style={{ color: "#A380F6" }}
-              >
-                Dashboard Page
+              <p className="text-sm font-black text-[#0A1547]">{step.title}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: "#A380F6" }}>
+                Step {stepIndex + 1} of {total}
               </p>
             </div>
           </div>
         </div>
 
-        {/* Body */}
+        {/* ── Card body ── */}
         <div className="px-5 py-4">
-          <p className="text-sm text-[#0A1547]/65 leading-relaxed mb-4">{step.desc}</p>
-
-          <ul className="space-y-2">
+          <p className="text-xs text-[#0A1547]/60 leading-relaxed mb-3">{step.desc}</p>
+          <ul className="space-y-1.5">
             {step.bullets.map((b) => (
               <li key={b} className="flex items-start gap-2">
                 <CheckCircle2
-                  className="w-3.5 h-3.5 flex-shrink-0 mt-0.5"
+                  className="w-3 h-3 flex-shrink-0 mt-0.5"
                   style={{ color: "#A380F6" }}
                 />
-                <span className="text-xs font-semibold text-[#0A1547]/60">{b}</span>
+                <span className="text-[11px] font-semibold text-[#0A1547]/55">{b}</span>
               </li>
             ))}
           </ul>
         </div>
 
-        {/* Footer */}
+        {/* ── Card footer ── */}
         <div
-          className="px-5 py-4 flex items-center justify-between"
+          className="px-5 py-3 flex items-center justify-between"
           style={{ borderTop: "1px solid rgba(10,21,71,0.06)" }}
         >
           <button
             onClick={onPrev}
-            disabled={tourStep === 0}
-            className="flex items-center gap-1 px-3 py-2 rounded-full text-xs font-bold transition-all"
+            disabled={isFirst}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
             style={{
-              backgroundColor: tourStep === 0 ? "rgba(10,21,71,0.04)" : "rgba(10,21,71,0.07)",
-              color: tourStep === 0 ? "rgba(10,21,71,0.2)" : "#0A1547",
+              backgroundColor: isFirst ? "transparent" : "rgba(10,21,71,0.06)",
+              color: isFirst ? "rgba(10,21,71,0.2)" : "#0A1547",
+              cursor: isFirst ? "not-allowed" : "pointer",
             }}
           >
             <ChevronLeft className="w-3.5 h-3.5" />
-            Previous
+            Back
           </button>
 
           {isLast ? (
             <button
               onClick={onFinish}
-              className="flex items-center gap-1.5 px-5 py-2 rounded-full text-xs font-bold text-white transition-opacity hover:opacity-90"
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold text-white transition-opacity hover:opacity-90"
               style={{ backgroundColor: "#02D99D" }}
             >
               <Check className="w-3.5 h-3.5" />
-              Done
+              Finish tour
             </button>
           ) : (
             <button
               onClick={onNext}
-              className="flex items-center gap-1 px-5 py-2 rounded-full text-xs font-bold text-white transition-opacity hover:opacity-90"
+              className="flex items-center gap-1 px-4 py-1.5 rounded-full text-xs font-bold text-white transition-opacity hover:opacity-90"
               style={{ backgroundColor: "#A380F6" }}
             >
               Next
@@ -231,27 +277,46 @@ function TourOverlay({
 }
 
 /* ── Main layout ─────────────────────────────────────────────── */
+interface DashboardLayoutProps {
+  children: ReactNode;
+  title:    string;
+}
+
 export default function DashboardLayout({ children, title }: DashboardLayoutProps) {
-  const [mobileOpen, setMobileOpen]           = useState(false);
-  const [collapsed, setCollapsed]             = useState(false);
-  const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
-  const [tourActive, setTourActive]           = useState(false);
-  const [tourStep, setTourStep]               = useState(0);
-  const [location, setLocation]               = useLocation();
-  const { logout }                            = useAuth();
+  const [mobileOpen,         setMobileOpen]         = useState(false);
+  const [collapsed,          setCollapsed]           = useState(false);
+  const [clientDropdownOpen, setClientDropdownOpen]  = useState(false);
+  const [tourActive,         setTourActive]          = useState(false);
+  const [tourStep,           setTourStep]            = useState(0);
+  const [spotRect,           setSpotRect]            = useState<SpotRect | null>(null);
+
+  const [location, setLocation] = useLocation();
+  const { logout }              = useAuth();
   const { selectedClient, setSelectedClient } = useClient();
-  const dropdownRef                           = useRef<HTMLDivElement>(null);
+  const dropdownRef  = useRef<HTMLDivElement>(null);
 
-  const handleSignOut = () => {
-    logout();
-    setLocation("/");
-  };
+  /* One ref per nav item */
+  const navRefs = useRef<(HTMLAnchorElement | null)[]>([]);
 
-  const isActive = (href: string) => {
-    if (href === "/dashboard") return location === "/dashboard";
-    return location.startsWith(href);
-  };
+  /* Measure the current tour nav item */
+  const measureStep = useCallback((step: number) => {
+    const el = navRefs.current[TOUR_STEPS[step].navIndex];
+    if (el) {
+      const r = el.getBoundingClientRect();
+      setSpotRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+    }
+  }, []);
 
+  /* Remeasure on step change or resize */
+  useEffect(() => {
+    if (!tourActive) return;
+    measureStep(tourStep);
+    const onResize = () => measureStep(tourStep);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [tourActive, tourStep, measureStep, collapsed]);
+
+  /* Client dropdown outside-click */
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -262,16 +327,6 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
     return () => document.removeEventListener("mousedown", handleClick);
   }, [clientDropdownOpen]);
 
-  /* Tour controls */
-  const startTour = () => {
-    setTourStep(0);
-    setTourActive(true);
-    if (collapsed) setCollapsed(false);
-  };
-  const nextStep  = () => setTourStep((s) => Math.min(s + 1, TOUR_STEPS.length - 1));
-  const prevStep  = () => setTourStep((s) => Math.max(s - 1, 0));
-  const endTour   = () => setTourActive(false);
-
   /* Close tour on Escape */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") endTour(); };
@@ -279,9 +334,25 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
     return () => document.removeEventListener("keydown", onKey);
   }, [tourActive]);
 
+  /* Tour controls */
+  const startTour = () => {
+    if (collapsed) setCollapsed(false);
+    setTourStep(0);
+    setTourActive(true);
+    /* Measure after a frame so the sidebar has expanded */
+    requestAnimationFrame(() => measureStep(0));
+  };
+  const nextStep  = () => setTourStep((s) => Math.min(s + 1, TOUR_STEPS.length - 1));
+  const prevStep  = () => setTourStep((s) => Math.max(s - 1, 0));
+  const endTour   = () => { setTourActive(false); setSpotRect(null); };
+
+  const handleSignOut = () => { logout(); setLocation("/"); };
+  const isActive = (href: string) =>
+    href === "/dashboard" ? location === "/dashboard" : location.startsWith(href);
+
   const sidebarW  = collapsed ? "w-16" : "w-60";
   const contentML = collapsed ? "lg:ml-16" : "lg:ml-60";
-  const currentTourNavIndex = tourActive ? TOUR_STEPS[tourStep].navIndex : -1;
+  const sidebarRight = collapsed ? 64 : 240;
 
   return (
     <div className="min-h-screen bg-[#F8F9FD] flex" style={{ fontFamily: "'Raleway', sans-serif" }}>
@@ -289,8 +360,7 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
       {/* ── Sidebar ──────────────────────────────────────────── */}
       <aside
         className={`fixed inset-y-0 left-0 z-40 bg-white border-r border-gray-100 flex flex-col
-          transition-all duration-300 ease-in-out
-          ${sidebarW}
+          transition-all duration-300 ease-in-out ${sidebarW}
           ${mobileOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}
         style={{ overflow: "visible" }}
       >
@@ -348,7 +418,7 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
           ) : (
             <button
               onClick={() => setClientDropdownOpen((o) => !o)}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all group"
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all"
               style={{ backgroundColor: clientDropdownOpen ? "rgba(163,128,246,0.1)" : "rgba(163,128,246,0.07)" }}
             >
               <div
@@ -398,28 +468,22 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
         <nav className={`flex-1 py-3 space-y-0.5 overflow-y-auto overflow-x-hidden
           ${collapsed ? "px-0 flex flex-col items-center" : "px-3"}`}>
           {navItems.map((item, idx) => {
-            const active     = isActive(item.href);
-            const tourHighlight = idx === currentTourNavIndex;
+            const active = isActive(item.href);
 
             if (collapsed) {
               return (
                 <Link
                   key={item.href}
                   href={item.href}
+                  ref={(el) => { navRefs.current[idx] = el as HTMLAnchorElement | null; }}
                   onClick={() => setMobileOpen(false)}
                   title={item.label}
                   className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-150 ${
                     active ? "text-[#A380F6]" : "text-[#0A1547]/40 hover:text-[#0A1547] hover:bg-gray-50"
                   }`}
-                  style={{
-                    ...(active ? { backgroundColor: "rgba(163,128,246,0.1)" } : {}),
-                    ...(tourHighlight ? {
-                      backgroundColor: "rgba(163,128,246,0.15)",
-                      boxShadow: "0 0 0 2px #A380F6",
-                    } : {}),
-                  }}
+                  style={active ? { backgroundColor: "rgba(163,128,246,0.1)" } : {}}
                 >
-                  <item.icon className="w-4.5 h-4.5 w-[18px] h-[18px]" />
+                  <item.icon className="w-[18px] h-[18px]" />
                 </Link>
               );
             }
@@ -428,19 +492,12 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
               <Link
                 key={item.href}
                 href={item.href}
+                ref={(el) => { navRefs.current[idx] = el as HTMLAnchorElement | null; }}
                 onClick={() => setMobileOpen(false)}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150 ${
                   active ? "text-[#A380F6]" : "text-[#0A1547]/50 hover:text-[#0A1547] hover:bg-gray-50"
                 }`}
-                style={{
-                  ...(active ? { backgroundColor: "rgba(163,128,246,0.1)" } : {}),
-                  ...(tourHighlight ? {
-                    backgroundColor: "rgba(163,128,246,0.12)",
-                    color: "#A380F6",
-                    boxShadow: "0 0 0 2px #A380F6",
-                    fontWeight: 800,
-                  } : {}),
-                }}
+                style={active ? { backgroundColor: "rgba(163,128,246,0.1)" } : {}}
               >
                 <item.icon className="w-4 h-4 flex-shrink-0" />
                 {item.label}
@@ -494,14 +551,14 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
             <span className="text-sm font-bold text-[#0A1547]">{title}</span>
           </div>
 
-          {/* Take a Tour button */}
+          {/* Take a Tour pill */}
           <button
             onClick={startTour}
             className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-all hover:opacity-90 active:scale-[0.97]"
             style={{
               backgroundColor: tourActive ? "#A380F6" : "rgba(163,128,246,0.10)",
-              color: tourActive ? "white" : "#A380F6",
-              border: "1px solid rgba(163,128,246,0.25)",
+              color:           tourActive ? "white"   : "#A380F6",
+              border:          "1px solid rgba(163,128,246,0.25)",
             }}
           >
             <Map className="w-3.5 h-3.5" />
@@ -510,20 +567,21 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-5 lg:p-8">
-          {children}
-        </main>
+        <main className="flex-1 p-5 lg:p-8">{children}</main>
       </div>
 
-      {/* ── Tour overlay ─────────────────────────────────────── */}
-      {tourActive && (
-        <TourOverlay
+      {/* ── Spotlight tour ───────────────────────────────────── */}
+      {tourActive && spotRect && (
+        <TourSpotlight
+          spotRect={spotRect}
           step={TOUR_STEPS[tourStep]}
+          stepIndex={tourStep}
           total={TOUR_STEPS.length}
-          tourStep={tourStep}
+          sidebarRight={sidebarRight}
           onPrev={prevStep}
           onNext={nextStep}
           onFinish={endTour}
+          onClose={endTour}
         />
       )}
     </div>
