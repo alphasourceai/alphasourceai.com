@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Trash2, Plus, ChevronDown, ExternalLink, RefreshCw } from "lucide-react";
 import AdminLayout from "@/components/AdminLayout";
-import { useAdminClient, ADMIN_CLIENTS } from "@/context/AdminClientContext";
+import { useAdminClient } from "@/context/AdminClientContext";
+import { supabase } from "@/lib/supabaseClient";
 
 /* ── Types ───────────────────────────────────────────────────── */
 interface LineItem {
@@ -12,25 +13,94 @@ interface LineItem {
 }
 
 interface Invoice {
-  id:        number;
+  id:        string;
+  customerId: string;
   created:   string;
   customer:  string;
   email:     string;
   title:     string;
   amount:    string;
   status:    "open" | "paid" | "void";
+  hostedInvoiceUrl: string;
 }
 
-/* ── Dummy invoice history ───────────────────────────────────── */
-const INVOICE_HISTORY: Invoice[] = [
-  { id: 1, created: "4/8/2026, 11:20 AM",  customer: "Summit Health Network",    email: "billing@summithealth.com",     title: "Pro subscription (annual)",  amount: "$6,499.00", status: "paid"  },
-  { id: 2, created: "4/5/2026, 9:15 AM",   customer: "Acme Dental Group",        email: "billing@acmedental.com",       title: "Pro subscription (monthly)", amount: "$599.00",   status: "open"  },
-  { id: 3, created: "3/30/2026, 2:44 PM",  customer: "Ridge Medical Partners",   email: "billing@ridgemedical.com",     title: "Pro subscription (monthly)", amount: "$599.00",   status: "open"  },
-  { id: 4, created: "3/20/2026, 10:05 AM", customer: "Crestwood Orthopedics",    email: "billing@crestwoodortho.com",   title: "Enterprise subscription",    amount: "$1,299.00", status: "paid"  },
-  { id: 5, created: "3/13/2026, 11:14 AM", customer: "Pinnacle Surgical Group",  email: "billing@pinnaclesurgical.com", title: "Pro subscription (annual)",  amount: "$6,499.00", status: "open"  },
-  { id: 6, created: "3/13/2026, 9:52 AM",  customer: "Lakeside Dermatology",     email: "billing@lakesidederm.com",     title: "Pro subscription (monthly)", amount: "$599.00",   status: "void"  },
-  { id: 7, created: "2/28/2026, 8:30 AM",  customer: "Harbor Cove Family Health",email: "billing@harborcovefh.com",     title: "Basic subscription",         amount: "$299.00",   status: "paid"  },
-];
+interface BillingCustomer {
+  id: string;
+  clientId: string;
+  name: string;
+  primaryContactEmail: string;
+}
+
+const env =
+  typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
+
+function trimTrailingSlashes(value: unknown): string {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function firstBase(...values: unknown[]): string {
+  for (const value of values) {
+    const normalized = trimTrailingSlashes(value);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+const backendBase = firstBase(
+  (env as Record<string, unknown>).VITE_BACKEND_URL,
+  (env as Record<string, unknown>).VITE_API_URL,
+  (env as Record<string, unknown>).VITE_PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).BACKEND_URL,
+);
+
+function parseJsonSafe(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function extractErrorMessage(text: string): string {
+  if (!text) return "Failed to load billing data.";
+  const data = parseJsonSafe(text);
+  const detail =
+    data && typeof data === "object"
+      ? (data as { detail?: unknown }).detail ??
+        (data as { message?: unknown }).message ??
+        (data as { error?: unknown }).error
+      : null;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  return text;
+}
+
+function normalizeInvoiceStatus(value: unknown): "open" | "paid" | "void" {
+  const status = String(value || "").trim().toLowerCase();
+  if (status === "paid") return "paid";
+  if (status === "void" || status === "uncollectible") return "void";
+  return "open";
+}
+
+function formatDateTime(value: unknown): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "—";
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return "—";
+  return parsed.toLocaleString();
+}
+
+function formatAmountFromCents(cents: unknown, currency: unknown): string {
+  const amount = Number(cents);
+  if (!Number.isFinite(amount)) return "$0.00";
+  const code = String(currency || "usd").trim().toUpperCase() || "USD";
+  try {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency: code }).format(amount / 100);
+  } catch {
+    return `$${(amount / 100).toFixed(2)}`;
+  }
+}
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 const inputCls =
@@ -50,7 +120,17 @@ let _lineId = 10;
 
 /* ── Component ───────────────────────────────────────────────── */
 export default function AdminBillingPage() {
-  const { selectedClient } = useAdminClient();
+  const {
+    selectedClient,
+    selectedClientId,
+    loading: adminClientsLoading,
+    error: adminClientsError,
+  } = useAdminClient();
+  const [billingCustomers, setBillingCustomers] = useState<BillingCustomer[]>([]);
+  const [invoiceHistory, setInvoiceHistory] = useState<Invoice[]>([]);
+  const [billingLoading, setBillingLoading] = useState<boolean>(false);
+  const [billingError, setBillingError] = useState<string>("");
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
   /* Create billing customer */
   const [cbcCompany, setCbcCompany]   = useState("");
@@ -79,12 +159,144 @@ export default function AdminBillingPage() {
   const filledItems   = lineItems.filter((li) => li.description.trim() && li.unit.trim());
   const canSendInvoice = invCustomer && invTitle.trim() && filledItems.length > 0;
 
-  /* Invoice filter */
-  const filteredInvoices = selectedClient.id === "all"
-    ? INVOICE_HISTORY
-    : INVOICE_HISTORY.filter((_) => true); /* real filter would use clientId */
+  useEffect(() => {
+    let alive = true;
 
-  const clientOptions = ADMIN_CLIENTS.filter((c) => c.id !== "all");
+    const loadBilling = async () => {
+      if (adminClientsLoading) return;
+      if (adminClientsError) {
+        if (!alive) return;
+        setBillingCustomers([]);
+        setInvoiceHistory([]);
+        setBillingError(adminClientsError);
+        setBillingLoading(false);
+        return;
+      }
+      if (!backendBase) {
+        if (!alive) return;
+        setBillingCustomers([]);
+        setInvoiceHistory([]);
+        setBillingError("Missing backend base URL configuration.");
+        setBillingLoading(false);
+        return;
+      }
+
+      if (!alive) return;
+      setBillingLoading(true);
+      setBillingError("");
+
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const token = String(session?.access_token || "").trim();
+        if (!token) throw new Error("Missing session token.");
+
+        const [customersResponse, invoicesResponse] = await Promise.all([
+          fetch(`${backendBase}/admin/billing/customers`, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            credentials: "omit",
+          }),
+          fetch(`${backendBase}/admin/billing/invoices`, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            credentials: "omit",
+          }),
+        ]);
+
+        const [customersText, invoicesText] = await Promise.all([
+          customersResponse.text(),
+          invoicesResponse.text(),
+        ]);
+
+        if (!customersResponse.ok) throw new Error(extractErrorMessage(customersText));
+        if (!invoicesResponse.ok) throw new Error(extractErrorMessage(invoicesText));
+
+        const customersPayload = parseJsonSafe(customersText);
+        const invoicesPayload = parseJsonSafe(invoicesText);
+        const customerItems =
+          customersPayload &&
+          typeof customersPayload === "object" &&
+          Array.isArray((customersPayload as { items?: unknown }).items)
+            ? ((customersPayload as { items: unknown[] }).items || [])
+            : [];
+        const invoiceItems =
+          invoicesPayload &&
+          typeof invoicesPayload === "object" &&
+          Array.isArray((invoicesPayload as { items?: unknown }).items)
+            ? ((invoicesPayload as { items: unknown[] }).items || [])
+            : [];
+
+        const mappedCustomers = customerItems
+          .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+          .map((item) => ({
+            id: String(item.id || "").trim(),
+            clientId: String(item.client_id || "").trim(),
+            name: String(item.name || "").trim() || "—",
+            primaryContactEmail: String(item.primary_contact_email || "").trim(),
+          }))
+          .filter((item) => Boolean(item.id));
+
+        const customerById = Object.fromEntries(mappedCustomers.map((customer) => [customer.id, customer]));
+
+        const mappedInvoices = invoiceItems
+          .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+          .map((item, index) => {
+            const customerId = String(item.billing_customer_id || "").trim();
+            const customer = customerById[customerId];
+            const customerName = String(item.customer_name || "").trim() || customer?.name || customerId || "—";
+            const customerEmail =
+              String(item.customer_email || "").trim() || customer?.primaryContactEmail || "";
+            return {
+              id: String(item.id || `invoice-${index}`),
+              customerId,
+              created: formatDateTime(item.created_at),
+              customer: customerName,
+              email: customerEmail,
+              title: String(item.title || item.invoice_title || "").trim() || "—",
+              amount: formatAmountFromCents(item.amount_total_cents, item.currency),
+              status: normalizeInvoiceStatus(item.status),
+              hostedInvoiceUrl: String(item.hosted_invoice_url || "").trim(),
+            };
+          })
+          .filter((item) => Boolean(item.id));
+
+        if (!alive) return;
+        setBillingCustomers(mappedCustomers);
+        setInvoiceHistory(mappedInvoices);
+      } catch (error) {
+        if (!alive) return;
+        setBillingCustomers([]);
+        setInvoiceHistory([]);
+        setBillingError(error instanceof Error ? error.message : "Failed to load billing data.");
+      } finally {
+        if (alive) setBillingLoading(false);
+      }
+    };
+
+    void loadBilling();
+    return () => {
+      alive = false;
+    };
+  }, [selectedClientId, adminClientsLoading, adminClientsError, refreshNonce]);
+
+  const scopedCustomers =
+    selectedClientId === "all"
+      ? billingCustomers
+      : billingCustomers.filter((customer) => customer.clientId === selectedClientId);
+  const scopedCustomerIdSet = new Set(scopedCustomers.map((customer) => customer.id));
+  const filteredInvoices =
+    selectedClientId === "all"
+      ? invoiceHistory
+      : invoiceHistory.filter((invoice) => scopedCustomerIdSet.has(invoice.customerId));
+  const clientOptions = scopedCustomers;
+
+  useEffect(() => {
+    if (!invCustomer) return;
+    if (clientOptions.some((customer) => customer.id === invCustomer)) return;
+    setInvCustomer("");
+  }, [invCustomer, clientOptions]);
 
   const card = "bg-white rounded-2xl mb-5 overflow-hidden";
   const cardStyle = { border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 2px 12px rgba(10,21,71,0.04)" };
@@ -93,7 +305,9 @@ export default function AdminBillingPage() {
     <AdminLayout title="Billing">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-black text-[#0A1547]">Billing</h2>
-        <span className="text-xs text-[#0A1547]/35 font-medium italic">Global — not scoped to selected client</span>
+        <span className="text-xs text-[#0A1547]/35 font-medium italic">
+          {selectedClientId === "all" ? "Global — not scoped to selected client" : `Scoped to ${selectedClient.name}`}
+        </span>
       </div>
 
       {/* ── Create Billing Customer ─────────────────────────── */}
@@ -246,10 +460,12 @@ export default function AdminBillingPage() {
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <p className="text-sm font-black text-[#0A1547]">Invoice History</p>
           <button
+            onClick={() => setRefreshNonce((value) => value + 1)}
+            disabled={billingLoading}
             className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold text-white transition-opacity hover:opacity-90"
             style={{ backgroundColor: "#A380F6" }}
           >
-            <RefreshCw className="w-3.5 h-3.5" />
+            <RefreshCw className={`w-3.5 h-3.5 ${billingLoading ? "animate-spin" : ""}`} />
             Refresh
           </button>
         </div>
@@ -273,47 +489,72 @@ export default function AdminBillingPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredInvoices.map((inv, idx) => {
-                const sc = statusColors[inv.status];
-                return (
-                  <tr
-                    key={inv.id}
-                    className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors"
-                    style={idx === filteredInvoices.length - 1 ? { borderBottom: "none" } : {}}
-                  >
-                    <td className="px-4 py-4 pl-5">
-                      <p className="text-xs font-semibold text-[#0A1547]/60">{inv.created}</p>
-                    </td>
-                    <td className="px-4 py-4">
-                      <p className="text-sm font-bold text-[#0A1547]">{inv.customer}</p>
-                      <p className="text-[11px] text-[#0A1547]/40">{inv.email}</p>
-                    </td>
-                    <td className="px-4 py-4">
-                      <p className="text-sm text-[#0A1547]/70 font-medium">{inv.title}</p>
-                    </td>
-                    <td className="px-4 py-4">
-                      <p className="text-sm font-black text-[#0A1547]">{inv.amount}</p>
-                    </td>
-                    <td className="px-4 py-4">
-                      <span
-                        className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold"
-                        style={{ backgroundColor: sc.bg, color: sc.text }}
-                      >
-                        {inv.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4 pr-5 text-center">
-                      <button
-                        className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold text-white transition-opacity hover:opacity-90 mx-auto"
-                        style={{ backgroundColor: "#A380F6" }}
-                      >
-                        <ExternalLink className="w-3 h-3" />
-                        Open
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
+              {billingLoading ? (
+                <tr>
+                  <td colSpan={6} className="text-center py-14 text-sm text-[#0A1547]/30 font-semibold">
+                    Loading billing data...
+                  </td>
+                </tr>
+              ) : billingError ? (
+                <tr>
+                  <td colSpan={6} className="text-center py-14 text-sm text-red-500 font-semibold">
+                    {billingError}
+                  </td>
+                </tr>
+              ) : filteredInvoices.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="text-center py-14 text-sm text-[#0A1547]/30 font-semibold">
+                    No invoices yet.
+                  </td>
+                </tr>
+              ) : (
+                filteredInvoices.map((inv, idx) => {
+                  const sc = statusColors[inv.status];
+                  return (
+                    <tr
+                      key={inv.id}
+                      className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors"
+                      style={idx === filteredInvoices.length - 1 ? { borderBottom: "none" } : {}}
+                    >
+                      <td className="px-4 py-4 pl-5">
+                        <p className="text-xs font-semibold text-[#0A1547]/60">{inv.created}</p>
+                      </td>
+                      <td className="px-4 py-4">
+                        <p className="text-sm font-bold text-[#0A1547]">{inv.customer}</p>
+                        <p className="text-[11px] text-[#0A1547]/40">{inv.email || "—"}</p>
+                      </td>
+                      <td className="px-4 py-4">
+                        <p className="text-sm text-[#0A1547]/70 font-medium">{inv.title}</p>
+                      </td>
+                      <td className="px-4 py-4">
+                        <p className="text-sm font-black text-[#0A1547]">{inv.amount}</p>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span
+                          className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold"
+                          style={{ backgroundColor: sc.bg, color: sc.text }}
+                        >
+                          {inv.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 pr-5 text-center">
+                        {inv.hostedInvoiceUrl ? (
+                          <button
+                            onClick={() => window.open(inv.hostedInvoiceUrl, "_blank", "noopener,noreferrer")}
+                            className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold text-white transition-opacity hover:opacity-90 mx-auto"
+                            style={{ backgroundColor: "#A380F6" }}
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            Open
+                          </button>
+                        ) : (
+                          <span className="text-xs text-[#0A1547]/30 font-semibold">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>

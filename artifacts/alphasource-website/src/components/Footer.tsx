@@ -3,11 +3,15 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/context/AuthContext";
 
 export default function Footer() {
+  const isValidEmail = (value: string) =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+
   const [adminLoginOpen, setAdminLoginOpen] = useState(false);
   const [email, setEmail]                   = useState("");
   const [password, setPassword]             = useState("");
+  const [emailError, setEmailError]         = useState("");
   const dropdownRef                         = useRef<HTMLDivElement>(null);
-  const { loginAdmin }                      = useAuth();
+  const { loginAdmin, adminLoginLoading, adminLoginError, clearAdminLoginError } = useAuth();
   const [, setLocation]                     = useLocation();
 
   useEffect(() => {
@@ -20,9 +24,22 @@ export default function Footer() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [adminLoginOpen]);
 
-  const handleAdminSignIn = (e: React.FormEvent) => {
+  const handleAdminSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    loginAdmin();
+    const normalizedEmail = email.trim();
+    if (!normalizedEmail || !password) {
+      setEmailError("Email and password are required.");
+      clearAdminLoginError();
+      return;
+    }
+    if (!isValidEmail(normalizedEmail)) {
+      setEmailError("Please enter a valid email address.");
+      clearAdminLoginError();
+      return;
+    }
+    setEmailError("");
+    const { error } = await loginAdmin(normalizedEmail, password);
+    if (error) return;
     setAdminLoginOpen(false);
     setLocation("/admin");
   };
@@ -115,7 +132,11 @@ export default function Footer() {
             {/* Admin Login */}
             <div className="relative" ref={dropdownRef}>
               <button
-                onClick={() => setAdminLoginOpen((o) => !o)}
+                onClick={() => {
+                  setAdminLoginOpen((o) => !o);
+                  setEmailError("");
+                  clearAdminLoginError();
+                }}
                 className="text-white/25 text-xs hover:text-white/50 transition-colors font-semibold"
               >
                 Admin Login
@@ -148,24 +169,38 @@ export default function Footer() {
                       type="email"
                       placeholder="Email address"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        setEmailError("");
+                        clearAdminLoginError();
+                      }}
                       className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all"
                     />
                     <input
                       type="password"
                       placeholder="Password"
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        clearAdminLoginError();
+                      }}
                       className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all"
                     />
                     <button
                       type="submit"
+                      disabled={adminLoginLoading}
                       className="w-full py-2.5 text-sm font-bold text-white rounded-full transition-all hover:opacity-90 active:scale-[0.99]"
                       style={{ backgroundColor: "#A380F6" }}
                     >
-                      Sign In
+                      {adminLoginLoading ? "Signing in..." : "Sign In"}
                     </button>
                   </form>
+                  {emailError && (
+                    <p className="mt-2 text-xs text-red-500">{emailError}</p>
+                  )}
+                  {adminLoginError && (
+                    <p className="mt-2 text-xs text-red-500">{adminLoginError}</p>
+                  )}
                 </div>
               )}
             </div>

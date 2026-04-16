@@ -1,26 +1,75 @@
-import { useState } from "react";
-import { Trash2, UserPlus, ChevronDown, ChevronUp, ChevronsUpDown } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Trash2, UserPlus, ChevronDown, ChevronUp, ChevronsUpDown, Key } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useClient } from "@/context/ClientContext";
+import { supabase } from "@/lib/supabaseClient";
+import { buildPwResetUrl } from "@/lib/urlConfig";
 
 type MemberRole = "Manager" | "Member";
 type SortKey = "name" | "email" | "role";
 type SortDir = "asc" | "desc";
 
 interface Member {
-  id: number;
+  id: string | number;
   name: string;
   email: string;
   role: MemberRole;
 }
 
-let _nextId = 4;
+const env =
+  typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
 
-const SEED_MEMBERS: Member[] = [
-  { id: 1, name: "Sarah Nguyen",  email: "sarah.nguyen@acmedental.com",  role: "Manager" },
-  { id: 2, name: "Derek Hall",    email: "derek.hall@acmedental.com",    role: "Member"  },
-  { id: 3, name: "Priya Patel",   email: "priya.patel@acmedental.com",   role: "Member"  },
-];
+function trimTrailingSlashes(value: unknown): string {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function firstBase(...values: unknown[]): string {
+  for (const value of values) {
+    const normalized = trimTrailingSlashes(value);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+const backendBase = firstBase(
+  (env as Record<string, unknown>).VITE_BACKEND_URL,
+  (env as Record<string, unknown>).VITE_API_URL,
+  (env as Record<string, unknown>).VITE_PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).BACKEND_URL,
+);
+
+function extractErrorMessage(text: string): string {
+  if (!text) return "Failed to load members.";
+  try {
+    const data = JSON.parse(text) as { detail?: unknown; message?: unknown; error?: unknown };
+    const candidate = data.detail ?? data.message ?? data.error;
+    if (typeof candidate === "string" && candidate.trim()) return candidate;
+  } catch {
+    // ignore parse failure and fall back to raw text
+  }
+  return text;
+}
+
+function parseJsonSafe(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function toMemberRole(value: unknown): MemberRole {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "manager" || normalized === "admin") return "Manager";
+  return "Member";
+}
+
+function fallbackNameFromEmail(email: string): string {
+  const local = String(email || "").split("@")[0] || "";
+  return local.trim() || "Unnamed Member";
+}
 
 const roleStyle: Record<MemberRole, { bg: string; text: string }> = {
   Manager: { bg: "rgba(163,128,246,0.12)", text: "#7C5FCC" },
@@ -51,34 +100,323 @@ function isValidEmail(v: string) {
 }
 
 export default function MembersPage() {
-  const { selectedClient } = useClient();
+  const {
+    selectedClient,
+    selectedClientId,
+    loading: clientLoading,
+    error: clientError,
+    memberships,
+  } = useClient();
   const clientName = selectedClient.id === "all" ? "All Clients" : selectedClient.name;
+  const selectedMembershipRole = String(
+    memberships.find((membership) => membership.client_id === selectedClientId)?.role ||
+      selectedClient.role ||
+      "",
+  )
+    .trim()
+    .toLowerCase();
+  const canResetPassword = selectedMembershipRole === "manager" || selectedMembershipRole === "admin";
 
-  const [members, setMembers]   = useState<Member[]>(SEED_MEMBERS);
+  const [members, setMembers]   = useState<Member[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [membersError, setMembersError] = useState("");
   const [name, setName]         = useState("");
   const [email, setEmail]       = useState("");
   const [role, setRole]         = useState<MemberRole>("Member");
   const [submitted, setSubmitted] = useState(false);
   const [sortKey, setSortKey]   = useState<SortKey | null>(null);
   const [sortDir, setSortDir]   = useState<SortDir>("asc");
+  const [addingMember, setAddingMember] = useState(false);
+  const [removingMembers, setRemovingMembers] = useState<Record<string, boolean>>({});
+  const [resettingPasswords, setResettingPasswords] = useState<Record<string, boolean>>({});
+  const [actionNotice, setActionNotice] = useState<{ tone: "success" | "error"; text: string } | null>(null);
 
   const nameErr  = submitted && name.trim() === "";
   const emailErr = submitted && !isValidEmail(email);
 
-  const handleAdd = () => {
-    setSubmitted(true);
-    if (!name.trim() || !isValidEmail(email)) return;
-    setMembers((prev) => [
-      ...prev,
-      { id: _nextId++, name: name.trim(), email: email.trim(), role },
-    ]);
-    setName("");
-    setEmail("");
-    setRole("Member");
-    setSubmitted(false);
+  useEffect(() => {
+    let alive = true;
+
+    const loadMembers = async () => {
+      if (clientLoading) return;
+      if (clientError) {
+        if (!alive) return;
+        setMembers([]);
+        setMembersError(clientError);
+        setMembersLoading(false);
+        return;
+      }
+      if (!selectedClientId) {
+        if (!alive) return;
+        setMembers([]);
+        setMembersError("");
+        setMembersLoading(false);
+        return;
+      }
+      if (!backendBase) {
+        if (!alive) return;
+        setMembers([]);
+        setMembersError("Missing backend base URL configuration.");
+        setMembersLoading(false);
+        return;
+      }
+
+      if (!alive) return;
+      setMembersLoading(true);
+      setMembersError("");
+
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const token = String(session?.access_token || "").trim();
+        if (!token) throw new Error("Missing session token.");
+
+        const response = await fetch(
+          `${backendBase}/client-members?client_id=${encodeURIComponent(selectedClientId)}`,
+          {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            credentials: "omit",
+          },
+        );
+
+        const text = await response.text();
+        if (!response.ok) {
+          throw new Error(extractErrorMessage(text));
+        }
+
+        let payload: unknown = null;
+        try {
+          payload = text ? JSON.parse(text) : {};
+        } catch {
+          payload = {};
+        }
+
+        const items = payload && typeof payload === "object" && Array.isArray((payload as { items?: unknown }).items)
+          ? (payload as { items: unknown[] }).items
+          : [];
+
+        const mappedMembers: Member[] = items
+          .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+          .map((item, index) => {
+            const rawEmail = String(item.email || "").trim();
+            const rawId = item.id ?? item.user_id ?? rawEmail;
+            const rawIdText =
+              typeof rawId === "string" || typeof rawId === "number"
+                ? String(rawId).trim()
+                : "";
+            const id = rawIdText || `member-${index + 1}`;
+            const nameValue = String(item.name || "").trim() || fallbackNameFromEmail(rawEmail);
+            return {
+              id,
+              name: nameValue,
+              email: rawEmail || "—",
+              role: toMemberRole(item.role),
+            };
+          });
+
+        if (!alive) return;
+        setMembers(mappedMembers);
+      } catch (error) {
+        if (!alive) return;
+        setMembers([]);
+        setMembersError(error instanceof Error ? error.message : "Failed to load members.");
+      } finally {
+        if (alive) setMembersLoading(false);
+      }
+    };
+
+    void loadMembers();
+    return () => {
+      alive = false;
+    };
+  }, [selectedClientId, clientLoading, clientError]);
+
+  useEffect(() => {
+    setActionNotice(null);
+    setRemovingMembers({});
+    setResettingPasswords({});
+    setAddingMember(false);
+  }, [selectedClientId, clientLoading, clientError]);
+
+  useEffect(() => {
+    if (!actionNotice) return;
+    const timer = setTimeout(() => setActionNotice(null), 3200);
+    return () => clearTimeout(timer);
+  }, [actionNotice]);
+
+  const getSessionToken = async (): Promise<string> => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const token = String(session?.access_token || "").trim();
+    if (!token) throw new Error("Missing session token.");
+    return token;
   };
 
-  const handleRemove = (id: number) => setMembers((prev) => prev.filter((m) => m.id !== id));
+  const handleAdd = async () => {
+    setSubmitted(true);
+    if (!name.trim() || !isValidEmail(email)) return;
+    if (!selectedClientId) return;
+    if (!backendBase) {
+      setActionNotice({ tone: "error", text: "Missing backend base URL configuration." });
+      return;
+    }
+
+    const memberName = name.trim();
+    const memberEmail = email.trim();
+    setActionNotice(null);
+    setAddingMember(true);
+
+    try {
+      const token = await getSessionToken();
+      const response = await fetch(`${backendBase}/client-members`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "omit",
+        body: JSON.stringify({
+          client_id: selectedClientId,
+          email: memberEmail,
+          name: memberName,
+          role: role.toLowerCase(),
+        }),
+      });
+
+      const text = await response.text();
+      const data = parseJsonSafe(text) as { item?: unknown; error?: unknown; code?: unknown } | null;
+      const code = typeof data?.code === "string"
+        ? data.code
+        : (typeof data?.error === "string" ? data.error : "");
+
+      if (!response.ok) {
+        if (response.status === 409 || code === "email_in_use" || code === "client_admin_email_in_use") {
+          throw new Error("Email address already exists");
+        }
+        throw new Error(extractErrorMessage(text) || "Could not add member.");
+      }
+
+      const item = data && typeof data.item === "object" && data.item
+        ? (data.item as Record<string, unknown>)
+        : null;
+
+      if (item) {
+        const rawEmail = String(item.email || "").trim();
+        const rawId = item.id ?? item.user_id ?? rawEmail;
+        const rawIdText =
+          typeof rawId === "string" || typeof rawId === "number"
+            ? String(rawId).trim()
+            : "";
+        const nextMember: Member = {
+          id: rawIdText || rawEmail || memberEmail,
+          name: String(item.name || "").trim() || fallbackNameFromEmail(rawEmail || memberEmail),
+          email: rawEmail || memberEmail,
+          role: toMemberRole(item.role),
+        };
+        setMembers((prev) => [nextMember, ...prev.filter((m) => String(m.id) !== String(nextMember.id))]);
+      } else {
+        setMembers((prev) => [
+          {
+            id: memberEmail,
+            name: memberName,
+            email: memberEmail,
+            role,
+          },
+          ...prev.filter((m) => String(m.id) !== memberEmail),
+        ]);
+      }
+
+      setName("");
+      setEmail("");
+      setRole("Member");
+      setSubmitted(false);
+      setActionNotice({ tone: "success", text: "Member added." });
+    } catch (error) {
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not add member.",
+      });
+    } finally {
+      setAddingMember(false);
+    }
+  };
+
+  const handleRemove = async (id: string | number) => {
+    if (!selectedClientId) return;
+    if (!backendBase) {
+      setActionNotice({ tone: "error", text: "Missing backend base URL configuration." });
+      return;
+    }
+
+    const memberId = String(id);
+    setActionNotice(null);
+    setRemovingMembers((prev) => ({ ...prev, [memberId]: true }));
+
+    try {
+      const token = await getSessionToken();
+      const response = await fetch(
+        `${backendBase}/client-members/${encodeURIComponent(memberId)}?client_id=${encodeURIComponent(selectedClientId)}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "omit",
+        },
+      );
+
+      const text = await response.text();
+      const data = parseJsonSafe(text) as { code?: unknown; error?: unknown } | null;
+      const code = typeof data?.code === "string" ? data.code : "";
+
+      if (!response.ok) {
+        if (code === "self_delete_forbidden") {
+          throw new Error("Not allowed to delete yourself");
+        }
+        throw new Error(extractErrorMessage(text) || "Could not remove member.");
+      }
+
+      setMembers((prev) => prev.filter((m) => String(m.id) !== memberId));
+      setActionNotice({ tone: "success", text: "Member removed." });
+    } catch (error) {
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not remove member.",
+      });
+    } finally {
+      setRemovingMembers((prev) => ({ ...prev, [memberId]: false }));
+    }
+  };
+
+  const handleResetPassword = async (id: string | number, emailValue: string) => {
+    if (!canResetPassword) return;
+
+    const memberId = String(id || "").trim();
+    const email = String(emailValue || "").trim();
+    if (!memberId || !email || email === "—") {
+      setActionNotice({ tone: "error", text: "Member email is required for password reset." });
+      return;
+    }
+
+    setActionNotice(null);
+    setResettingPasswords((prev) => ({ ...prev, [memberId]: true }));
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: buildPwResetUrl({ origin: "client" }),
+      });
+      if (error) throw error;
+      setActionNotice({ tone: "success", text: "Password reset email sent." });
+    } catch (error) {
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not send password reset.",
+      });
+    } finally {
+      setResettingPasswords((prev) => ({ ...prev, [memberId]: false }));
+    }
+  };
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -110,6 +448,8 @@ export default function MembersPage() {
     </th>
   );
 
+  const columnCount = canResetPassword ? 5 : 4;
+
   return (
     <DashboardLayout title="Members">
       <div
@@ -126,6 +466,19 @@ export default function MembersPage() {
               </span>
             )}
           </h2>
+          {actionNotice && (
+            <div
+              className={`mb-4 rounded-xl px-3.5 py-2 text-xs font-semibold ${
+                actionNotice.tone === "success"
+                  ? "text-[#009E73] bg-[#02D99D]/10 border border-[#02D99D]/25"
+                  : "text-red-500 bg-red-50 border border-red-200"
+              }`}
+              role="status"
+              aria-live="polite"
+            >
+              {actionNotice.text}
+            </div>
+          )}
 
           {/* Add Member form */}
           <div className="flex flex-wrap gap-3 items-start">
@@ -136,7 +489,8 @@ export default function MembersPage() {
                 placeholder="Member name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+                onKeyDown={(e) => { if (e.key === "Enter") void handleAdd(); }}
+                disabled={addingMember}
                 className={`w-full px-4 py-2.5 rounded-xl text-sm bg-gray-50 border placeholder-gray-400 text-[#0A1547] focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all ${
                   nameErr ? "border-red-300 bg-red-50/40" : "border-gray-200"
                 }`}
@@ -153,7 +507,8 @@ export default function MembersPage() {
                 placeholder="Member email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+                onKeyDown={(e) => { if (e.key === "Enter") void handleAdd(); }}
+                disabled={addingMember}
                 className={`w-full px-4 py-2.5 rounded-xl text-sm bg-gray-50 border placeholder-gray-400 text-[#0A1547] focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all ${
                   emailErr ? "border-red-300 bg-red-50/40" : "border-gray-200"
                 }`}
@@ -168,6 +523,7 @@ export default function MembersPage() {
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value as MemberRole)}
+                disabled={addingMember}
                 className="w-full appearance-none px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all cursor-pointer pr-9"
               >
                 <option value="Member">Member</option>
@@ -178,12 +534,13 @@ export default function MembersPage() {
 
             {/* Add button */}
             <button
-              onClick={handleAdd}
+              onClick={() => { void handleAdd(); }}
+              disabled={addingMember}
               className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white rounded-full transition-all hover:opacity-90 active:scale-[0.97] flex-shrink-0"
               style={{ backgroundColor: "#A380F6" }}
             >
               <UserPlus className="w-4 h-4" />
-              Add
+              {addingMember ? "Adding..." : "Add"}
             </button>
           </div>
         </div>
@@ -196,15 +553,32 @@ export default function MembersPage() {
                 <ThSort col="name"  label="Name"   className="pl-6" />
                 <ThSort col="email" label="Email"  />
                 <ThSort col="role"  label="Role"   />
+                {canResetPassword && (
+                  <th className="px-4 py-3.5 text-center text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 whitespace-nowrap">
+                    Reset Password
+                  </th>
+                )}
                 <th className="px-4 py-3.5 pr-6 text-center text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 whitespace-nowrap">
                   Remove
                 </th>
               </tr>
             </thead>
             <tbody>
-              {sorted.length === 0 ? (
+              {clientLoading || membersLoading ? (
                 <tr>
-                  <td colSpan={4} className="text-center py-14 text-sm text-[#0A1547]/30 font-semibold">
+                  <td colSpan={columnCount} className="text-center py-14 text-sm text-[#0A1547]/30 font-semibold">
+                    Loading members...
+                  </td>
+                </tr>
+              ) : clientError || membersError ? (
+                <tr>
+                  <td colSpan={columnCount} className="text-center py-14 text-sm text-red-500 font-semibold">
+                    {clientError || membersError}
+                  </td>
+                </tr>
+              ) : sorted.length === 0 ? (
+                <tr>
+                  <td colSpan={columnCount} className="text-center py-14 text-sm text-[#0A1547]/30 font-semibold">
                     No members yet — add one above.
                   </td>
                 </tr>
@@ -231,11 +605,26 @@ export default function MembersPage() {
                       <RoleBadge role={m.role} />
                     </td>
 
+                    {canResetPassword && (
+                      <td className="px-4 py-4 text-center">
+                        <button
+                          onClick={() => { void handleResetPassword(m.id, m.email); }}
+                          disabled={Boolean(resettingPasswords[String(m.id)])}
+                          className="p-2 rounded-lg text-[#0A1547]/25 hover:text-[#A380F6] hover:bg-[#A380F6]/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                          title={resettingPasswords[String(m.id)] ? "Sending password reset..." : `Send password reset to ${m.name}`}
+                          aria-label={resettingPasswords[String(m.id)] ? `Sending password reset to ${m.name}` : `Send password reset to ${m.name}`}
+                        >
+                          <Key className={`w-4 h-4 ${resettingPasswords[String(m.id)] ? "animate-spin" : ""}`} />
+                        </button>
+                      </td>
+                    )}
+
                     {/* Remove */}
                     <td className="px-4 py-4 pr-6 text-center">
                       <button
-                        onClick={() => handleRemove(m.id)}
-                        className="p-2 rounded-lg text-[#0A1547]/25 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        onClick={() => { void handleRemove(m.id); }}
+                        disabled={Boolean(removingMembers[String(m.id)])}
+                        className="p-2 rounded-lg text-[#0A1547]/25 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                         aria-label={`Remove ${m.name}`}
                       >
                         <Trash2 className="w-4 h-4" />

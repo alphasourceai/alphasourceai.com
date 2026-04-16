@@ -1,27 +1,98 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ShoppingCart, CreditCard } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useClient } from "@/context/ClientContext";
 import InfoTooltip from "@/components/InfoTooltip";
+import { supabase } from "@/lib/supabaseClient";
 
-/* ── Placeholder billing data (same for all clients until Supabase) ── */
-const BILLING = {
-  planTier:           "Enterprise",
-  billingStatus:      "Active",
-  billingCycle:       "Annual",
-  autoRenew:          "Yes",
-  currentTermEnd:     "Mar 16, 2027",
-  contractEndDate:    "Mar 16, 2027",
-  membershipStatus:   "Active",
-  accessStatus:       "Inherited",
-};
+interface BillingSummary {
+  plan_tier: string;
+  billing_status: string;
+  billing_interval: string;
+  auto_renew: boolean | null;
+  current_term_end: string;
+  contract_end_at: string;
+  subscription_status: string;
+  access_override_mode: string;
+  has_stripe_customer: boolean;
+}
 
-const PURCHASED_INTERVIEWS = [
-  { role: "Dental Hygienist",       purchased: 50 },
-  { role: "Front Desk Coordinator", purchased: 50 },
-  { role: "Dental Assistant",       purchased: 25 },
-  { role: "Office Manager",         purchased: 25 },
-];
+interface BillingRole {
+  id: string;
+  title: string;
+  purchased_interviews: number;
+}
+
+const env =
+  typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
+
+function trimTrailingSlashes(value: unknown): string {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function firstBase(...values: unknown[]): string {
+  for (const value of values) {
+    const normalized = trimTrailingSlashes(value);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+const backendBase = firstBase(
+  (env as Record<string, unknown>).VITE_BACKEND_URL,
+  (env as Record<string, unknown>).VITE_API_URL,
+  (env as Record<string, unknown>).VITE_PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).BACKEND_URL,
+);
+
+function extractErrorMessage(text: string): string {
+  if (!text) return "Failed to load billing summary.";
+  try {
+    const data = JSON.parse(text) as { detail?: unknown; message?: unknown; error?: unknown };
+    const candidate = data.detail ?? data.message ?? data.error;
+    if (typeof candidate === "string" && candidate.trim()) return candidate;
+  } catch {
+    // ignore parse failure and fall back to raw text
+  }
+  return text;
+}
+
+function parseJsonSafe(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function formatDate(value: unknown): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "—";
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return "—";
+  return parsed.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function toDisplayText(value: unknown, fallback = "—"): string {
+  const text = String(value || "").trim();
+  if (!text) return fallback;
+  return text
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+function toWholeNonNegative(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.floor(n));
+}
 
 /* ── Status badge colors ── */
 function statusStyle(value: string): { bg: string; text: string } {
@@ -89,13 +160,373 @@ function InfoCard({
 }
 
 export default function BillingPage() {
-  const { selectedClient } = useClient();
+  const { selectedClient, selectedClientId, loading: clientLoading, error: clientError } = useClient();
   const clientName = selectedClient.id === "all" ? "All Clients" : selectedClient.name;
+  const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [billingError, setBillingError] = useState("");
+  const [roles, setRoles] = useState<BillingRole[]>([]);
+  const [rolesLoading, setRolesLoading] = useState(false);
+  const [portalBusy, setPortalBusy] = useState(false);
+  const [purchaseBusy, setPurchaseBusy] = useState(false);
+  const [actionNotice, setActionNotice] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+  const billingReturnHandledRef = useRef(false);
 
   const [selectedRole, setSelectedRole] = useState("");
   const [quantity, setQuantity]         = useState(1);
 
-  const canPurchase = selectedRole !== "" && quantity >= 1;
+  const canPurchase = selectedRole !== "" && Number.isInteger(quantity) && quantity >= 1 && !rolesLoading && !purchaseBusy;
+
+  useEffect(() => {
+    let alive = true;
+
+    const loadBillingSummary = async () => {
+      if (clientLoading) return;
+      if (clientError) {
+        if (!alive) return;
+        setBillingSummary(null);
+        setBillingError(clientError);
+        setBillingLoading(false);
+        return;
+      }
+      if (!selectedClientId) {
+        if (!alive) return;
+        setBillingSummary(null);
+        setBillingError("");
+        setBillingLoading(false);
+        return;
+      }
+      if (!backendBase) {
+        if (!alive) return;
+        setBillingSummary(null);
+        setBillingError("Missing backend base URL configuration.");
+        setBillingLoading(false);
+        return;
+      }
+
+      if (!alive) return;
+      setBillingLoading(true);
+      setBillingError("");
+
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const token = String(session?.access_token || "").trim();
+        if (!token) throw new Error("Missing session token.");
+
+        const response = await fetch(
+          `${backendBase}/clients/billing/summary?client_id=${encodeURIComponent(selectedClientId)}`,
+          {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            credentials: "omit",
+          },
+        );
+
+        const text = await response.text();
+        if (!response.ok) {
+          throw new Error(extractErrorMessage(text));
+        }
+
+        let payload: unknown = null;
+        try {
+          payload = text ? JSON.parse(text) : {};
+        } catch {
+          payload = {};
+        }
+
+        const items = payload && typeof payload === "object" && Array.isArray((payload as { items?: unknown }).items)
+          ? (payload as { items: unknown[] }).items
+          : [];
+        const first = items.find((item) => Boolean(item && typeof item === "object")) as Record<string, unknown> | undefined;
+
+        if (!alive) return;
+        if (!first) {
+          setBillingSummary(null);
+          return;
+        }
+
+        setBillingSummary({
+          plan_tier: String(first.plan_tier || "").trim(),
+          billing_status: String(first.billing_status || "").trim(),
+          billing_interval: String(first.billing_interval || "").trim(),
+          auto_renew: typeof first.auto_renew === "boolean" ? first.auto_renew : null,
+          current_term_end: String(first.current_term_end || "").trim(),
+          contract_end_at: String(first.contract_end_at || "").trim(),
+          subscription_status: String(first.subscription_status || "").trim(),
+          access_override_mode: String(first.access_override_mode || "").trim(),
+          has_stripe_customer: Boolean(first.has_stripe_customer),
+        });
+      } catch (error) {
+        if (!alive) return;
+        setBillingSummary(null);
+        setBillingError(error instanceof Error ? error.message : "Failed to load billing summary.");
+      } finally {
+        if (alive) setBillingLoading(false);
+      }
+    };
+
+    void loadBillingSummary();
+    return () => {
+      alive = false;
+    };
+  }, [selectedClientId, clientLoading, clientError]);
+
+  useEffect(() => {
+    let alive = true;
+
+    const loadRoles = async () => {
+      if (clientLoading) return;
+      if (clientError) {
+        if (!alive) return;
+        setRoles([]);
+        setRolesLoading(false);
+        return;
+      }
+      if (!selectedClientId) {
+        if (!alive) return;
+        setRoles([]);
+        setSelectedRole("");
+        setRolesLoading(false);
+        return;
+      }
+      if (!backendBase) {
+        if (!alive) return;
+        setRoles([]);
+        setRolesLoading(false);
+        return;
+      }
+
+      if (!alive) return;
+      setRolesLoading(true);
+
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const token = String(session?.access_token || "").trim();
+        if (!token) throw new Error("Missing session token.");
+
+        const response = await fetch(
+          `${backendBase}/roles?client_id=${encodeURIComponent(selectedClientId)}`,
+          {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            credentials: "omit",
+          },
+        );
+
+        const text = await response.text();
+        if (!response.ok) throw new Error(extractErrorMessage(text));
+
+        const payload = parseJsonSafe(text);
+        const items = payload && typeof payload === "object" && Array.isArray((payload as { items?: unknown }).items)
+          ? (payload as { items: unknown[] }).items
+          : [];
+
+        const mappedRoles = items
+          .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+          .map((item) => ({
+            id: String(item.id || "").trim(),
+            title: String(item.title || "").trim() || "Untitled role",
+            purchased_interviews: toWholeNonNegative(item.purchased_interviews),
+          }))
+          .filter((item) => Boolean(item.id));
+
+        if (!alive) return;
+        setRoles(mappedRoles);
+        setSelectedRole((current) => (mappedRoles.some((role) => role.id === current) ? current : ""));
+      } catch {
+        if (!alive) return;
+        setRoles([]);
+        setSelectedRole("");
+      } finally {
+        if (alive) setRolesLoading(false);
+      }
+    };
+
+    void loadRoles();
+    return () => {
+      alive = false;
+    };
+  }, [selectedClientId, clientLoading, clientError]);
+
+  useEffect(() => {
+    setActionNotice(null);
+    setPortalBusy(false);
+    setPurchaseBusy(false);
+  }, [selectedClientId, clientLoading, clientError]);
+
+  useEffect(() => {
+    if (!actionNotice) return;
+    const timer = setTimeout(() => setActionNotice(null), 3200);
+    return () => clearTimeout(timer);
+  }, [actionNotice]);
+
+  useEffect(() => {
+    if (billingReturnHandledRef.current) return;
+    if (!selectedClientId) return;
+    if (typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search || "");
+    const tab = String(params.get("tab") || "").trim().toLowerCase();
+    const returnClientId = String(params.get("client_id") || "").trim();
+    const returnRoleId = String(params.get("role_id") || "").trim();
+    const purchase = String(params.get("purchase") || "").trim().toLowerCase();
+    const intent = String(params.get("intent") || "").trim().toLowerCase();
+
+    const isBillingReturn =
+      tab === "billing" ||
+      intent === "role_capacity" ||
+      purchase === "success" ||
+      purchase === "cancel";
+
+    if (!isBillingReturn) return;
+    if (!returnClientId || returnClientId !== selectedClientId) return;
+
+    if (returnRoleId) {
+      const hasRole = roles.some((role) => role.id === returnRoleId);
+      if (!hasRole && rolesLoading) return;
+      if (hasRole) setSelectedRole(returnRoleId);
+    }
+
+    if (purchase === "success") {
+      setActionNotice({ tone: "success", text: "Additional interviews checkout completed." });
+    } else if (purchase === "cancel") {
+      setActionNotice({ tone: "error", text: "Additional interviews checkout canceled." });
+    }
+
+    billingReturnHandledRef.current = true;
+  }, [selectedClientId, roles, rolesLoading]);
+
+  const getSessionToken = async (): Promise<string> => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const token = String(session?.access_token || "").trim();
+    if (!token) throw new Error("Missing session token.");
+    return token;
+  };
+
+  const openBillingPortal = async () => {
+    if (!selectedClientId || portalBusy) return;
+    setActionNotice(null);
+    setPortalBusy(true);
+    try {
+      if (!backendBase) throw new Error("Missing backend base URL configuration.");
+      const token = await getSessionToken();
+      const response = await fetch(`${backendBase}/clients/billing/portal-session`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "omit",
+        body: JSON.stringify({
+          client_id: selectedClientId,
+          tab: "billing",
+        }),
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text));
+      const data = parseJsonSafe(text) as { url?: unknown } | null;
+      const url = typeof data?.url === "string" ? data.url.trim() : "";
+      if (!url) throw new Error("No billing portal URL returned");
+
+      if (window?.parent && window.parent !== window) {
+        try {
+          if (window.top) {
+            window.top.location.href = url;
+            return;
+          }
+        } catch {
+          // fallback below
+        }
+        window.open(url, "_blank", "noopener,noreferrer");
+        return;
+      }
+      window.location.assign(url);
+    } catch (error) {
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not open billing portal.",
+      });
+    } finally {
+      setPortalBusy(false);
+    }
+  };
+
+  const startAdditionalInterviewsCheckout = async () => {
+    if (!selectedClientId || !selectedRole || !Number.isInteger(quantity) || quantity <= 0 || purchaseBusy) return;
+    setActionNotice(null);
+    setPurchaseBusy(true);
+    try {
+      if (!backendBase) throw new Error("Missing backend base URL configuration.");
+      const token = await getSessionToken();
+      const response = await fetch(`${backendBase}/clients/billing/additional-interviews/checkout-session`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "omit",
+        body: JSON.stringify({
+          client_id: selectedClientId,
+          role_id: selectedRole,
+          quantity,
+          tab: "billing",
+        }),
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text));
+      const data = parseJsonSafe(text) as { url?: unknown } | null;
+      const url = typeof data?.url === "string" ? data.url.trim() : "";
+      if (!url) throw new Error("No checkout URL returned");
+
+      if (window?.parent && window.parent !== window) {
+        try {
+          if (window.top) {
+            window.top.location.href = url;
+            return;
+          }
+        } catch {
+          // fallback below
+        }
+        window.open(url, "_blank", "noopener,noreferrer");
+        return;
+      }
+      window.location.assign(url);
+    } catch (error) {
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not start additional interview checkout.",
+      });
+    } finally {
+      setPurchaseBusy(false);
+    }
+  };
+
+  const billing = useMemo(
+    () => ({
+      planTier: toDisplayText(billingSummary?.plan_tier),
+      billingStatus: toDisplayText(billingSummary?.billing_status),
+      billingCycle: toDisplayText(billingSummary?.billing_interval),
+      autoRenew:
+        billingSummary?.auto_renew === true
+          ? "Yes"
+          : billingSummary?.auto_renew === false
+            ? "No"
+            : "—",
+      currentTermEnd: formatDate(billingSummary?.current_term_end),
+      contractEndDate: formatDate(billingSummary?.contract_end_at),
+      membershipStatus: toDisplayText(billingSummary?.subscription_status),
+      accessStatus: toDisplayText(billingSummary?.access_override_mode),
+    }),
+    [billingSummary],
+  );
+  const purchasedInterviewRows = roles.filter((role) => role.purchased_interviews > 0);
+  const purchasedInterviewsTotal = purchasedInterviewRows.reduce((sum, role) => sum + role.purchased_interviews, 0);
 
   return (
     <DashboardLayout title="Billing">
@@ -112,60 +543,68 @@ export default function BillingPage() {
           )}
         </h2>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          <InfoCard
-            label="Plan Tier"
-            value={BILLING.planTier}
-            accent="#A380F6"
-            tooltip="Your current subscription plan level"
-          />
-          <InfoCard
-            label="Billing Status"
-            value={BILLING.billingStatus}
-            accent="#02D99D"
-            badge
-            tooltip="Whether your account is in good standing"
-          />
-          <InfoCard
-            label="Billing Cycle"
-            value={BILLING.billingCycle}
-            accent="#02ABE0"
-            badge
-            tooltip="How frequently your subscription renews"
-          />
-          <InfoCard
-            label="Auto-Renew"
-            value={BILLING.autoRenew}
-            accent="#A380F6"
-            badge
-            tooltip="Whether your subscription renews automatically at term end"
-          />
-          <InfoCard
-            label="Current Term End"
-            value={BILLING.currentTermEnd}
-            accent="#02ABE0"
-            tooltip="The date your current billing term expires"
-          />
-          <InfoCard
-            label="Contract End Date"
-            value={BILLING.contractEndDate}
-            accent="#02D99D"
-            tooltip="The final date of your signed contract period"
-          />
-          <InfoCard
-            label="Membership Status"
-            value={BILLING.membershipStatus}
-            accent="#A380F6"
-            badge
-            tooltip="Overall membership standing for this account"
-          />
-          <InfoCard
-            label="Access Status"
-            value={BILLING.accessStatus}
-            accent="#02ABE0"
-            tooltip="How dashboard access is granted — Inherited means access flows from the parent account"
-          />
-        </div>
+        {clientLoading || billingLoading ? (
+          <p className="text-sm text-[#0A1547]/45 font-semibold">Loading billing summary...</p>
+        ) : clientError || billingError ? (
+          <p className="text-sm text-red-500 font-semibold">{clientError || billingError}</p>
+        ) : !billingSummary ? (
+          <p className="text-sm text-[#0A1547]/35 font-semibold">No billing summary available for this client.</p>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <InfoCard
+              label="Plan Tier"
+              value={billing.planTier}
+              accent="#A380F6"
+              tooltip="Your current subscription plan level"
+            />
+            <InfoCard
+              label="Billing Status"
+              value={billing.billingStatus}
+              accent="#02D99D"
+              badge
+              tooltip="Whether your account is in good standing"
+            />
+            <InfoCard
+              label="Billing Cycle"
+              value={billing.billingCycle}
+              accent="#02ABE0"
+              badge
+              tooltip="How frequently your subscription renews"
+            />
+            <InfoCard
+              label="Auto-Renew"
+              value={billing.autoRenew}
+              accent="#A380F6"
+              badge
+              tooltip="Whether your subscription renews automatically at term end"
+            />
+            <InfoCard
+              label="Current Term End"
+              value={billing.currentTermEnd}
+              accent="#02ABE0"
+              tooltip="The date your current billing term expires"
+            />
+            <InfoCard
+              label="Contract End Date"
+              value={billing.contractEndDate}
+              accent="#02D99D"
+              tooltip="The final date of your signed contract period"
+            />
+            <InfoCard
+              label="Membership Status"
+              value={billing.membershipStatus}
+              accent="#A380F6"
+              badge
+              tooltip="Overall membership standing for this account"
+            />
+            <InfoCard
+              label="Access Status"
+              value={billing.accessStatus}
+              accent="#02ABE0"
+              tooltip="How dashboard access is granted — Inherited means access flows from the parent account"
+            />
+          </div>
+        )}
       </div>
 
       {/* ── Section 2: Purchase Additional Interviews ── */}
@@ -177,6 +616,19 @@ export default function BillingPage() {
           <h2 className="text-base font-black text-[#0A1547]">Purchase Additional Interviews</h2>
           <InfoTooltip content="Select a role and quantity, then click Purchase to add interview credits. Processed via Stripe." side="bottom" />
         </div>
+        {actionNotice && (
+          <div
+            className={`mb-4 rounded-xl px-3.5 py-2 text-xs font-semibold ${
+              actionNotice.tone === "success"
+                ? "text-[#009E73] bg-[#02D99D]/10 border border-[#02D99D]/25"
+                : "text-red-500 bg-red-50 border border-red-200"
+            }`}
+            role="status"
+            aria-live="polite"
+          >
+            {actionNotice.text}
+          </div>
+        )}
 
         <div className="flex flex-wrap gap-3 items-end">
           {/* Role select */}
@@ -189,12 +641,16 @@ export default function BillingPage() {
                 value={selectedRole}
                 onChange={(e) => setSelectedRole(e.target.value)}
                 className="w-full appearance-none px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all cursor-pointer pr-9"
+                disabled={rolesLoading}
               >
-                <option value="">Select a role…</option>
-                <option value="dental-hygienist">Dental Hygienist</option>
-                <option value="front-desk">Front Desk Coordinator</option>
-                <option value="dental-assistant">Dental Assistant</option>
-                <option value="office-manager">Office Manager</option>
+                <option value="">
+                  {rolesLoading ? "Loading roles…" : "Select a role…"}
+                </option>
+                {roles.map((role) => (
+                  <option key={role.id} value={role.id}>
+                    {role.title}
+                  </option>
+                ))}
               </select>
               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/40 pointer-events-none" />
             </div>
@@ -217,6 +673,8 @@ export default function BillingPage() {
 
           {/* Purchase button */}
           <button
+            type="button"
+            onClick={() => { void startAdditionalInterviewsCheckout(); }}
             disabled={!canPurchase}
             className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white rounded-full transition-all flex-shrink-0"
             style={{
@@ -225,7 +683,7 @@ export default function BillingPage() {
             }}
           >
             <ShoppingCart className="w-4 h-4" />
-            Purchase Additional Interviews
+            {purchaseBusy ? "Redirecting..." : "Purchase Additional Interviews"}
           </button>
         </div>
       </div>
@@ -253,32 +711,46 @@ export default function BillingPage() {
               </tr>
             </thead>
             <tbody>
-              {PURCHASED_INTERVIEWS.map((row, idx) => (
-                <tr
-                  key={row.role}
-                  className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors"
-                  style={idx === PURCHASED_INTERVIEWS.length - 1 ? { borderBottom: "none" } : {}}
-                >
-                  <td className="px-6 py-4">
-                    <span className="font-bold text-[#0A1547]">{row.role}</span>
-                  </td>
-                  <td className="px-6 py-4 pr-8 text-right">
-                    <span
-                      className="inline-flex items-center px-3 py-1 rounded-lg text-xs font-black"
-                      style={{ backgroundColor: "rgba(163,128,246,0.10)", color: "#7C5FCC" }}
-                    >
-                      {row.purchased}
-                    </span>
+              {rolesLoading ? (
+                <tr>
+                  <td colSpan={2} className="px-6 py-4 text-sm text-[#0A1547]/45 font-semibold">
+                    Loading roles...
                   </td>
                 </tr>
-              ))}
+              ) : purchasedInterviewRows.length === 0 ? (
+                <tr>
+                  <td colSpan={2} className="px-6 py-4 text-sm text-[#0A1547]/35 font-semibold">
+                    No additional interview purchases yet.
+                  </td>
+                </tr>
+              ) : (
+                purchasedInterviewRows.map((row, idx) => (
+                  <tr
+                    key={row.id}
+                    className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors"
+                    style={idx === purchasedInterviewRows.length - 1 ? { borderBottom: "none" } : {}}
+                  >
+                    <td className="px-6 py-4">
+                      <span className="font-bold text-[#0A1547]">{row.title}</span>
+                    </td>
+                    <td className="px-6 py-4 pr-8 text-right">
+                      <span
+                        className="inline-flex items-center px-3 py-1 rounded-lg text-xs font-black"
+                        style={{ backgroundColor: "rgba(163,128,246,0.10)", color: "#7C5FCC" }}
+                      >
+                        {row.purchased_interviews}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
 
         <div className="px-6 py-3 border-t border-gray-100">
           <p className="text-[11px] text-[#0A1547]/35 font-semibold">
-            {PURCHASED_INTERVIEWS.reduce((s, r) => s + r.purchased, 0)} additional interviews total
+            {purchasedInterviewsTotal} additional interviews total
           </p>
         </div>
       </div>
@@ -295,11 +767,14 @@ export default function BillingPage() {
           </p>
         </div>
         <button
+          type="button"
+          onClick={() => { void openBillingPortal(); }}
+          disabled={!selectedClientId || portalBusy || billingSummary?.has_stripe_customer === false}
           className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white rounded-full transition-all hover:opacity-90 active:scale-[0.97] flex-shrink-0"
           style={{ backgroundColor: "#A380F6" }}
         >
           <CreditCard className="w-4 h-4" />
-          Manage Billing
+          {portalBusy ? "Opening..." : "Manage Billing"}
         </button>
       </div>
 

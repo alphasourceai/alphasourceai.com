@@ -1,43 +1,89 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp, ChevronRight, RefreshCw, Trash2 } from "lucide-react";
 import AdminLayout from "@/components/AdminLayout";
 import { useAdminClient } from "@/context/AdminClientContext";
+import { supabase } from "@/lib/supabaseClient";
 
 /* ── Types ───────────────────────────────────────────────────── */
 interface Candidate {
-  id:        number;
-  name:      string;
-  email:     string;
-  clientId:  string;
-  clientName:string;
-  role:      string;
-  created:   string;
+  id: string;
+  name: string;
+  email: string;
+  clientId: string;
+  clientName: string;
+  roleId: string;
+  role: string;
+  created: string;
   createdTs: number;
-  resume:    number | null;
+  resume: number | null;
   interview: number | null;
-  overall:   number | null;
-  status:    string;
-  reportDate:string;
+  overall: number | null;
+  status: string;
+  reportDate: string;
+  latestReportUrl: string | null;
 }
 
 type SortKey = "name" | "client" | "role" | "created" | "resume" | "interview" | "overall";
 type SortDir = "asc" | "desc";
 
-/* ── Dummy data ──────────────────────────────────────────────── */
-const CANDIDATES: Candidate[] = [
-  { id: 1,  name: "Jordan Kim",      email: "jordan.kim@email.com",         clientId: "acme",      clientName: "Acme Dental Group",         role: "Dental Hygienist",      created: "4/1/2026, 9:12 AM CST",   createdTs: 12, resume: 80,  interview: 75,  overall: 78,  status: "Interview Complete",  reportDate: "4/1/2026, 9:12 AM CST"   },
-  { id: 2,  name: "Marcy O'Brien",   email: "marcy.obrien@email.com",        clientId: "acme",      clientName: "Acme Dental Group",         role: "Front Desk Coordinator",created: "3/28/2026, 2:15 PM CST",  createdTs: 11, resume: 85,  interview: null,overall: null,status: "Resume Uploaded",     reportDate: "3/28/2026, 2:15 PM CST"  },
-  { id: 3,  name: "Devon Watts",     email: "devon.watts@email.com",         clientId: "ridge",     clientName: "Ridge Medical Partners",    role: "Medical Receptionist",  created: "3/15/2026, 11:30 AM CST", createdTs: 10, resume: 60,  interview: 55,  overall: 58,  status: "Interview Complete",  reportDate: "3/15/2026, 11:30 AM CST" },
-  { id: 4,  name: "Ashley Norris",   email: "ashley.norris@email.com",       clientId: "summit",    clientName: "Summit Health Network",     role: "Nurse Practitioner",    created: "2/20/2026, 4:00 PM CST",  createdTs: 9,  resume: 92,  interview: 88,  overall: 90,  status: "Interview Complete",  reportDate: "2/20/2026, 4:00 PM CST"  },
-  { id: 5,  name: "Marcus Bell",     email: "marcus.bell@email.com",         clientId: "ridge",     clientName: "Ridge Medical Partners",    role: "Medical Receptionist",  created: "3/10/2026, 8:45 AM CST",  createdTs: 8,  resume: 35,  interview: 40,  overall: 38,  status: "Interview Complete",  reportDate: "3/10/2026, 8:45 AM CST"  },
-  { id: 6,  name: "Priya Sharma",    email: "priya.sharma@email.com",        clientId: "crestwood", clientName: "Crestwood Orthopedics",     role: "Surgical Tech",         created: "3/5/2026, 1:00 PM CST",   createdTs: 7,  resume: 73,  interview: 68,  overall: 71,  status: "Interview Complete",  reportDate: "3/5/2026, 1:00 PM CST"   },
-  { id: 7,  name: "Tyler Osei",      email: "tyler.osei@email.com",          clientId: "pinnacle",  clientName: "Pinnacle Surgical Group",   role: "Patient Coordinator",   created: "4/5/2026, 3:30 PM CST",   createdTs: 6,  resume: 78,  interview: 82,  overall: 80,  status: "Interview Complete",  reportDate: "4/5/2026, 3:30 PM CST"   },
-  { id: 8,  name: "Sara Nguyen",     email: "sara.nguyen@email.com",         clientId: "lakeside",  clientName: "Lakeside Dermatology",      role: "Patient Coordinator",   created: "4/8/2026, 10:00 AM CST",  createdTs: 5,  resume: 65,  interview: null,overall: null,status: "Resume Uploaded",     reportDate: "4/8/2026, 10:00 AM CST"  },
-  { id: 9,  name: "Chris Evans",     email: "chris.evans@email.com",         clientId: "harbor",    clientName: "Harbor Cove Family Health", role: "Medical Assistant",     created: "4/10/2026, 2:45 PM CST",  createdTs: 4,  resume: 88,  interview: 79,  overall: 84,  status: "Interview Complete",  reportDate: "4/10/2026, 2:45 PM CST"  },
-  { id: 10, name: "Brianna Cole",    email: "brianna.cole@email.com",        clientId: "acme",      clientName: "Acme Dental Group",         role: "Dental Hygienist",      created: "4/2/2026, 11:00 AM CST",  createdTs: 3,  resume: 71,  interview: 66,  overall: 69,  status: "Interview Complete",  reportDate: "4/2/2026, 11:00 AM CST"  },
-  { id: 11, name: "Nathan Rhodes",   email: "nathan.rhodes@email.com",       clientId: "summit",    clientName: "Summit Health Network",     role: "Office Manager",        created: "3/20/2026, 9:30 AM CST",  createdTs: 2,  resume: 82,  interview: null,overall: null,status: "Resume Uploaded",     reportDate: "3/20/2026, 9:30 AM CST"  },
-  { id: 12, name: "Lena Vasquez",    email: "lena.vasquez@email.com",        clientId: "crestwood", clientName: "Crestwood Orthopedics",     role: "Surgical Tech",         created: "3/25/2026, 3:15 PM CST",  createdTs: 1,  resume: 90,  interview: 87,  overall: 89,  status: "Interview Complete",  reportDate: "3/25/2026, 3:15 PM CST"  },
-];
+const env =
+  typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
+
+function trimTrailingSlashes(value: unknown): string {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function firstBase(...values: unknown[]): string {
+  for (const value of values) {
+    const normalized = trimTrailingSlashes(value);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+const backendBase = firstBase(
+  (env as Record<string, unknown>).VITE_BACKEND_URL,
+  (env as Record<string, unknown>).VITE_API_URL,
+  (env as Record<string, unknown>).VITE_PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).BACKEND_URL,
+);
+
+function parseJsonSafe(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function extractErrorMessage(text: string): string {
+  if (!text) return "Failed to load candidates.";
+  const data = parseJsonSafe(text);
+  const detail =
+    data && typeof data === "object"
+      ? (data as { detail?: unknown }).detail ??
+        (data as { message?: unknown }).message ??
+        (data as { error?: unknown }).error
+      : null;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  return text;
+}
+
+function toScore(value: unknown): number | null {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+function formatDateTime(value: unknown): { text: string; ts: number } {
+  const raw = String(value || "").trim();
+  if (!raw) return { text: "—", ts: 0 };
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return { text: "—", ts: 0 };
+  return { text: parsed.toLocaleString(), ts: parsed.getTime() };
+}
 
 /* ── Score helpers ───────────────────────────────────────────── */
 function scoreColor(s: number | null) {
@@ -58,23 +104,341 @@ const selectCls =
   "focus:outline-none focus:border-[#A380F6] transition-colors cursor-pointer";
 
 export default function AdminCandidatesPage() {
-  const { selectedClient } = useAdminClient();
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const {
+    selectedClient,
+    selectedClientId,
+    loading: adminClientsLoading,
+    error: adminClientsError,
+  } = useAdminClient();
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [sortKey, setSortKey]       = useState<SortKey>("created");
   const [sortDir, setSortDir]       = useState<SortDir>("desc");
   const [roleFilter, setRoleFilter] = useState("all");
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [candidatesLoading, setCandidatesLoading] = useState<boolean>(false);
+  const [candidatesError, setCandidatesError] = useState<string>("");
+  const [emptyMessage, setEmptyMessage] = useState<string>("No candidates found.");
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const [actionNotice, setActionNotice] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+  const [resumeBusy, setResumeBusy] = useState<Record<string, boolean>>({});
+  const [reportBusy, setReportBusy] = useState<Record<string, boolean>>({});
+  const [deleteBusy, setDeleteBusy] = useState<Record<string, boolean>>({});
 
-  const toggle = (id: number) => setExpandedId((prev) => (prev === id ? null : id));
+  const toggle = (id: string) => setExpandedId((prev) => (prev === id ? null : id));
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else { setSortKey(key); setSortDir("asc"); }
   };
 
+  useEffect(() => {
+    if (!actionNotice) return;
+    const timer = setTimeout(() => setActionNotice(null), 3200);
+    return () => clearTimeout(timer);
+  }, [actionNotice]);
+
+  const getSessionToken = async (): Promise<string> => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const token = String(session?.access_token || "").trim();
+    if (!token) throw new Error("Missing session token.");
+    return token;
+  };
+
+  const openCandidateResume = async (candidate: Candidate) => {
+    const candidateId = candidate.id;
+    if (!candidateId || resumeBusy[candidateId]) return;
+    if (!backendBase) {
+      setActionNotice({ tone: "error", text: "Missing backend base URL configuration." });
+      return;
+    }
+    setActionNotice(null);
+    setResumeBusy((prev) => ({ ...prev, [candidateId]: true }));
+    try {
+      const token = await getSessionToken();
+      const response = await fetch(
+        `${backendBase}/files/resume-signed-url?candidate_id=${encodeURIComponent(candidateId)}`,
+        {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "omit",
+        },
+      );
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text));
+      const payload = parseJsonSafe(text) as { url?: unknown } | null;
+      const url = String(payload?.url || "").trim();
+      if (!url) throw new Error("Could not open resume.");
+      window.open(url, "_blank", "noopener,noreferrer");
+      setActionNotice({ tone: "success", text: "Resume opened." });
+    } catch (error) {
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not open resume.",
+      });
+    } finally {
+      setResumeBusy((prev) => ({ ...prev, [candidateId]: false }));
+    }
+  };
+
+  const openCandidateReport = async (candidate: Candidate) => {
+    const candidateId = candidate.id;
+    if (!candidateId || reportBusy[candidateId]) return;
+    if (!selectedClientId || selectedClientId === "all") {
+      setActionNotice({ tone: "error", text: "Select a client to perform this action." });
+      return;
+    }
+    if (!backendBase) {
+      setActionNotice({ tone: "error", text: "Missing backend base URL configuration." });
+      return;
+    }
+    setActionNotice(null);
+    setReportBusy((prev) => ({ ...prev, [candidateId]: true }));
+    try {
+      const token = await getSessionToken();
+      const response = await fetch(`${backendBase}/admin/reports/generate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "omit",
+        body: JSON.stringify({
+          client_id: selectedClientId,
+          candidate_id: candidateId,
+          role_id: candidate.roleId || null,
+        }),
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text));
+      const payload = parseJsonSafe(text) as
+        | {
+            signed_url?: unknown;
+            url?: unknown;
+            report_url?: unknown;
+            latest_report_url?: unknown;
+            item?: {
+              signed_url?: unknown;
+              url?: unknown;
+              report_url?: unknown;
+              latest_report_url?: unknown;
+            };
+          }
+        | null;
+      const url =
+        String(payload?.signed_url || "").trim() ||
+        String(payload?.url || "").trim() ||
+        String(payload?.report_url || "").trim() ||
+        String(payload?.latest_report_url || "").trim() ||
+        String(payload?.item?.signed_url || "").trim() ||
+        String(payload?.item?.url || "").trim() ||
+        String(payload?.item?.report_url || "").trim() ||
+        String(payload?.item?.latest_report_url || "").trim() ||
+        String(candidate.latestReportUrl || "").trim();
+      if (!url) throw new Error("Could not open report.");
+      window.open(url, "_blank", "noopener,noreferrer");
+      setActionNotice({ tone: "success", text: "Report opened." });
+      setRefreshNonce((value) => value + 1);
+    } catch (error) {
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not open report.",
+      });
+    } finally {
+      setReportBusy((prev) => ({ ...prev, [candidateId]: false }));
+    }
+  };
+
+  const deleteCandidate = async (candidate: Candidate) => {
+    const candidateId = candidate.id;
+    if (!candidateId || deleteBusy[candidateId]) return;
+    if (!selectedClientId || selectedClientId === "all") {
+      setActionNotice({ tone: "error", text: "Select a client to perform this action." });
+      return;
+    }
+    if (!window.confirm("Delete this candidate? This cannot be undone.")) return;
+    if (!backendBase) {
+      setActionNotice({ tone: "error", text: "Missing backend base URL configuration." });
+      return;
+    }
+    setActionNotice(null);
+    setDeleteBusy((prev) => ({ ...prev, [candidateId]: true }));
+    try {
+      const token = await getSessionToken();
+      const response = await fetch(
+        `${backendBase}/admin/candidates/${encodeURIComponent(candidateId)}?client_id=${encodeURIComponent(selectedClientId)}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "omit",
+        },
+      );
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text));
+      setActionNotice({ tone: "success", text: "Candidate deleted." });
+      setRefreshNonce((value) => value + 1);
+    } catch (error) {
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not delete candidate.",
+      });
+    } finally {
+      setDeleteBusy((prev) => ({ ...prev, [candidateId]: false }));
+    }
+  };
+
+  useEffect(() => {
+    let alive = true;
+
+    const loadCandidates = async () => {
+      if (adminClientsLoading) return;
+      if (adminClientsError) {
+        if (!alive) return;
+        setCandidates([]);
+        setCandidatesError(adminClientsError);
+        setEmptyMessage("No candidates found.");
+        setCandidatesLoading(false);
+        return;
+      }
+      if (!backendBase) {
+        if (!alive) return;
+        setCandidates([]);
+        setCandidatesError("Missing backend base URL configuration.");
+        setEmptyMessage("No candidates found.");
+        setCandidatesLoading(false);
+        return;
+      }
+      if (!selectedClientId || selectedClientId === "all") {
+        if (!alive) return;
+        setCandidates([]);
+        setCandidatesError("");
+        setEmptyMessage("Select a client to view candidates.");
+        setCandidatesLoading(false);
+        return;
+      }
+
+      if (!alive) return;
+      setCandidatesLoading(true);
+      setCandidatesError("");
+      setEmptyMessage("No candidates found.");
+
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const token = String(session?.access_token || "").trim();
+        if (!token) throw new Error("Missing session token.");
+
+        const [candidatesResponse, rolesResponse] = await Promise.all([
+          fetch(
+            `${backendBase}/admin/candidates?client_id=${encodeURIComponent(selectedClientId)}`,
+            {
+              method: "GET",
+              headers: { Authorization: `Bearer ${token}` },
+              credentials: "omit",
+            },
+          ),
+          fetch(
+            `${backendBase}/admin/roles?client_id=${encodeURIComponent(selectedClientId)}`,
+            {
+              method: "GET",
+              headers: { Authorization: `Bearer ${token}` },
+              credentials: "omit",
+            },
+          ).catch(() => null),
+        ]);
+
+        const candidatesText = await candidatesResponse.text();
+        if (!candidatesResponse.ok) throw new Error(extractErrorMessage(candidatesText));
+        const candidatesPayload = parseJsonSafe(candidatesText);
+        const candidateItems =
+          candidatesPayload &&
+          typeof candidatesPayload === "object" &&
+          Array.isArray((candidatesPayload as { candidates?: unknown }).candidates)
+            ? ((candidatesPayload as { candidates: unknown[] }).candidates || [])
+            : [];
+
+        const roleTitleById: Record<string, string> = {};
+        if (rolesResponse) {
+          const rolesText = await rolesResponse.text();
+          if (rolesResponse.ok) {
+            const rolesPayload = parseJsonSafe(rolesText);
+            const roleItems =
+              rolesPayload &&
+              typeof rolesPayload === "object" &&
+              Array.isArray((rolesPayload as { items?: unknown }).items)
+                ? ((rolesPayload as { items: unknown[] }).items || [])
+                : [];
+            for (const item of roleItems) {
+              if (!item || typeof item !== "object") continue;
+              const roleId = String((item as { id?: unknown }).id || "").trim();
+              if (!roleId) continue;
+              const roleTitle = String((item as { title?: unknown }).title || "").trim();
+              roleTitleById[roleId] = roleTitle || "—";
+            }
+          }
+        }
+
+        const mappedCandidates: Candidate[] = candidateItems
+          .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+          .map((item) => {
+            const created = formatDateTime(item.created_at);
+            const reportGenerated = formatDateTime(item.report_generated_at);
+            const roleId = String(item.role_id || "").trim();
+            const roleTitle = String(roleTitleById[roleId] || "").trim();
+            const interviewScore = toScore(item.interview_score);
+            const statusRaw = String(item.status || item.interview_status || "").trim();
+            const normalizedStatus =
+              statusRaw ||
+              (interviewScore !== null ? "Interview Complete" : "Resume Uploaded");
+            return {
+              id: String(item.id || "").trim(),
+              name: String(item.name || "").trim() || "—",
+              email: String(item.email || "").trim() || "—",
+              clientId: String(item.client_id || selectedClientId).trim(),
+              clientName: selectedClient.name,
+              role: roleTitle || roleId || "—",
+              roleId,
+              created: created.text,
+              createdTs: created.ts,
+              resume: toScore(item.resume_score),
+              interview: interviewScore,
+              overall: toScore(item.overall_score),
+              status: normalizedStatus,
+              reportDate: reportGenerated.text,
+              latestReportUrl: String(item.latest_report_url || "").trim() || null,
+            };
+          })
+          .filter((item) => Boolean(item.id));
+
+        if (!alive) return;
+        setCandidates(mappedCandidates);
+        setExpandedId((current) => (current && mappedCandidates.some((candidate) => candidate.id === current) ? current : null));
+      } catch (error) {
+        if (!alive) return;
+        setCandidates([]);
+        setExpandedId(null);
+        setCandidatesError(error instanceof Error ? error.message : "Failed to load candidates.");
+      } finally {
+        if (alive) setCandidatesLoading(false);
+      }
+    };
+
+    void loadCandidates();
+    return () => {
+      alive = false;
+    };
+  }, [selectedClientId, selectedClient.name, adminClientsLoading, adminClientsError, refreshNonce]);
+
+  useEffect(() => {
+    if (roleFilter === "all") return;
+    if (candidates.some((candidate) => candidate.role === roleFilter)) return;
+    setRoleFilter("all");
+  }, [roleFilter, candidates]);
+
   /* Filter by selected client */
-  const byClient = selectedClient.id === "all"
-    ? CANDIDATES
-    : CANDIDATES.filter((c) => c.clientId === selectedClient.id);
+  const byClient = candidates;
 
   /* Unique roles for the dropdown */
   const uniqueRoles = Array.from(new Set(byClient.map((c) => c.role))).sort();
@@ -119,6 +483,18 @@ export default function AdminCandidatesPage() {
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-black text-[#0A1547]">Candidates</h2>
       </div>
+      {actionNotice && (
+        <div
+          className="mb-4 px-4 py-2.5 rounded-xl text-sm font-semibold"
+          style={{
+            border: actionNotice.tone === "error" ? "1px solid rgba(239,68,68,0.25)" : "1px solid rgba(2,217,157,0.25)",
+            backgroundColor: actionNotice.tone === "error" ? "rgba(239,68,68,0.08)" : "rgba(2,217,157,0.10)",
+            color: actionNotice.tone === "error" ? "#DC2626" : "#047857",
+          }}
+        >
+          {actionNotice.text}
+        </div>
+      )}
 
       {/* ── Filter bar ────────────────────────────────────── */}
       <div
@@ -142,6 +518,8 @@ export default function AdminCandidatesPage() {
         <button
           className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold text-white transition-opacity hover:opacity-90"
           style={{ backgroundColor: "#A380F6" }}
+          onClick={() => setRefreshNonce((value) => value + 1)}
+          disabled={candidatesLoading || !selectedClientId || selectedClientId === "all"}
         >
           <RefreshCw className="w-3.5 h-3.5" />
           Refresh
@@ -183,111 +561,133 @@ export default function AdminCandidatesPage() {
 
         {/* Rows */}
         <div className="divide-y divide-gray-50">
-          {sorted.map((c) => {
-            const expanded = expandedId === c.id;
-            return (
-              <div key={c.id}>
-                {/* Main row */}
-                <div
-                  className={`grid items-center px-5 py-3 cursor-pointer hover:bg-gray-50/70 transition-colors ${
-                    expanded ? "bg-[rgba(163,128,246,0.04)]" : ""
-                  } ${
-                    showClient
-                      ? "grid-cols-[1fr_110px_130px_140px_68px_78px_68px_100px_44px]"
-                      : "grid-cols-[1fr_130px_140px_68px_78px_68px_100px_44px]"
-                  }`}
-                  onClick={() => toggle(c.id)}
-                >
-                  {/* Name + email */}
-                  <div className="flex items-start gap-2 min-w-0 pr-2">
-                    <ChevronRight
-                      className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 transition-transform duration-200"
-                      style={{
-                        color: expanded ? "#A380F6" : "rgba(10,21,71,0.25)",
-                        transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
-                      }}
-                    />
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold text-[#0A1547] leading-snug truncate">{c.name}</p>
-                      <p className="text-[11px] text-[#0A1547]/35 truncate">{c.email}</p>
-                    </div>
-                  </div>
-
-                  {showClient && (
-                    <p className="text-xs font-semibold text-[#0A1547]/50 truncate pr-2">{c.clientName}</p>
-                  )}
-
-                  <p className="text-xs font-semibold text-[#0A1547]/60 truncate pr-2">{c.role}</p>
-
-                  <p className="text-[11px] font-semibold text-[#0A1547]/40">{c.created}</p>
-
-                  <ScoreCell score={c.resume} />
-                  <ScoreCell score={c.interview} />
-                  <ScoreCell score={c.overall} />
-
-                  {/* Actions */}
-                  <div
-                    className="flex flex-col gap-1.5"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <button
-                      className="px-3 py-1 rounded-full text-[11px] font-bold text-white transition-opacity hover:opacity-90"
-                      style={{ backgroundColor: "#A380F6" }}
-                    >
-                      Resume
-                    </button>
-                    <button
-                      className="px-3 py-1 rounded-full text-[11px] font-bold text-white transition-opacity hover:opacity-90"
-                      style={{ backgroundColor: "#A380F6" }}
-                    >
-                      Report
-                    </button>
-                  </div>
-
-                  {/* Delete */}
-                  <div
-                    className="flex items-center justify-center"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <button
-                      className="p-1.5 rounded-lg text-[#0A1547]/25 hover:text-red-500 hover:bg-red-50 transition-all"
-                      title={`Delete ${c.name}`}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Expanded detail */}
-                {expanded && (
-                  <div
-                    className="px-8 py-4 border-t border-[rgba(163,128,246,0.12)]"
-                    style={{ backgroundColor: "rgba(248,249,253,0.8)", borderLeft: "3px solid #A380F6" }}
-                  >
-                    <div className="flex flex-col sm:flex-row gap-4 sm:gap-8">
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <span className="font-black text-[#0A1547]/60">Status:</span>
-                        <span
-                          className="font-bold"
-                          style={{ color: c.status === "Interview Complete" ? "#02D99D" : "#F0A500" }}
-                        >
-                          {c.status}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <span className="font-black text-[#0A1547]/60">Report generated:</span>
-                        <span className="font-semibold text-[#0A1547]/50">{c.reportDate}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {sorted.length === 0 && (
+          {candidatesLoading ? (
             <div className="py-12 text-center">
-              <p className="text-sm text-[#0A1547]/35 font-semibold">No candidates found.</p>
+              <p className="text-sm text-[#0A1547]/35 font-semibold">Loading candidates...</p>
+            </div>
+          ) : candidatesError ? (
+            <div className="py-12 text-center">
+              <p className="text-sm text-red-500 font-semibold">{candidatesError}</p>
+            </div>
+          ) : (
+            sorted.map((c) => {
+              const expanded = expandedId === c.id;
+              return (
+                <div key={c.id}>
+                  {/* Main row */}
+                  <div
+                    className={`grid items-center px-5 py-3 cursor-pointer hover:bg-gray-50/70 transition-colors ${
+                      expanded ? "bg-[rgba(163,128,246,0.04)]" : ""
+                    } ${
+                      showClient
+                        ? "grid-cols-[1fr_110px_130px_140px_68px_78px_68px_100px_44px]"
+                        : "grid-cols-[1fr_130px_140px_68px_78px_68px_100px_44px]"
+                    }`}
+                    onClick={() => toggle(c.id)}
+                  >
+                    {/* Name + email */}
+                    <div className="flex items-start gap-2 min-w-0 pr-2">
+                      <ChevronRight
+                        className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 transition-transform duration-200"
+                        style={{
+                          color: expanded ? "#A380F6" : "rgba(10,21,71,0.25)",
+                          transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+                        }}
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-[#0A1547] leading-snug truncate">{c.name}</p>
+                        <p className="text-[11px] text-[#0A1547]/35 truncate">{c.email}</p>
+                      </div>
+                    </div>
+
+                    {showClient && (
+                      <p className="text-xs font-semibold text-[#0A1547]/50 truncate pr-2">{c.clientName}</p>
+                    )}
+
+                    <p className="text-xs font-semibold text-[#0A1547]/60 truncate pr-2">{c.role}</p>
+
+                    <p className="text-[11px] font-semibold text-[#0A1547]/40">{c.created}</p>
+
+                    <ScoreCell score={c.resume} />
+                    <ScoreCell score={c.interview} />
+                    <ScoreCell score={c.overall} />
+
+                    {/* Actions */}
+                    <div
+                      className="flex flex-col gap-1.5"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        disabled={resumeBusy[c.id] === true}
+                        className="px-3 py-1 rounded-full text-[11px] font-bold text-white transition-opacity hover:opacity-90"
+                        style={{ backgroundColor: "#A380F6" }}
+                        onClick={() => {
+                          void openCandidateResume(c);
+                        }}
+                      >
+                        {resumeBusy[c.id] === true ? "Opening..." : "Resume"}
+                      </button>
+                      <button
+                        disabled={reportBusy[c.id] === true}
+                        className="px-3 py-1 rounded-full text-[11px] font-bold text-white transition-opacity hover:opacity-90"
+                        style={{ backgroundColor: "#A380F6" }}
+                        onClick={() => {
+                          void openCandidateReport(c);
+                        }}
+                      >
+                        {reportBusy[c.id] === true ? "Opening..." : "Report"}
+                      </button>
+                    </div>
+
+                    {/* Delete */}
+                    <div
+                      className="flex items-center justify-center"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        disabled={deleteBusy[c.id] === true}
+                        className="p-1.5 rounded-lg text-[#0A1547]/25 hover:text-red-500 hover:bg-red-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={`Delete ${c.name}`}
+                        onClick={() => {
+                          void deleteCandidate(c);
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Expanded detail */}
+                  {expanded && (
+                    <div
+                      className="px-8 py-4 border-t border-[rgba(163,128,246,0.12)]"
+                      style={{ backgroundColor: "rgba(248,249,253,0.8)", borderLeft: "3px solid #A380F6" }}
+                    >
+                      <div className="flex flex-col sm:flex-row gap-4 sm:gap-8">
+                        <div className="flex items-center gap-1.5 text-xs">
+                          <span className="font-black text-[#0A1547]/60">Status:</span>
+                          <span
+                            className="font-bold"
+                            style={{ color: c.status === "Interview Complete" ? "#02D99D" : "#F0A500" }}
+                          >
+                            {c.status}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs">
+                          <span className="font-black text-[#0A1547]/60">Report generated:</span>
+                          <span className="font-semibold text-[#0A1547]/50">{c.reportDate}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+
+          {!candidatesLoading && !candidatesError && sorted.length === 0 && (
+            <div className="py-12 text-center">
+              <p className="text-sm text-[#0A1547]/35 font-semibold">{emptyMessage}</p>
             </div>
           )}
         </div>

@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { ArrowRight, Briefcase, Clock, Users, Zap } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useClient } from "@/context/ClientContext";
+import { supabase } from "@/lib/supabaseClient";
 
 const timeframes = ["7d", "30d", "MTD", "6m", "YTD", "1y"] as const;
 type Timeframe = (typeof timeframes)[number];
+type InterviewType = "Basic" | "Detailed" | "Technical";
 
 interface PeriodStats {
   roles: number;
@@ -16,28 +18,166 @@ interface PeriodStats {
   candidatesDelta: number;
 }
 
-const statsByTimeframe: Record<Timeframe, PeriodStats> = {
-  "7d":  { roles: 2,  candidates: 38,  avgPerRole: 19.0, avgDays: 1.1, rolesDelta: 0,  candidatesDelta: +12 },
-  "30d": { roles: 5,  candidates: 96,  avgPerRole: 19.2, avgDays: 1.4, rolesDelta: +2, candidatesDelta: +23 },
-  "MTD": { roles: 3,  candidates: 61,  avgPerRole: 20.3, avgDays: 1.2, rolesDelta: +1, candidatesDelta: +17 },
-  "6m":  { roles: 12, candidates: 247, avgPerRole: 20.6, avgDays: 1.4, rolesDelta: +4, candidatesDelta: +61 },
-  "YTD": { roles: 9,  candidates: 183, avgPerRole: 20.3, avgDays: 1.3, rolesDelta: +3, candidatesDelta: +47 },
-  "1y":  { roles: 14, candidates: 302, avgPerRole: 21.6, avgDays: 1.5, rolesDelta: +5, candidatesDelta: +88 },
-};
-
 interface RecentRole {
   name: string;
-  type: "Basic" | "Detailed" | "Technical";
+  type: InterviewType;
   date: string;
-  left: number;
-  used: number;
+  left: number | null;
+  used: number | null;
 }
 
-const recentRoles: RecentRole[] = [
-  { name: "Dental Hygienist",      type: "Basic",     date: "Apr 1",  left: 48, used: 2 },
-  { name: "Front Desk Coordinator", type: "Detailed",  date: "Mar 28", left: 45, used: 5 },
-  { name: "Dental Assistant",       type: "Technical", date: "Mar 15", left: 49, used: 1 },
-];
+interface RoleItem {
+  id: string;
+  title: string;
+  createdAtMs: number;
+  type: InterviewType;
+  left: number | null;
+  used: number | null;
+}
+
+interface DashboardRowItem {
+  createdAtMs: number;
+  roleId: string;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const env =
+  typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
+
+function trimTrailingSlashes(value: unknown): string {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function firstBase(...values: unknown[]): string {
+  for (const value of values) {
+    const normalized = trimTrailingSlashes(value);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+const backendBase = firstBase(
+  (env as Record<string, unknown>).VITE_BACKEND_URL,
+  (env as Record<string, unknown>).VITE_API_URL,
+  (env as Record<string, unknown>).VITE_PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).BACKEND_URL,
+);
+
+function extractErrorMessage(text: string, fallback: string): string {
+  if (!text) return fallback;
+  try {
+    const data = JSON.parse(text) as { detail?: unknown; message?: unknown; error?: unknown };
+    const candidate = data.detail ?? data.message ?? data.error;
+    if (typeof candidate === "string" && candidate.trim()) return candidate;
+  } catch {
+    // fall through to raw text
+  }
+  return text;
+}
+
+function parseJsonSafe(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function toDateMs(value: unknown): number {
+  const raw = String(value || "").trim();
+  if (!raw) return 0;
+  const parsed = new Date(raw).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function toWholeNonNegativeOrNull(value: unknown): number | null {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.floor(n));
+}
+
+function mapInterviewType(value: unknown): InterviewType {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "detailed") return "Detailed";
+  if (normalized === "technical") return "Technical";
+  return "Basic";
+}
+
+function getWindowBounds(timeframe: Timeframe, nowMs: number): { start: number; end: number } {
+  const now = new Date(nowMs);
+  const end = nowMs;
+
+  if (timeframe === "7d") {
+    return { start: end - 7 * DAY_MS, end };
+  }
+  if (timeframe === "30d") {
+    return { start: end - 30 * DAY_MS, end };
+  }
+  if (timeframe === "MTD") {
+    return { start: new Date(now.getFullYear(), now.getMonth(), 1).getTime(), end };
+  }
+  if (timeframe === "6m") {
+    const start = new Date(now);
+    start.setMonth(start.getMonth() - 6);
+    return { start: start.getTime(), end };
+  }
+  if (timeframe === "YTD") {
+    return { start: new Date(now.getFullYear(), 0, 1).getTime(), end };
+  }
+  const start = new Date(now);
+  start.setFullYear(start.getFullYear() - 1);
+  return { start: start.getTime(), end };
+}
+
+function inWindow(timestamp: number, start: number, end: number): boolean {
+  return timestamp >= start && timestamp < end;
+}
+
+function computeWindowStats(
+  start: number,
+  end: number,
+  roles: RoleItem[],
+  rows: DashboardRowItem[],
+  firstScreenByRole: Map<string, number>,
+): Omit<PeriodStats, "rolesDelta" | "candidatesDelta"> {
+  const rolesInWindow = roles.filter((role) => inWindow(role.createdAtMs, start, end));
+  const rowsInWindow = rows.filter((row) => inWindow(row.createdAtMs, start, end));
+
+  const roleCount = rolesInWindow.length;
+  const candidateCount = rowsInWindow.length;
+  const avgPerRole = roleCount > 0 ? candidateCount / roleCount : 0;
+
+  let sumDays = 0;
+  let countedRoles = 0;
+  for (const role of rolesInWindow) {
+    const firstScreenAt = firstScreenByRole.get(role.id);
+    if (typeof firstScreenAt !== "number") continue;
+    const diffMs = firstScreenAt - role.createdAtMs;
+    if (!Number.isFinite(diffMs) || diffMs < 0) continue;
+    sumDays += diffMs / DAY_MS;
+    countedRoles += 1;
+  }
+
+  const avgDays = countedRoles > 0 ? sumDays / countedRoles : 0;
+
+  return {
+    roles: roleCount,
+    candidates: candidateCount,
+    avgPerRole,
+    avgDays,
+  };
+}
+
+function formatRecentRoleDate(timestamp: number): string {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return "—";
+  return new Date(timestamp).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
 
 const typeColors: Record<string, { bg: string; text: string }> = {
   Basic:     { bg: "rgba(163,128,246,0.12)", text: "#7C5FCC" },
@@ -91,7 +231,7 @@ const metricCards = [
     label: "Time to First Screening",
     icon: Clock,
     color: "#A380F6",
-    format: (s: PeriodStats) => `${s.avgDays}d`,
+    format: (s: PeriodStats) => `${s.avgDays.toFixed(2)}d`,
     sub: "from role creation",
     delta: (_s: PeriodStats) => 0,
   },
@@ -99,8 +239,175 @@ const metricCards = [
 
 export default function OverviewPage() {
   const [timeframe, setTimeframe] = useState<Timeframe>("30d");
-  const stats = statsByTimeframe[timeframe];
-  const { selectedClient } = useClient();
+  const { selectedClient, selectedClientId, loading: clientLoading, error: clientError } = useClient();
+  const [roles, setRoles] = useState<RoleItem[]>([]);
+  const [rows, setRows] = useState<DashboardRowItem[]>([]);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+  const [overviewError, setOverviewError] = useState("");
+
+  const effectiveClientId = selectedClient.id === "all" ? "all" : selectedClientId;
+
+  useEffect(() => {
+    let alive = true;
+
+    const loadOverview = async () => {
+      if (clientLoading) return;
+      if (clientError) {
+        if (!alive) return;
+        setRoles([]);
+        setRows([]);
+        setOverviewError(clientError);
+        setOverviewLoading(false);
+        return;
+      }
+      if (!effectiveClientId && selectedClient.id !== "all") {
+        if (!alive) return;
+        setRoles([]);
+        setRows([]);
+        setOverviewError("");
+        setOverviewLoading(false);
+        return;
+      }
+      if (!backendBase) {
+        if (!alive) return;
+        setRoles([]);
+        setRows([]);
+        setOverviewError("Missing backend base URL configuration.");
+        setOverviewLoading(false);
+        return;
+      }
+
+      if (!alive) return;
+      setOverviewLoading(true);
+      setOverviewError("");
+
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const token = String(session?.access_token || "").trim();
+        if (!token) throw new Error("Missing session token.");
+
+        const query =
+          effectiveClientId && effectiveClientId !== "all"
+            ? `?client_id=${encodeURIComponent(effectiveClientId)}`
+            : "";
+
+        const [rolesRes, rowsRes] = await Promise.all([
+          fetch(`${backendBase}/roles${query}`, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            credentials: "omit",
+          }),
+          fetch(`${backendBase}/dashboard/rows${query}`, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            credentials: "omit",
+          }),
+        ]);
+
+        const [rolesText, rowsText] = await Promise.all([rolesRes.text(), rowsRes.text()]);
+
+        if (!rolesRes.ok) {
+          throw new Error(extractErrorMessage(rolesText, "Failed to load roles."));
+        }
+        if (!rowsRes.ok) {
+          throw new Error(extractErrorMessage(rowsText, "Failed to load overview rows."));
+        }
+
+        const rolesPayload = parseJsonSafe(rolesText);
+        const rolesItems = rolesPayload && typeof rolesPayload === "object" && Array.isArray((rolesPayload as { items?: unknown }).items)
+          ? (rolesPayload as { items: unknown[] }).items
+          : [];
+
+        const mappedRoles = rolesItems
+          .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+          .map((item) => ({
+            id: String(item.id || "").trim(),
+            title: String(item.title || "").trim() || "Untitled Role",
+            createdAtMs: toDateMs(item.created_at),
+            type: mapInterviewType(item.interview_type),
+            left: toWholeNonNegativeOrNull(item.remaining_interviews),
+            used: toWholeNonNegativeOrNull(item.used_interviews),
+          }))
+          .filter((item) => Boolean(item.id));
+
+        const rowsPayload = parseJsonSafe(rowsText);
+        const rowsItems = rowsPayload && typeof rowsPayload === "object" && Array.isArray((rowsPayload as { items?: unknown }).items)
+          ? (rowsPayload as { items: unknown[] }).items
+          : [];
+
+        const mappedRows = rowsItems
+          .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+          .map((item) => {
+            const role = item.role && typeof item.role === "object"
+              ? (item.role as Record<string, unknown>)
+              : {};
+            return {
+              createdAtMs: toDateMs(item.created_at),
+              roleId: String(role.id || item.role_id || "").trim(),
+            };
+          })
+          .filter((item) => item.createdAtMs > 0);
+
+        if (!alive) return;
+        setRoles(mappedRoles);
+        setRows(mappedRows);
+        setOverviewError("");
+      } catch (error) {
+        if (!alive) return;
+        setRoles([]);
+        setRows([]);
+        setOverviewError(error instanceof Error ? error.message : "Failed to load overview.");
+      } finally {
+        if (alive) setOverviewLoading(false);
+      }
+    };
+
+    void loadOverview();
+    return () => {
+      alive = false;
+    };
+  }, [effectiveClientId, selectedClient.id, clientLoading, clientError]);
+
+  const stats = useMemo(() => {
+    const firstScreenByRole = new Map<string, number>();
+    for (const row of rows) {
+      if (!row.roleId) continue;
+      const previous = firstScreenByRole.get(row.roleId);
+      if (typeof previous !== "number" || row.createdAtMs < previous) {
+        firstScreenByRole.set(row.roleId, row.createdAtMs);
+      }
+    }
+
+    const nowMs = Date.now();
+    const current = getWindowBounds(timeframe, nowMs);
+    const durationMs = Math.max(1, current.end - current.start);
+    const priorStart = current.start - durationMs;
+    const priorEnd = current.start;
+
+    const currentStats = computeWindowStats(current.start, current.end, roles, rows, firstScreenByRole);
+    const priorStats = computeWindowStats(priorStart, priorEnd, roles, rows, firstScreenByRole);
+
+    return {
+      ...currentStats,
+      rolesDelta: currentStats.roles - priorStats.roles,
+      candidatesDelta: currentStats.candidates - priorStats.candidates,
+    };
+  }, [timeframe, roles, rows]);
+
+  const recentRoles = useMemo<RecentRole[]>(() => {
+    return [...roles]
+      .sort((a, b) => b.createdAtMs - a.createdAtMs)
+      .slice(0, 3)
+      .map((role) => ({
+        name: role.title,
+        type: role.type,
+        date: formatRecentRoleDate(role.createdAtMs),
+        left: role.left,
+        used: role.used,
+      }));
+  }, [roles]);
 
   return (
     <DashboardLayout title="Overview">
@@ -133,6 +440,21 @@ export default function OverviewPage() {
           ))}
         </div>
       </div>
+
+      {overviewError && (
+        <div
+          className="mb-5 px-4 py-2.5 rounded-xl text-sm font-semibold"
+          style={{ backgroundColor: "rgba(255,107,107,0.12)", color: "#B33A3A" }}
+        >
+          {overviewError}
+        </div>
+      )}
+
+      {!overviewError && overviewLoading && (
+        <div className="mb-5 text-sm font-semibold text-[#0A1547]/45">
+          Loading overview...
+        </div>
+      )}
 
       {/* ── Metric cards ─────────────────────────────────── */}
       <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-7">
@@ -188,10 +510,18 @@ export default function OverviewPage() {
 
         {/* Role rows */}
         <div className="divide-y divide-gray-50">
+          {!overviewLoading && recentRoles.length === 0 && (
+            <div className="px-6 py-4 text-sm font-semibold text-[#0A1547]/45">
+              No roles yet for this client.
+            </div>
+          )}
           {recentRoles.map((role, i) => {
             const tc = typeColors[role.type];
-            const total = role.left + role.used;
-            const pct = total > 0 ? (role.used / total) * 100 : 0;
+            const usageAvailable = role.left !== null || role.used !== null;
+            const left = role.left ?? 0;
+            const used = role.used ?? 0;
+            const total = left + used;
+            const pct = total > 0 ? (used / total) * 100 : 0;
             return (
               <div
                 key={i}
@@ -208,16 +538,22 @@ export default function OverviewPage() {
                   {role.type}
                 </span>
                 <div className="flex-shrink-0 w-28 hidden sm:block">
-                  <div className="flex items-baseline gap-1 mb-1">
-                    <span className="text-sm font-black text-[#0A1547]">{role.left}</span>
-                    <span className="text-[10px] text-[#0A1547]/35 font-semibold">left</span>
-                    <span className="text-[10px] text-[#0A1547]/20 mx-0.5">/</span>
-                    <span className="text-sm font-black text-[#0A1547]/50">{role.used}</span>
-                    <span className="text-[10px] text-[#0A1547]/35 font-semibold">used</span>
-                  </div>
-                  <div className="w-full bg-gray-100 rounded-full h-1">
-                    <div className="h-1 rounded-full" style={{ width: `${pct}%`, backgroundColor: "#A380F6" }} />
-                  </div>
+                  {usageAvailable ? (
+                    <>
+                      <div className="flex items-baseline gap-1 mb-1">
+                        <span className="text-sm font-black text-[#0A1547]">{left}</span>
+                        <span className="text-[10px] text-[#0A1547]/35 font-semibold">left</span>
+                        <span className="text-[10px] text-[#0A1547]/20 mx-0.5">/</span>
+                        <span className="text-sm font-black text-[#0A1547]/50">{used}</span>
+                        <span className="text-[10px] text-[#0A1547]/35 font-semibold">used</span>
+                      </div>
+                      <div className="w-full bg-gray-100 rounded-full h-1">
+                        <div className="h-1 rounded-full" style={{ width: `${pct}%`, backgroundColor: "#A380F6" }} />
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-[#0A1547]/35 font-semibold">Usage unavailable</p>
+                  )}
                 </div>
               </div>
             );

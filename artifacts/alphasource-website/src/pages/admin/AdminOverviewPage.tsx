@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import {
   Building2, Briefcase, Users, CheckCircle2,
@@ -6,76 +6,228 @@ import {
 } from "lucide-react";
 import AdminLayout from "@/components/AdminLayout";
 import { useAdminClient } from "@/context/AdminClientContext";
+import { supabase } from "@/lib/supabaseClient";
 
 /* ── Timeframe ───────────────────────────────────────────────── */
 const timeframes = ["7d", "30d", "MTD", "6m", "YTD", "1y"] as const;
 type Timeframe = (typeof timeframes)[number];
+type InterviewType = "Basic" | "Detailed" | "Technical";
 
 /* ── Platform-wide stats per timeframe ──────────────────────── */
 interface PlatformStats {
-  clients:         number;
-  roles:           number;
-  candidates:      number;
-  completed:       number;
-  avgScore:        number;
-  completionRate:  number;
-  rolesDelta:      number;
+  clients: number;
+  roles: number;
+  candidates: number;
+  completed: number;
+  avgScore: number;
+  completionRate: number;
+  rolesDelta: number;
   candidatesDelta: number;
-  completedDelta:  number;
+  completedDelta: number;
 }
-
-const statsByTimeframe: Record<Timeframe, PlatformStats> = {
-  "7d":  { clients: 7, roles: 18, candidates: 142,  completed: 138,  avgScore: 74, completionRate: 97, rolesDelta: +3,  candidatesDelta: +28,  completedDelta: +26  },
-  "30d": { clients: 7, roles: 31, candidates: 589,  completed: 571,  avgScore: 72, completionRate: 97, rolesDelta: +8,  candidatesDelta: +89,  completedDelta: +82  },
-  "MTD": { clients: 7, roles: 24, candidates: 347,  completed: 338,  avgScore: 73, completionRate: 97, rolesDelta: +5,  candidatesDelta: +51,  completedDelta: +49  },
-  "6m":  { clients: 7, roles: 68, candidates: 2140, completed: 2073, avgScore: 71, completionRate: 97, rolesDelta: +12, candidatesDelta: +310, completedDelta: +298 },
-  "YTD": { clients: 7, roles: 52, candidates: 1680, completed: 1630, avgScore: 72, completionRate: 97, rolesDelta: +9,  candidatesDelta: +240, completedDelta: +232 },
-  "1y":  { clients: 7, roles: 84, candidates: 3210, completed: 3110, avgScore: 70, completionRate: 97, rolesDelta: +15, candidatesDelta: +480, completedDelta: +465 },
-};
 
 /* ── Recent role activity rows ───────────────────────────────── */
 interface ActivityRow {
-  client:     string;
-  role:       string;
-  type:       "Basic" | "Detailed" | "Technical";
+  client: string;
+  role: string;
+  type: InterviewType;
   candidates: number;
-  date:       string;
+  date: string;
 }
-
-const recentActivity: ActivityRow[] = [
-  { client: "Acme Dental Group",         role: "Dental Hygienist",     type: "Basic",     candidates: 22, date: "Apr 12" },
-  { client: "Summit Health Network",     role: "Nurse Practitioner",   type: "Technical", candidates: 18, date: "Apr 11" },
-  { client: "Ridge Medical Partners",    role: "Medical Receptionist", type: "Detailed",  candidates: 31, date: "Apr 10" },
-  { client: "Crestwood Orthopedics",     role: "Surgical Tech",        type: "Technical", candidates: 15, date: "Apr 9"  },
-  { client: "Lakeside Dermatology",      role: "Patient Coordinator",  type: "Basic",     candidates: 27, date: "Apr 8"  },
-  { client: "Harbor Cove Family Health", role: "Medical Assistant",    type: "Basic",     candidates: 19, date: "Apr 7"  },
-];
 
 /* ── Client breakdown ────────────────────────────────────────── */
 interface ClientRow {
-  name:       string;
-  letter:     string;
-  color:      string;
-  roles:      number;
+  name: string;
+  letter: string;
+  color: string;
+  roles: number;
   candidates: number;
-  avgScore:   number;
+  avgScore: number;
 }
 
-const clientBreakdown: ClientRow[] = [
-  { name: "Acme Dental Group",         letter: "A", color: "#A380F6", roles: 5, candidates: 96,  avgScore: 74 },
-  { name: "Ridge Medical Partners",    letter: "R", color: "#02ABE0", roles: 6, candidates: 118, avgScore: 71 },
-  { name: "Summit Health Network",     letter: "S", color: "#02D99D", roles: 4, candidates: 82,  avgScore: 73 },
-  { name: "Crestwood Orthopedics",     letter: "C", color: "#F0A500", roles: 5, candidates: 103, avgScore: 70 },
-  { name: "Lakeside Dermatology",      letter: "L", color: "#FF6B6B", roles: 3, candidates: 67,  avgScore: 75 },
-  { name: "Pinnacle Surgical Group",   letter: "P", color: "#5B6FBB", roles: 4, candidates: 71,  avgScore: 72 },
-  { name: "Harbor Cove Family Health", letter: "H", color: "#0285B0", roles: 4, candidates: 52,  avgScore: 69 },
-];
+interface AdminClientItem {
+  id: string;
+  name: string;
+  letter: string;
+  color: string;
+}
+
+interface RoleItem {
+  id: string;
+  clientId: string;
+  title: string;
+  type: InterviewType;
+  createdAtMs: number;
+}
+
+interface CandidateItem {
+  id: string;
+  clientId: string;
+  roleId: string;
+  createdAtMs: number;
+  interviewStatus: string;
+  interviewScore: number | null;
+  overallScore: number | null;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const CLIENT_COLORS = ["#A380F6", "#02ABE0", "#02D99D", "#F0A500", "#FF6B6B", "#5B6FBB", "#0285B0"] as const;
+
+const env =
+  typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
+
+function trimTrailingSlashes(value: unknown): string {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function firstBase(...values: unknown[]): string {
+  for (const value of values) {
+    const normalized = trimTrailingSlashes(value);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+const backendBase = firstBase(
+  (env as Record<string, unknown>).VITE_BACKEND_URL,
+  (env as Record<string, unknown>).VITE_API_URL,
+  (env as Record<string, unknown>).VITE_PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).BACKEND_URL,
+);
+
+function parseJsonSafe(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function extractErrorMessage(text: string, fallback: string): string {
+  if (!text) return fallback;
+  const data = parseJsonSafe(text);
+  const detail =
+    data && typeof data === "object"
+      ? (data as { detail?: unknown }).detail ??
+        (data as { message?: unknown }).message ??
+        (data as { error?: unknown }).error
+      : null;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  return text;
+}
+
+function toDateMs(value: unknown): number {
+  const raw = String(value || "").trim();
+  if (!raw) return 0;
+  const parsed = new Date(raw).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function toScoreOrNull(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" && value.trim() === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.min(100, n));
+}
+
+function normalizeInterviewType(value: unknown): InterviewType {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "detailed") return "Detailed";
+  if (normalized === "technical") return "Technical";
+  return "Basic";
+}
+
+function hashText(value: string): number {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
+
+function letterForClient(name: string): string {
+  const match = String(name || "").trim().match(/[A-Za-z0-9]/);
+  return match ? match[0].toUpperCase() : "C";
+}
+
+function colorForClient(id: string, index: number): string {
+  const seed = String(id || index || "admin-client");
+  return CLIENT_COLORS[hashText(seed) % CLIENT_COLORS.length];
+}
+
+function getWindowBounds(timeframe: Timeframe, nowMs: number): { start: number; end: number } {
+  const now = new Date(nowMs);
+  const end = nowMs;
+
+  if (timeframe === "7d") return { start: end - 7 * DAY_MS, end };
+  if (timeframe === "30d") return { start: end - 30 * DAY_MS, end };
+  if (timeframe === "MTD") return { start: new Date(now.getFullYear(), now.getMonth(), 1).getTime(), end };
+  if (timeframe === "6m") {
+    const start = new Date(now);
+    start.setMonth(start.getMonth() - 6);
+    return { start: start.getTime(), end };
+  }
+  if (timeframe === "YTD") return { start: new Date(now.getFullYear(), 0, 1).getTime(), end };
+  const start = new Date(now);
+  start.setFullYear(start.getFullYear() - 1);
+  return { start: start.getTime(), end };
+}
+
+function inWindow(timestamp: number, start: number, end: number): boolean {
+  return timestamp >= start && timestamp < end;
+}
+
+function isInterviewStarted(candidate: CandidateItem): boolean {
+  return Boolean(candidate.interviewStatus) || candidate.interviewScore !== null || candidate.overallScore !== null;
+}
+
+function isInterviewCompleted(candidate: CandidateItem): boolean {
+  if (/\bcomplete(?:d)?\b/i.test(candidate.interviewStatus)) return true;
+  return candidate.interviewScore !== null && candidate.overallScore !== null;
+}
+
+function summarizeWindow(
+  start: number,
+  end: number,
+  roles: RoleItem[],
+  candidates: CandidateItem[],
+): Omit<PlatformStats, "clients" | "rolesDelta" | "candidatesDelta" | "completedDelta"> & { roles: number } {
+  const rolesInWindow = roles.filter((role) => inWindow(role.createdAtMs, start, end));
+  const candidatesInWindow = candidates.filter((candidate) => inWindow(candidate.createdAtMs, start, end));
+  const completed = candidatesInWindow.filter(isInterviewCompleted);
+  const totalCandidates = candidatesInWindow.length;
+  const candidatesWithInterviewScore = candidatesInWindow.filter((candidate) => candidate.interviewScore !== null).length;
+  const scored = candidatesInWindow.filter((candidate) => candidate.overallScore !== null);
+  const avgScoreRaw = scored.length
+    ? scored.reduce((sum, candidate) => sum + Number(candidate.overallScore || 0), 0) / scored.length
+    : 0;
+  const completionRateRaw = totalCandidates ? (candidatesWithInterviewScore / totalCandidates) * 100 : 0;
+
+  return {
+    roles: rolesInWindow.length,
+    candidates: candidatesInWindow.length,
+    completed: completed.length,
+    avgScore: Math.round(avgScoreRaw),
+    completionRate: Math.round(completionRateRaw),
+  };
+}
+
+function formatMonthDay(timestamp: number): string {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return "—";
+  return new Date(timestamp).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
 
 /* ── Type badge colors ───────────────────────────────────────── */
 const typeColors: Record<string, { bg: string; text: string }> = {
-  Basic:     { bg: "rgba(163,128,246,0.12)", text: "#7C5FCC" },
-  Detailed:  { bg: "rgba(2,171,224,0.12)",   text: "#0285B0" },
-  Technical: { bg: "rgba(2,217,157,0.12)",   text: "#009E73" },
+  Basic: { bg: "rgba(163,128,246,0.12)", text: "#7C5FCC" },
+  Detailed: { bg: "rgba(2,171,224,0.12)", text: "#0285B0" },
+  Technical: { bg: "rgba(2,217,157,0.12)", text: "#009E73" },
 };
 
 /* ── Trend indicator ─────────────────────────────────────────── */
@@ -84,7 +236,8 @@ function Trend({ delta }: { delta: number }) {
   const positive = delta > 0;
   return (
     <span className="text-[11px] font-bold" style={{ color: positive ? "#02D99D" : "#FF6B6B" }}>
-      {positive ? "+" : ""}{delta} vs prior period
+      {positive ? "+" : ""}
+      {delta} vs prior period
     </span>
   );
 }
@@ -105,63 +258,311 @@ function ScoreBadge({ score }: { score: number }) {
 /* ── Metric card config ──────────────────────────────────────── */
 const metricCards = [
   {
-    label:  "Active Clients",
-    icon:   Building2,
-    color:  "#A380F6",
+    label: "Active Clients",
+    icon: Building2,
+    color: "#A380F6",
     format: (s: PlatformStats) => String(s.clients),
-    sub:    "client accounts",
-    delta:  (_s: PlatformStats) => 0,
+    sub: "client accounts",
+    delta: (_s: PlatformStats) => 0,
   },
   {
-    label:  "Active Roles",
-    icon:   Briefcase,
-    color:  "#02ABE0",
+    label: "Active Roles",
+    icon: Briefcase,
+    color: "#02ABE0",
     format: (s: PlatformStats) => String(s.roles),
-    sub:    "across all clients",
-    delta:  (s: PlatformStats) => s.rolesDelta,
+    sub: "across all clients",
+    delta: (s: PlatformStats) => s.rolesDelta,
   },
   {
-    label:  "Candidates Screened",
-    icon:   Users,
-    color:  "#02D99D",
+    label: "Candidates Screened",
+    icon: Users,
+    color: "#02D99D",
     format: (s: PlatformStats) => s.candidates.toLocaleString(),
-    sub:    "total screenings",
-    delta:  (s: PlatformStats) => s.candidatesDelta,
+    sub: "total screenings",
+    delta: (s: PlatformStats) => s.candidatesDelta,
   },
   {
-    label:  "Interviews Completed",
-    icon:   CheckCircle2,
-    color:  "#F0A500",
+    label: "Interviews Completed",
+    icon: CheckCircle2,
+    color: "#F0A500",
     format: (s: PlatformStats) => s.completed.toLocaleString(),
-    sub:    "fully submitted",
-    delta:  (s: PlatformStats) => s.completedDelta,
+    sub: "fully completed",
+    delta: (s: PlatformStats) => s.completedDelta,
   },
   {
-    label:  "Avg Overall Score",
-    icon:   Star,
-    color:  "#A380F6",
+    label: "Avg Overall Score",
+    icon: Star,
+    color: "#A380F6",
     format: (s: PlatformStats) => `${s.avgScore}`,
-    sub:    "platform average",
-    delta:  (_s: PlatformStats) => 0,
+    sub: "platform average",
+    delta: (_s: PlatformStats) => 0,
   },
   {
-    label:  "Completion Rate",
-    icon:   TrendingUp,
-    color:  "#02D99D",
-    format: (s: PlatformStats) => `${s.completionRate}%`,
-    sub:    "started → submitted",
-    delta:  (_s: PlatformStats) => 0,
+    label: "Client Activity Rate",
+    icon: TrendingUp,
+    color: "#02D99D",
+    format: (s: PlatformStats) => `${s.completionRate.toFixed(1)}%`,
+    sub: "clients with completed interviews",
+    delta: (_s: PlatformStats) => 0,
   },
 ];
 
 export default function AdminOverviewPage() {
   const [timeframe, setTimeframe] = useState<Timeframe>("30d");
-  const stats = statsByTimeframe[timeframe];
-  const { selectedClient } = useAdminClient();
+  const {
+    selectedClient,
+    selectedClientId,
+    loading: adminClientsLoading,
+    error: adminClientsError,
+  } = useAdminClient();
+  const [globalClients, setGlobalClients] = useState<AdminClientItem[]>([]);
+  const [globalRoles, setGlobalRoles] = useState<RoleItem[]>([]);
+  const [globalCandidates, setGlobalCandidates] = useState<CandidateItem[]>([]);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+  const [overviewError, setOverviewError] = useState("");
+
+  const isAllClients = selectedClient.id === "all" || selectedClientId === "all";
+
+  useEffect(() => {
+    let alive = true;
+
+    const loadOverview = async () => {
+      if (adminClientsLoading) return;
+      if (adminClientsError) {
+        if (!alive) return;
+        setGlobalClients([]);
+        setGlobalRoles([]);
+        setGlobalCandidates([]);
+        setOverviewError(adminClientsError);
+        setOverviewLoading(false);
+        return;
+      }
+      if (!backendBase) {
+        if (!alive) return;
+        setGlobalClients([]);
+        setGlobalRoles([]);
+        setGlobalCandidates([]);
+        setOverviewError("Missing backend base URL configuration.");
+        setOverviewLoading(false);
+        return;
+      }
+
+      if (!alive) return;
+      setOverviewLoading(true);
+      setOverviewError("");
+
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const token = String(session?.access_token || "").trim();
+        if (!token) throw new Error("Missing session token.");
+
+        const getJson = async (path: string, fallback: string): Promise<unknown> => {
+          const response = await fetch(`${backendBase}${path}`, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            credentials: "omit",
+          });
+          const text = await response.text();
+          if (!response.ok) throw new Error(extractErrorMessage(text, fallback));
+          return parseJsonSafe(text);
+        };
+
+        const clientsPayload = await getJson("/admin/clients", "Failed to load clients.");
+        const clientItems = clientsPayload && typeof clientsPayload === "object" && Array.isArray((clientsPayload as { items?: unknown }).items)
+          ? (clientsPayload as { items: unknown[] }).items
+          : [];
+
+        const mappedClients: AdminClientItem[] = clientItems
+          .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+          .map((item, index) => {
+            const id = String(item.id || "").trim();
+            const name = String(item.name || "").trim() || id || `Client ${index + 1}`;
+            return {
+              id,
+              name,
+              letter: letterForClient(name),
+              color: colorForClient(id, index),
+            };
+          })
+          .filter((item) => Boolean(item.id));
+
+        const rolesPayload = await getJson("/admin/roles", "Failed to load roles.");
+        const roleItems = rolesPayload && typeof rolesPayload === "object" && Array.isArray((rolesPayload as { items?: unknown }).items)
+          ? (rolesPayload as { items: unknown[] }).items
+          : [];
+
+        const mappedRoles: RoleItem[] = roleItems
+          .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+          .map((item) => ({
+            id: String(item.id || "").trim(),
+            clientId: String(item.client_id || "").trim(),
+            title: String(item.title || "").trim() || "Untitled role",
+            type: normalizeInterviewType(item.interview_type),
+            createdAtMs: toDateMs(item.created_at),
+          }))
+          .filter((item) => Boolean(item.id && item.clientId));
+
+        const candidateBatches = await Promise.all(
+          mappedClients.map(async (client) => {
+            const payload = await getJson(
+              `/admin/candidates?client_id=${encodeURIComponent(client.id)}`,
+              `Failed to load candidates for ${client.name}.`,
+            );
+            const rows = payload && typeof payload === "object" && Array.isArray((payload as { candidates?: unknown }).candidates)
+              ? (payload as { candidates: unknown[] }).candidates
+              : [];
+
+            return rows
+              .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+              .map((item) => ({
+                id: String(item.id || "").trim(),
+                clientId: String(item.client_id || client.id).trim(),
+                roleId: String(item.role_id || "").trim(),
+                createdAtMs: toDateMs(item.created_at),
+                interviewStatus: String(item.interview_status || "").trim().toLowerCase(),
+                interviewScore: toScoreOrNull(item.interview_score),
+                overallScore: toScoreOrNull(item.overall_score),
+              }))
+              .filter((item) => Boolean(item.id && item.clientId));
+          }),
+        );
+
+        if (!alive) return;
+        setGlobalClients(mappedClients);
+        setGlobalRoles(mappedRoles);
+        setGlobalCandidates(candidateBatches.flat());
+        setOverviewError("");
+      } catch (error) {
+        if (!alive) return;
+        setGlobalClients([]);
+        setGlobalRoles([]);
+        setGlobalCandidates([]);
+        setOverviewError(error instanceof Error ? error.message : "Failed to load admin overview.");
+      } finally {
+        if (alive) setOverviewLoading(false);
+      }
+    };
+
+    void loadOverview();
+    return () => {
+      alive = false;
+    };
+  }, [adminClientsLoading, adminClientsError]);
+
+  const clientNameById = useMemo(
+    () => Object.fromEntries(globalClients.map((client) => [client.id, client.name])),
+    [globalClients],
+  );
+
+  const scopedRoles = useMemo(() => {
+    if (isAllClients) return globalRoles;
+    return globalRoles.filter((role) => role.clientId === selectedClientId);
+  }, [globalRoles, isAllClients, selectedClientId]);
+
+  const scopedCandidates = useMemo(() => {
+    if (isAllClients) return globalCandidates;
+    return globalCandidates.filter((candidate) => candidate.clientId === selectedClientId);
+  }, [globalCandidates, isAllClients, selectedClientId]);
+
+  const scopedClientCount = useMemo(() => {
+    if (isAllClients) return globalClients.length;
+    return globalClients.some((client) => client.id === selectedClientId) ? 1 : 0;
+  }, [globalClients, isAllClients, selectedClientId]);
+
+  const stats = useMemo<PlatformStats>(() => {
+    const nowMs = Date.now();
+    const current = getWindowBounds(timeframe, nowMs);
+    const durationMs = Math.max(1, current.end - current.start);
+    const priorStart = current.start - durationMs;
+    const priorEnd = current.start;
+
+    const currentSummary = summarizeWindow(current.start, current.end, scopedRoles, scopedCandidates);
+    const priorSummary = summarizeWindow(priorStart, priorEnd, scopedRoles, scopedCandidates);
+    const clientsWithCompletedInWindow = new Set(
+      globalCandidates
+        .filter((candidate) => inWindow(candidate.createdAtMs, current.start, current.end) && isInterviewCompleted(candidate))
+        .map((candidate) => candidate.clientId),
+    );
+    const clientActivityRate = globalClients.length ? (clientsWithCompletedInWindow.size / globalClients.length) * 100 : 0;
+
+    return {
+      clients: scopedClientCount,
+      roles: currentSummary.roles,
+      candidates: currentSummary.candidates,
+      completed: currentSummary.completed,
+      avgScore: currentSummary.avgScore,
+      completionRate: clientActivityRate,
+      rolesDelta: currentSummary.roles - priorSummary.roles,
+      candidatesDelta: currentSummary.candidates - priorSummary.candidates,
+      completedDelta: currentSummary.completed - priorSummary.completed,
+    };
+  }, [timeframe, scopedRoles, scopedCandidates, scopedClientCount, globalCandidates, globalClients]);
+
+  const recentActivity = useMemo<ActivityRow[]>(() => {
+    const candidateCountByRoleId = new Map<string, number>();
+    for (const candidate of scopedCandidates) {
+      if (!candidate.roleId) continue;
+      const current = candidateCountByRoleId.get(candidate.roleId) || 0;
+      candidateCountByRoleId.set(candidate.roleId, current + 1);
+    }
+
+    return [...scopedRoles]
+      .sort((a, b) => b.createdAtMs - a.createdAtMs)
+      .slice(0, 6)
+      .map((role) => ({
+        client: clientNameById[role.clientId] || "—",
+        role: role.title,
+        type: role.type,
+        candidates: candidateCountByRoleId.get(role.id) || 0,
+        date: formatMonthDay(role.createdAtMs),
+      }));
+  }, [scopedRoles, scopedCandidates, clientNameById]);
+
+  const clientBreakdown = useMemo<ClientRow[]>(() => {
+    const rolesByClient = new Map<string, number>();
+    for (const role of globalRoles) {
+      const current = rolesByClient.get(role.clientId) || 0;
+      rolesByClient.set(role.clientId, current + 1);
+    }
+
+    const candidatesByClient = new Map<string, number>();
+    const scoreTotalsByClient = new Map<string, { sum: number; count: number }>();
+    for (const candidate of globalCandidates) {
+      const current = candidatesByClient.get(candidate.clientId) || 0;
+      candidatesByClient.set(candidate.clientId, current + 1);
+
+      if (candidate.overallScore !== null) {
+        const existing = scoreTotalsByClient.get(candidate.clientId) || { sum: 0, count: 0 };
+        scoreTotalsByClient.set(candidate.clientId, {
+          sum: existing.sum + Number(candidate.overallScore),
+          count: existing.count + 1,
+        });
+      }
+    }
+
+    return [...globalClients]
+      .map((client) => {
+        const score = scoreTotalsByClient.get(client.id);
+        const avgScore = score && score.count > 0 ? Math.round(score.sum / score.count) : 0;
+        return {
+          name: client.name,
+          letter: client.letter,
+          color: client.color,
+          roles: rolesByClient.get(client.id) || 0,
+          candidates: candidatesByClient.get(client.id) || 0,
+          avgScore,
+        };
+      })
+      .sort((a, b) => {
+        if (b.candidates !== a.candidates) return b.candidates - a.candidates;
+        return a.name.localeCompare(b.name);
+      });
+  }, [globalClients, globalRoles, globalCandidates]);
 
   return (
     <AdminLayout title="Overview">
-
       {/* ── Header ───────────────────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-7">
         <div>
@@ -192,6 +593,21 @@ export default function AdminOverviewPage() {
           ))}
         </div>
       </div>
+
+      {overviewError && (
+        <div
+          className="mb-5 px-4 py-2.5 rounded-xl text-sm font-semibold"
+          style={{ backgroundColor: "rgba(255,107,107,0.12)", color: "#B33A3A" }}
+        >
+          {overviewError}
+        </div>
+      )}
+
+      {!overviewError && overviewLoading && (
+        <div className="mb-5 text-sm font-semibold text-[#0A1547]/45">
+          Loading overview...
+        </div>
+      )}
 
       {/* ── Metric cards — 2×3 grid ──────────────────────── */}
       <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4 mb-7">
@@ -231,7 +647,6 @@ export default function AdminOverviewPage() {
 
       {/* ── Bottom row: Activity + Client Breakdown ────────── */}
       <div className="grid xl:grid-cols-5 gap-4">
-
         {/* Recent Role Activity */}
         <div
           className="xl:col-span-3 bg-white rounded-2xl overflow-hidden"
@@ -251,6 +666,11 @@ export default function AdminOverviewPage() {
             </Link>
           </div>
           <div className="divide-y divide-gray-50">
+            {!overviewLoading && recentActivity.length === 0 && (
+              <div className="px-6 py-4 text-sm font-semibold text-[#0A1547]/45">
+                No recent roles in this scope.
+              </div>
+            )}
             {recentActivity.map((row, i) => {
               const tc = typeColors[row.type];
               return (
@@ -295,6 +715,11 @@ export default function AdminOverviewPage() {
             </Link>
           </div>
           <div className="divide-y divide-gray-50">
+            {!overviewLoading && clientBreakdown.length === 0 && (
+              <div className="px-6 py-4 text-sm font-semibold text-[#0A1547]/45">
+                No client volume data yet.
+              </div>
+            )}
             {clientBreakdown.map((client, i) => (
               <div
                 key={i}
@@ -317,7 +742,6 @@ export default function AdminOverviewPage() {
             ))}
           </div>
         </div>
-
       </div>
 
       {/* ── Client name scroller ──────────────────────────── */}
@@ -345,30 +769,30 @@ export default function AdminOverviewPage() {
 
             {/* Scrolling strip — items duplicated for seamless loop */}
             <div className="flex animate-marquee w-max">
-              {[...clientBreakdown, ...clientBreakdown].map((client, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-2.5 mx-8 flex-shrink-0"
-                >
-                  <div
-                    className="w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-black text-white flex-shrink-0"
-                    style={{ backgroundColor: client.color }}
-                  >
-                    {client.letter}
+              {globalClients.length === 0 && !overviewLoading ? (
+                <div className="px-6 text-sm font-semibold text-[#0A1547]/45">No active clients.</div>
+              ) : (
+                [...globalClients, ...globalClients].map((client, i) => (
+                  <div key={i} className="flex items-center gap-2.5 mx-8 flex-shrink-0">
+                    <div
+                      className="w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-black text-white flex-shrink-0"
+                      style={{ backgroundColor: client.color }}
+                    >
+                      {client.letter}
+                    </div>
+                    <span
+                      className="text-sm font-bold whitespace-nowrap"
+                      style={{ color: "rgba(10,21,71,0.45)" }}
+                    >
+                      {client.name}
+                    </span>
                   </div>
-                  <span
-                    className="text-sm font-bold whitespace-nowrap"
-                    style={{ color: "rgba(10,21,71,0.45)" }}
-                  >
-                    {client.name}
-                  </span>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </div>
       </div>
-
     </AdminLayout>
   );
 }

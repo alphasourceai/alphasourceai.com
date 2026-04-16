@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ChevronRight, Trash2, RefreshCw, ChevronUp, ChevronDown,
 } from "lucide-react";
 import AdminLayout from "@/components/AdminLayout";
+import { supabase } from "@/lib/supabaseClient";
 
 /* ── Types ───────────────────────────────────────────────────── */
 type PlanTier    = "basic" | "pro" | "enterprise" | null;
@@ -11,96 +12,160 @@ type BillingStatus = "active" | "inactive";
 type AccessOverride = "Inherit" | "Force Active" | "Force Inactive";
 
 interface Client {
-  id:           string;
-  name:         string;
-  letter:       string;
-  color:        string;
-  createdDate:  string;
-  planTier:     PlanTier;
+  id: string;
+  name: string;
+  letter: string;
+  color: string;
+  createdDate: string;
+  planTier: PlanTier;
   billingStatus: BillingStatus;
   billingCycle: BillingCycle;
-  autoRenew:    boolean;
+  rawBillingStatus: string;
+  rawSubscriptionStatus: string;
+  rawHasStripeSubscription: boolean;
+  autoRenew: boolean;
+  accessOverrideMode: string;
   stripeMembership: string | null;
-  contract:     string | null;
-  periodEnds:   string | null;
+  contract: string | null;
+  periodEnds: string | null;
 }
 
-/* ── Dummy data (will be replaced by Supabase) ───────────────── */
-const CLIENTS: Client[] = [
-  {
-    id: "acme",
-    name: "Acme Dental Group",
-    letter: "A", color: "#A380F6",
-    createdDate: "1/15/2026, 9:00:00 AM",
-    planTier: "basic",     billingStatus: "active",
-    billingCycle: "Monthly", autoRenew: true,
-    stripeMembership: "active",
-    contract: "1/15/2026 – 1/15/2027",
-    periodEnds: "5/15/2026",
-  },
-  {
-    id: "ridge",
-    name: "Ridge Medical Partners",
-    letter: "R", color: "#02ABE0",
-    createdDate: "2/1/2026, 10:30:00 AM",
-    planTier: "pro",       billingStatus: "active",
-    billingCycle: "Monthly", autoRenew: true,
-    stripeMembership: "active",
-    contract: "2/1/2026 – 2/1/2027",
-    periodEnds: "5/1/2026",
-  },
-  {
-    id: "summit",
-    name: "Summit Health Network",
-    letter: "S", color: "#02D99D",
-    createdDate: "3/1/2026, 8:15:00 AM",
-    planTier: "basic",     billingStatus: "active",
-    billingCycle: "Annual",  autoRenew: true,
-    stripeMembership: "active",
-    contract: "3/1/2026 – 3/1/2027",
-    periodEnds: "3/1/2027",
-  },
-  {
-    id: "crestwood",
-    name: "Crestwood Orthopedics",
-    letter: "C", color: "#F0A500",
-    createdDate: "3/15/2026, 2:45:00 PM",
-    planTier: "pro",       billingStatus: "active",
-    billingCycle: "Monthly", autoRenew: true,
-    stripeMembership: "active",
-    contract: "3/15/2026 – 3/15/2027",
-    periodEnds: "5/15/2026",
-  },
-  {
-    id: "lakeside",
-    name: "Lakeside Dermatology",
-    letter: "L", color: "#FF6B6B",
-    createdDate: "10/12/2025, 11:20:00 AM",
-    planTier: null,        billingStatus: "inactive",
-    billingCycle: null,    autoRenew: false,
-    stripeMembership: null, contract: null, periodEnds: null,
-  },
-  {
-    id: "pinnacle",
-    name: "Pinnacle Surgical Group",
-    letter: "P", color: "#5B6FBB",
-    createdDate: "2/20/2026, 3:00:00 PM",
-    planTier: "basic",     billingStatus: "active",
-    billingCycle: "Monthly", autoRenew: true,
-    stripeMembership: "active",
-    contract: "2/20/2026 – 2/20/2027",
-    periodEnds: "5/20/2026",
-  },
-  {
-    id: "harbor",
-    name: "Harbor Cove Family Health",
-    letter: "H", color: "#0285B0",
-    createdDate: "11/5/2025, 4:10:00 PM",
-    planTier: null,        billingStatus: "inactive",
-    billingCycle: null,    autoRenew: false,
-    stripeMembership: null, contract: null, periodEnds: null,
-  },
-];
+const env =
+  typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
+
+function trimTrailingSlashes(value: unknown): string {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function firstBase(...values: unknown[]): string {
+  for (const value of values) {
+    const normalized = trimTrailingSlashes(value);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+const backendBase = firstBase(
+  (env as Record<string, unknown>).VITE_BACKEND_URL,
+  (env as Record<string, unknown>).VITE_API_URL,
+  (env as Record<string, unknown>).VITE_PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).BACKEND_URL,
+);
+
+function extractErrorMessage(text: string, fallback = "Request failed."): string {
+  if (!text) return fallback;
+  try {
+    const data = JSON.parse(text) as { detail?: unknown; message?: unknown; error?: unknown };
+    const candidate = data.detail ?? data.message ?? data.error;
+    if (typeof candidate === "string" && candidate.trim()) return candidate;
+  } catch {
+    // ignore parse failure and fall back to raw text
+  }
+  return text || fallback;
+}
+
+function parseJsonSafe(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function formatDateTime(value: unknown): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "—";
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return "—";
+  return parsed.toLocaleString();
+}
+
+function formatDate(value: unknown): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleDateString();
+}
+
+function normalizePlanTier(value: unknown): PlanTier {
+  const tier = String(value || "").trim().toLowerCase();
+  if (tier === "basic" || tier === "pro" || tier === "enterprise") return tier;
+  return null;
+}
+
+function normalizeBillingCycle(value: unknown): BillingCycle {
+  const cycle = String(value || "").trim().toLowerCase();
+  if (cycle === "monthly") return "Monthly";
+  if (cycle === "annual") return "Annual";
+  return null;
+}
+
+function normalizeBillingStatus(item: Record<string, unknown>): BillingStatus {
+  const billing = String(item.billing_status || "").trim().toLowerCase();
+  const subscription = String(item.subscription_status || "").trim().toLowerCase();
+  if (billing === "inactive") return "inactive";
+  if (subscription === "active" || subscription === "trialing") return "active";
+  return "inactive";
+}
+
+function normalizeAccessOverride(value: unknown): AccessOverride {
+  const mode = String(value || "").trim().toLowerCase();
+  if (mode === "force_active") return "Force Active";
+  if (mode === "force_inactive") return "Force Inactive";
+  return "Inherit";
+}
+
+function toAccessOverrideMode(value: AccessOverride): "inherit" | "force_active" | "force_inactive" {
+  if (value === "Force Active") return "force_active";
+  if (value === "Force Inactive") return "force_inactive";
+  return "inherit";
+}
+
+function getEffectiveAccessStatus(override: AccessOverride, baseline: BillingStatus): BillingStatus {
+  if (override === "Force Active") return "active";
+  if (override === "Force Inactive") return "inactive";
+  return baseline;
+}
+
+function getBaselineAccessStatus(client: Pick<Client, "rawBillingStatus" | "rawSubscriptionStatus" | "rawHasStripeSubscription">): BillingStatus {
+  const billing = String(client.rawBillingStatus || "").trim().toLowerCase();
+  const subscription = String(client.rawSubscriptionStatus || "").trim().toLowerCase();
+  const hasLiveSubscription = subscription === "active" || subscription === "trialing";
+  if (billing === "inactive") return "inactive";
+  if (hasLiveSubscription) return "active";
+  if (client.rawHasStripeSubscription || subscription) return "inactive";
+  return "inactive";
+}
+
+function getOverrideSubtext(override: AccessOverride): string {
+  if (override === "Force Active") return "Forced Active";
+  if (override === "Force Inactive") return "Forced Inactive";
+  return "Inherited";
+}
+
+const isValidEmail = (value: string) =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+
+const isValidPhoneLike = (value: string) => {
+  const raw = String(value || "").trim();
+  if (!raw) return false;
+  if (!/^[+\d()\s.\-]+$/.test(raw)) return false;
+  const digits = raw.replace(/\D/g, "");
+  return digits.length >= 10 && digits.length <= 15;
+};
+
+function pickClientColor(seed: string): string {
+  const palette = ["#A380F6", "#02ABE0", "#02D99D", "#F0A500", "#FF6B6B", "#5B6FBB", "#0285B0"];
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash << 5) - hash + seed.charCodeAt(i);
+    hash |= 0;
+  }
+  return palette[Math.abs(hash) % palette.length];
+}
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 const planColors: Record<string, { bg: string; text: string }> = {
@@ -122,7 +187,7 @@ function PlanBadge({ tier }: { tier: PlanTier }) {
   );
 }
 
-function StatusBadge({ status }: { status: BillingStatus }) {
+function StatusBadge({ status, subtext }: { status: BillingStatus; subtext: string }) {
   const active = status === "active";
   return (
     <div>
@@ -132,7 +197,7 @@ function StatusBadge({ status }: { status: BillingStatus }) {
       >
         {status}
       </p>
-      <p className="text-xs font-semibold text-[#0A1547]/40">Inherited</p>
+      <p className="text-xs font-semibold text-[#0A1547]/40">{subtext}</p>
     </div>
   );
 }
@@ -153,15 +218,29 @@ const selectCls =
 
 /* ── Main component ──────────────────────────────────────────── */
 export default function AdminClientsPage() {
-  const [expandedId, setExpandedId]           = useState<string | null>(null);
-  const [sortKey,    setSortKey]              = useState<SortKey>("name");
-  const [sortDir,    setSortDir]              = useState<SortDir>("asc");
-  const [overrides,  setOverrides]            = useState<Record<string, AccessOverride>>({});
-  const [checkoutPlan, setCheckoutPlan]       = useState<Record<string, string>>({});
-  const [checkoutCycle, setCheckoutCycle]     = useState<Record<string, string>>({});
-  const [autoRenewStates, setAutoRenewStates] = useState<Record<string, boolean>>(
-    Object.fromEntries(CLIENTS.map((c) => [c.id, c.autoRenew]))
-  );
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>("name");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [overrides, setOverrides] = useState<Record<string, AccessOverride>>({});
+  const [checkoutPlan, setCheckoutPlan] = useState<Record<string, string>>({});
+  const [checkoutCycle, setCheckoutCycle] = useState<Record<string, string>>({});
+  const [clients, setClients] = useState<Client[]>([]);
+  const [clientsLoading, setClientsLoading] = useState(false);
+  const [clientsError, setClientsError] = useState("");
+  const [autoRenewStates, setAutoRenewStates] = useState<Record<string, boolean>>({});
+  const [actionNotice, setActionNotice] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const [createBusy, setCreateBusy] = useState(false);
+  const [processRenewalsBusy, setProcessRenewalsBusy] = useState(false);
+  const [autoRenewBusy, setAutoRenewBusy] = useState<Record<string, boolean>>({});
+  const [accessOverrideBusy, setAccessOverrideBusy] = useState<Record<string, boolean>>({});
+  const [subscriptionCheckoutBusy, setSubscriptionCheckoutBusy] = useState<Record<string, boolean>>({});
+  const [cancelContractBusy, setCancelContractBusy] = useState<Record<string, boolean>>({});
+  const [deleteBusy, setDeleteBusy] = useState<Record<string, boolean>>({});
+  const [enterprisePlatformFees, setEnterprisePlatformFees] = useState<Record<string, string>>({});
+  const [enterprisePerRoleFees, setEnterprisePerRoleFees] = useState<Record<string, string>>({});
+  const [enterpriseIncludedInterviews, setEnterpriseIncludedInterviews] = useState<Record<string, string>>({});
+  const [enterpriseAdditionalFees, setEnterpriseAdditionalFees] = useState<Record<string, string>>({});
 
   /* form state */
   const [form, setForm] = useState({
@@ -169,13 +248,336 @@ export default function AdminClientsPage() {
     candidateContact: "", managerRole: "standard",
   });
 
+  useEffect(() => {
+    if (!actionNotice) return;
+    const timer = setTimeout(() => setActionNotice(null), 3200);
+    return () => clearTimeout(timer);
+  }, [actionNotice]);
+
+  const getSessionToken = async (): Promise<string> => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const token = String(session?.access_token || "").trim();
+    if (!token) throw new Error("Missing session token.");
+    return token;
+  };
+
+  const requestReload = () => {
+    setReloadNonce((value) => value + 1);
+  };
+
+  const createClient = async () => {
+    const name = form.clientName.trim();
+    const admin_name = form.adminName.trim();
+    const admin_email = form.adminEmail.trim();
+    const candidate_assistance_contact = form.candidateContact.trim();
+    const admin_role = form.managerRole === "tester" ? "tester" : "manager";
+
+    if (!name) {
+      setActionNotice({ tone: "error", text: "Client name is required." });
+      return;
+    }
+    if (!candidate_assistance_contact) {
+      setActionNotice({ tone: "error", text: "Candidate assistance contact is required." });
+      return;
+    }
+    if (!isValidEmail(candidate_assistance_contact) && !isValidPhoneLike(candidate_assistance_contact)) {
+      setActionNotice({ tone: "error", text: "Candidate assistance contact must be a valid email or phone." });
+      return;
+    }
+    if (admin_email && !isValidEmail(admin_email)) {
+      setActionNotice({ tone: "error", text: "Admin email must be valid." });
+      return;
+    }
+
+    setCreateBusy(true);
+    setActionNotice(null);
+    try {
+      if (!backendBase) throw new Error("Missing backend base URL configuration.");
+      const token = await getSessionToken();
+      const response = await fetch(`${backendBase}/admin/clients`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "omit",
+        body: JSON.stringify({
+          name,
+          admin_name,
+          admin_email,
+          admin_role,
+          candidate_assistance_contact,
+        }),
+      });
+
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text, "Could not create client."));
+      const payload = parseJsonSafe(text) as { item?: unknown } | null;
+      if (!payload?.item || typeof payload.item !== "object") {
+        throw new Error("Client created but response item was missing.");
+      }
+
+      setForm({
+        clientName: "",
+        adminName: "",
+        adminEmail: "",
+        candidateContact: "",
+        managerRole: "standard",
+      });
+      requestReload();
+      setActionNotice({ tone: "success", text: "Client created." });
+    } catch (error) {
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not create client.",
+      });
+    } finally {
+      setCreateBusy(false);
+    }
+  };
+
+  const processRenewals = async () => {
+    if (processRenewalsBusy) return;
+    setProcessRenewalsBusy(true);
+    setActionNotice(null);
+    try {
+      if (!backendBase) throw new Error("Missing backend base URL configuration.");
+      const token = await getSessionToken();
+      const response = await fetch(`${backendBase}/admin/contracts/process-renewals`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "omit",
+        body: JSON.stringify({}),
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text, "Could not process renewals."));
+      requestReload();
+      setActionNotice({ tone: "success", text: "Renewals processed." });
+    } catch (error) {
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not process renewals.",
+      });
+    } finally {
+      setProcessRenewalsBusy(false);
+    }
+  };
+
+  const updateAutoRenew = async (client: Client, nextValue: boolean) => {
+    const clientId = client.id;
+    if (!clientId || autoRenewBusy[clientId]) return;
+    setActionNotice(null);
+    setAutoRenewBusy((prev) => ({ ...prev, [clientId]: true }));
+    try {
+      if (!backendBase) throw new Error("Missing backend base URL configuration.");
+      const token = await getSessionToken();
+      const response = await fetch(`${backendBase}/admin/clients/${encodeURIComponent(clientId)}/auto-renew`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "omit",
+        body: JSON.stringify({ auto_renew: nextValue }),
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text, "Could not update auto-renew."));
+      const payload = parseJsonSafe(text) as { item?: { auto_renew?: unknown } } | null;
+      const updated = typeof payload?.item?.auto_renew === "boolean" ? payload.item.auto_renew : nextValue;
+      setAutoRenewStates((prev) => ({ ...prev, [clientId]: updated }));
+      setActionNotice({ tone: "success", text: "Auto-renew updated." });
+      requestReload();
+    } catch (error) {
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not update auto-renew.",
+      });
+    } finally {
+      setAutoRenewBusy((prev) => ({ ...prev, [clientId]: false }));
+    }
+  };
+
+  const updateAccessOverride = async (clientId: string, nextValue: AccessOverride, previousValue: AccessOverride) => {
+    if (!clientId || accessOverrideBusy[clientId]) return;
+    setActionNotice(null);
+    setAccessOverrideBusy((prev) => ({ ...prev, [clientId]: true }));
+    try {
+      if (!backendBase) throw new Error("Missing backend base URL configuration.");
+      const token = await getSessionToken();
+      const response = await fetch(`${backendBase}/admin/clients/${encodeURIComponent(clientId)}/access-override`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "omit",
+        body: JSON.stringify({ access_override_mode: toAccessOverrideMode(nextValue) }),
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text, "Could not update access override."));
+      const payload = parseJsonSafe(text) as { item?: { access_override_mode?: unknown } } | null;
+      const updated = normalizeAccessOverride(payload?.item?.access_override_mode);
+      setOverrides((prev) => ({ ...prev, [clientId]: updated }));
+      setActionNotice({ tone: "success", text: "Access override updated." });
+      requestReload();
+    } catch (error) {
+      setOverrides((prev) => ({ ...prev, [clientId]: previousValue }));
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not update access override.",
+      });
+    } finally {
+      setAccessOverrideBusy((prev) => ({ ...prev, [clientId]: false }));
+    }
+  };
+
+  const sendCheckoutLink = async (client: Client) => {
+    const clientId = client.id;
+    if (!clientId || subscriptionCheckoutBusy[clientId]) return;
+    const plan_tier = String(checkoutPlan[clientId] || client.planTier || "basic").trim().toLowerCase();
+    const billing_interval = String(checkoutCycle[clientId] || (client.billingCycle === "Annual" ? "Annual" : "Monthly")).toLowerCase() === "annual"
+      ? "annual"
+      : "monthly";
+    if (!["basic", "pro", "enterprise"].includes(plan_tier)) {
+      setActionNotice({ tone: "error", text: "Invalid plan tier." });
+      return;
+    }
+
+    const payload: Record<string, unknown> = {
+      plan_tier,
+      billing_interval,
+      tab: "clients",
+    };
+
+    if (plan_tier === "enterprise") {
+      const platform_fee = String(enterprisePlatformFees[clientId] ?? "").trim();
+      const per_role_fee = String(enterprisePerRoleFees[clientId] ?? "").trim();
+      const included_interviews_per_role = String(enterpriseIncludedInterviews[clientId] ?? "").trim();
+      const additional_interview_fee = String(enterpriseAdditionalFees[clientId] ?? "").trim();
+      if (!platform_fee || !per_role_fee || !included_interviews_per_role || !additional_interview_fee) {
+        setActionNotice({ tone: "error", text: "All enterprise fee fields are required." });
+        return;
+      }
+      payload.platform_fee = platform_fee;
+      payload.per_role_fee = per_role_fee;
+      payload.included_interviews_per_role = included_interviews_per_role;
+      payload.additional_interview_fee = additional_interview_fee;
+    }
+
+    setActionNotice(null);
+    setSubscriptionCheckoutBusy((prev) => ({ ...prev, [clientId]: true }));
+    try {
+      if (!backendBase) throw new Error("Missing backend base URL configuration.");
+      const token = await getSessionToken();
+      const response = await fetch(`${backendBase}/admin/clients/${encodeURIComponent(clientId)}/subscription-checkout`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "omit",
+        body: JSON.stringify(payload),
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text, "Could not create checkout link."));
+      const data = parseJsonSafe(text) as { email_sent?: unknown; client_email?: unknown; email_error?: unknown } | null;
+      if (data?.email_sent === true) {
+        const clientEmail = String(data.client_email || "").trim();
+        setActionNotice({
+          tone: "success",
+          text: clientEmail ? `Checkout link emailed to ${clientEmail}.` : "Checkout link emailed.",
+        });
+      } else {
+        const detail = String(data?.email_error || "").trim();
+        setActionNotice({
+          tone: "success",
+          text: detail ? `Checkout link created. Email not confirmed (${detail}).` : "Checkout link created.",
+        });
+      }
+      requestReload();
+    } catch (error) {
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not create checkout link.",
+      });
+    } finally {
+      setSubscriptionCheckoutBusy((prev) => ({ ...prev, [clientId]: false }));
+    }
+  };
+
+  const cancelContract = async (client: Client) => {
+    const clientId = client.id;
+    if (!clientId || cancelContractBusy[clientId]) return;
+    setActionNotice(null);
+    setCancelContractBusy((prev) => ({ ...prev, [clientId]: true }));
+    try {
+      if (!backendBase) throw new Error("Missing backend base URL configuration.");
+      const token = await getSessionToken();
+      const response = await fetch(`${backendBase}/admin/clients/${encodeURIComponent(clientId)}/cancel-contract`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "omit",
+        body: JSON.stringify({}),
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text, "Could not cancel contract."));
+      setActionNotice({ tone: "success", text: "Contract canceled." });
+      requestReload();
+    } catch (error) {
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not cancel contract.",
+      });
+    } finally {
+      setCancelContractBusy((prev) => ({ ...prev, [clientId]: false }));
+    }
+  };
+
+  const deleteClient = async (client: Client) => {
+    const clientId = client.id;
+    if (!clientId || deleteBusy[clientId]) return;
+    if (!window.confirm(`Remove ${client.name}? This cannot be undone.`)) return;
+    setActionNotice(null);
+    setDeleteBusy((prev) => ({ ...prev, [clientId]: true }));
+    try {
+      if (!backendBase) throw new Error("Missing backend base URL configuration.");
+      const token = await getSessionToken();
+      const response = await fetch(`${backendBase}/admin/clients/${encodeURIComponent(clientId)}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "omit",
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text, "Could not delete client."));
+      setActionNotice({ tone: "success", text: "Client deleted." });
+      requestReload();
+    } catch (error) {
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not delete client.",
+      });
+    } finally {
+      setDeleteBusy((prev) => ({ ...prev, [clientId]: false }));
+    }
+  };
+
   /* sort */
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else { setSortKey(key); setSortDir("asc"); }
   };
 
-  const sorted = [...CLIENTS].sort((a, b) => {
+  const sorted = [...clients].sort((a, b) => {
     let av = a[sortKey] ?? "";
     let bv = b[sortKey] ?? "";
     av = String(av).toLowerCase();
@@ -187,6 +589,101 @@ export default function AdminClientsPage() {
 
   const toggleExpand = (id: string) =>
     setExpandedId((cur) => (cur === id ? null : id));
+
+  useEffect(() => {
+    let alive = true;
+
+    const loadClients = async () => {
+      if (!backendBase) {
+        if (!alive) return;
+        setClients([]);
+        setClientsError("Missing backend base URL configuration.");
+        setClientsLoading(false);
+        return;
+      }
+
+      if (!alive) return;
+      setClientsLoading(true);
+      setClientsError("");
+
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const token = String(session?.access_token || "").trim();
+        if (!token) throw new Error("Missing session token.");
+
+        const response = await fetch(`${backendBase}/admin/clients`, {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "omit",
+        });
+
+        const text = await response.text();
+        if (!response.ok) throw new Error(extractErrorMessage(text, "Failed to load clients."));
+
+        const payload = parseJsonSafe(text);
+        const items = payload && typeof payload === "object" && Array.isArray((payload as { items?: unknown }).items)
+          ? (payload as { items: unknown[] }).items
+          : [];
+
+        const mappedClients = items
+          .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+          .map((item) => {
+            const id = String(item.id || "").trim();
+            const name = String(item.name || "").trim() || "Unnamed client";
+            const firstLetter = String(name.trim().charAt(0) || "?").toUpperCase();
+            const contractStart = formatDate(item.contract_start_at);
+            const contractEnd = formatDate(item.contract_end_at);
+            return {
+              id,
+              name,
+              letter: firstLetter,
+              color: pickClientColor(id || name),
+              createdDate: formatDateTime(item.created_at),
+              planTier: normalizePlanTier(item.plan_tier),
+              billingStatus: normalizeBillingStatus(item),
+              billingCycle: normalizeBillingCycle(item.billing_interval),
+              rawBillingStatus: String(item.billing_status || "").trim().toLowerCase(),
+              rawSubscriptionStatus: String(item.subscription_status || "").trim().toLowerCase(),
+              rawHasStripeSubscription: Boolean(String(item.stripe_subscription_id || "").trim()),
+              autoRenew: Boolean(item.auto_renew),
+              accessOverrideMode: String(item.access_override_mode || "").trim().toLowerCase() || "inherit",
+              stripeMembership: String(item.subscription_status || "").trim() || null,
+              contract: contractStart && contractEnd ? `${contractStart} – ${contractEnd}` : null,
+              periodEnds: formatDate(item.current_term_end) || null,
+            };
+          })
+          .filter((item) => Boolean(item.id));
+
+        if (!alive) return;
+        setClients(mappedClients);
+        setAutoRenewStates(Object.fromEntries(mappedClients.map((client) => [client.id, client.autoRenew])));
+        setOverrides((prev) => Object.fromEntries(
+          mappedClients.map((client) => [client.id, prev[client.id] ?? normalizeAccessOverride(client.accessOverrideMode)]),
+        ));
+        setCheckoutPlan((prev) => Object.fromEntries(
+          mappedClients.map((client) => [client.id, prev[client.id] ?? (client.planTier || "basic")]),
+        ));
+        setCheckoutCycle((prev) => Object.fromEntries(
+          mappedClients.map((client) => [client.id, prev[client.id] ?? (client.billingCycle || "Monthly")]),
+        ));
+        setExpandedId((current) => (current && mappedClients.some((client) => client.id === current) ? current : null));
+      } catch (error) {
+        if (!alive) return;
+        setClients([]);
+        setExpandedId(null);
+        setClientsError(error instanceof Error ? error.message : "Failed to load clients.");
+      } finally {
+        if (alive) setClientsLoading(false);
+      }
+    };
+
+    void loadClients();
+    return () => {
+      alive = false;
+    };
+  }, [reloadNonce]);
 
   /* sort indicator */
   function SortIcon({ col }: { col: SortKey }) {
@@ -204,13 +701,29 @@ export default function AdminClientsPage() {
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-black text-[#0A1547]">Clients</h2>
         <button
+          disabled={processRenewalsBusy}
           className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold text-white transition-opacity hover:opacity-90"
           style={{ backgroundColor: "#A380F6" }}
+          onClick={() => {
+            void processRenewals();
+          }}
         >
           <RefreshCw className="w-3.5 h-3.5" />
-          Process Renewals
+          {processRenewalsBusy ? "Processing..." : "Process Renewals"}
         </button>
       </div>
+      {actionNotice && (
+        <div
+          className="mb-4 px-4 py-2.5 rounded-xl text-sm font-semibold"
+          style={{
+            border: actionNotice.tone === "error" ? "1px solid rgba(239,68,68,0.25)" : "1px solid rgba(2,217,157,0.25)",
+            backgroundColor: actionNotice.tone === "error" ? "rgba(239,68,68,0.08)" : "rgba(2,217,157,0.10)",
+            color: actionNotice.tone === "error" ? "#DC2626" : "#047857",
+          }}
+        >
+          {actionNotice.text}
+        </div>
+      )}
 
       {/* ── Create client form ────────────────────────────── */}
       <div
@@ -258,11 +771,14 @@ export default function AdminClientsPage() {
             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/30 pointer-events-none" />
           </div>
           <button
+            disabled={createBusy}
             className="flex-shrink-0 px-5 py-2 rounded-full text-sm font-bold text-white transition-opacity hover:opacity-90"
             style={{ backgroundColor: "#A380F6" }}
-            onClick={() => {/* placeholder */}}
+            onClick={() => {
+              void createClient();
+            }}
           >
-            Create
+            {createBusy ? "Creating..." : "Create"}
           </button>
         </div>
       </div>
@@ -308,12 +824,30 @@ export default function AdminClientsPage() {
 
         {/* Rows */}
         <div className="divide-y divide-gray-50">
-          {sorted.map((client) => {
+          {clientsLoading ? (
+            <div className="px-5 py-6 text-sm font-semibold text-[#0A1547]/45">
+              Loading clients...
+            </div>
+          ) : clientsError ? (
+            <div className="px-5 py-6 text-sm font-semibold text-red-500">
+              {clientsError}
+            </div>
+          ) : sorted.length === 0 ? (
+            <div className="px-5 py-6 text-sm font-semibold text-[#0A1547]/35">
+              No clients found.
+            </div>
+          ) : sorted.map((client) => {
             const expanded = expandedId === client.id;
             const override = overrides[client.id] ?? "Inherit";
             const cpPlan   = checkoutPlan[client.id]  ?? "basic";
             const cpCycle  = checkoutCycle[client.id] ?? "Monthly";
-            const isActive   = client.billingStatus === "active";
+            const baselineStatus = getBaselineAccessStatus(client);
+            const effectiveStatus = getEffectiveAccessStatus(override, baselineStatus);
+            const hasLiveSubscription =
+              client.rawSubscriptionStatus === "active" || client.rawSubscriptionStatus === "trialing";
+            const canCancelContract =
+              client.rawBillingStatus === "active" && client.rawHasStripeSubscription && hasLiveSubscription;
+            const showCheckout = !hasLiveSubscription;
             const autoRenew  = autoRenewStates[client.id] ?? client.autoRenew;
 
             return (
@@ -349,7 +883,7 @@ export default function AdminClientsPage() {
                   </div>
 
                   <div>
-                    <StatusBadge status={client.billingStatus} />
+                    <StatusBadge status={effectiveStatus} subtext={getOverrideSubtext(override)} />
                   </div>
 
                   <p className="text-sm text-[#0A1547]/50 font-semibold">
@@ -359,6 +893,7 @@ export default function AdminClientsPage() {
                   {/* Auto-renew checkbox */}
                   <div className="flex items-center">
                     <button
+                      disabled={autoRenewBusy[client.id] === true}
                       className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all cursor-pointer hover:scale-105 ${
                         autoRenew
                           ? "border-[#A380F6] bg-[#A380F6]"
@@ -366,7 +901,7 @@ export default function AdminClientsPage() {
                       }`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        setAutoRenewStates((prev) => ({ ...prev, [client.id]: !autoRenew }));
+                        void updateAutoRenew(client, !autoRenew);
                       }}
                       title={autoRenew ? "Disable auto-renew" : "Enable auto-renew"}
                     >
@@ -381,9 +916,13 @@ export default function AdminClientsPage() {
                   {/* Remove */}
                   <div className="flex items-center justify-center">
                     <button
-                      className="p-1.5 rounded-lg text-[#0A1547]/25 hover:text-red-500 hover:bg-red-50 transition-all"
+                      disabled={deleteBusy[client.id] === true}
+                      className="p-1.5 rounded-lg text-[#0A1547]/25 hover:text-red-500 hover:bg-red-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       title={`Remove ${client.name}`}
-                      onClick={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void deleteClient(client);
+                      }}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -403,7 +942,7 @@ export default function AdminClientsPage() {
                         <p className="text-xs font-black text-[#0A1547] mb-2">Membership details</p>
                         <div className="space-y-1.5">
                           {[
-                            ["Billing status", <span className="font-bold" style={{ color: isActive ? "#02D99D" : "#FF6B6B" }}>{client.billingStatus}</span>],
+                            ["Billing status", <span className="font-bold" style={{ color: baselineStatus === "active" ? "#02D99D" : "#FF6B6B" }}>{baselineStatus}</span>],
                             ["Stripe membership", client.stripeMembership ?? "—"],
                             ["Billing cycle",      client.billingCycle ?? "—"],
                             ["Contract",           client.contract ?? "—"],
@@ -422,13 +961,18 @@ export default function AdminClientsPage() {
                       <div className="flex flex-col gap-4 lg:w-80">
 
                         {/* Active client actions */}
-                        {isActive && (
+                        {canCancelContract && (
                           <div className="flex items-center gap-3">
                             <button
+                              disabled={cancelContractBusy[client.id] === true}
                               className="px-4 py-2 rounded-full text-sm font-bold text-white transition-opacity hover:opacity-90 flex-shrink-0"
                               style={{ backgroundColor: "#A380F6" }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void cancelContract(client);
+                              }}
                             >
-                              Cancel Contract
+                              {cancelContractBusy[client.id] === true ? "Canceling..." : "Cancel Contract"}
                             </button>
                           </div>
                         )}
@@ -440,12 +984,16 @@ export default function AdminClientsPage() {
                             <select
                               className={selectCls}
                               value={override}
-                              onChange={(e) =>
+                              disabled={accessOverrideBusy[client.id] === true}
+                              onChange={(e) => {
+                                const nextValue = e.target.value as AccessOverride;
+                                const previousValue = overrides[client.id] ?? normalizeAccessOverride(client.accessOverrideMode);
                                 setOverrides((prev) => ({
                                   ...prev,
-                                  [client.id]: e.target.value as AccessOverride,
-                                }))
-                              }
+                                  [client.id]: nextValue,
+                                }));
+                                void updateAccessOverride(client.id, nextValue, previousValue);
+                              }}
                               onClick={(e) => e.stopPropagation()}
                             >
                               <option>Inherit</option>
@@ -457,7 +1005,7 @@ export default function AdminClientsPage() {
                         </div>
 
                         {/* Inactive-only: Membership Checkout Link */}
-                        {!isActive && (
+                        {showCheckout && (
                           <div>
                             <p className="text-xs font-black text-[#0A1547] mb-2">Membership Checkout Link</p>
                             <div className="flex gap-2 mb-2">
@@ -496,17 +1044,51 @@ export default function AdminClientsPage() {
                             {cpPlan === "enterprise" && (
                               <div className="grid grid-cols-2 gap-2 mb-2">
                                 {["Membership ($)", "Per-role fee ($)", "Included interviews", "Add'l Interview Fee ($)"].map((ph) => (
-                                  <input key={ph} className={inputCls} placeholder={ph} />
+                                  <input
+                                    key={ph}
+                                    className={inputCls}
+                                    placeholder={ph}
+                                    value={
+                                      ph === "Membership ($)"
+                                        ? (enterprisePlatformFees[client.id] ?? "")
+                                        : ph === "Per-role fee ($)"
+                                          ? (enterprisePerRoleFees[client.id] ?? "")
+                                          : ph === "Included interviews"
+                                            ? (enterpriseIncludedInterviews[client.id] ?? "")
+                                            : (enterpriseAdditionalFees[client.id] ?? "")
+                                    }
+                                    onChange={(e) => {
+                                      const value = e.target.value;
+                                      if (ph === "Membership ($)") {
+                                        setEnterprisePlatformFees((prev) => ({ ...prev, [client.id]: value }));
+                                        return;
+                                      }
+                                      if (ph === "Per-role fee ($)") {
+                                        setEnterprisePerRoleFees((prev) => ({ ...prev, [client.id]: value }));
+                                        return;
+                                      }
+                                      if (ph === "Included interviews") {
+                                        setEnterpriseIncludedInterviews((prev) => ({ ...prev, [client.id]: value }));
+                                        return;
+                                      }
+                                      setEnterpriseAdditionalFees((prev) => ({ ...prev, [client.id]: value }));
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
                                 ))}
                               </div>
                             )}
 
                             <button
+                              disabled={subscriptionCheckoutBusy[client.id] === true}
                               className="w-full px-4 py-2 rounded-full text-sm font-bold text-white transition-opacity hover:opacity-90"
                               style={{ backgroundColor: "#A380F6" }}
-                              onClick={(e) => { e.stopPropagation(); /* placeholder */ }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void sendCheckoutLink(client);
+                              }}
                             >
-                              Send Checkout Link
+                              {subscriptionCheckoutBusy[client.id] === true ? "Sending..." : "Send Checkout Link"}
                             </button>
                           </div>
                         )}

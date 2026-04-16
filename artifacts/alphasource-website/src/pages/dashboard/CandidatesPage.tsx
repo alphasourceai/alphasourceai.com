@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronUp,
@@ -11,16 +11,25 @@ import {
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import InfoTooltip from "@/components/InfoTooltip";
+import { useClient } from "@/context/ClientContext";
+import { supabase } from "@/lib/supabaseClient";
 
 /* ── Types ──────────────────────────────────────────── */
 interface SubScore {
   label: string;
-  score: number;
+  score: number | null;
   color: string;
+  state?: "available" | "unavailable" | "not_applicable";
 }
 
 interface Candidate {
-  id: number;
+  id: string | number;
+  candidateId?: string;
+  roleId?: string;
+  interviewId?: string;
+  insufficientInterview?: boolean;
+  hasTranscript?: boolean;
+  transcriptText?: string;
   name: string;
   email: string;
   role: string;
@@ -33,13 +42,210 @@ interface Candidate {
   interviewSubs: SubScore[];
   interviewSummary: string;
   unanswered: string;
-  reliability: number;
-  risk: "Low" | "Medium" | "High";
+  reliability: number | null;
+  reliabilityState?: "available" | "unavailable" | "not_applicable";
+  risk: "Low" | "Medium" | "High" | null;
   riskText: string;
+  createdSort?: number;
 }
 
 type SortKey = "name" | "email" | "role" | "resume" | "interview" | "overall" | "created";
 type SortDir = "asc" | "desc";
+
+const env =
+  typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
+
+function trimTrailingSlashes(value: unknown): string {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function firstBase(...values: unknown[]): string {
+  for (const value of values) {
+    const normalized = trimTrailingSlashes(value);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+const backendBase = firstBase(
+  (env as Record<string, unknown>).VITE_BACKEND_URL,
+  (env as Record<string, unknown>).VITE_API_URL,
+  (env as Record<string, unknown>).VITE_PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).BACKEND_URL,
+);
+
+function extractErrorMessage(text: string): string {
+  if (!text) return "Failed to load candidates.";
+  try {
+    const data = JSON.parse(text) as { detail?: unknown; message?: unknown; error?: unknown };
+    const candidate = data.detail ?? data.message ?? data.error;
+    if (typeof candidate === "string" && candidate.trim()) return candidate;
+  } catch {
+    // ignore parse failure and fall back to raw text
+  }
+  return text;
+}
+
+function parseJsonSafe(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function toScoreOrNull(value: unknown): number | null {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  const clamped = Math.max(0, Math.min(100, n));
+  return Math.round(clamped);
+}
+
+function toSortDate(value: unknown): number {
+  const raw = String(value || "").trim();
+  if (!raw) return 0;
+  const parsed = new Date(raw).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function formatCreated(value: unknown): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "—";
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return "—";
+
+  const date = parsed.toLocaleDateString("en-US", {
+    timeZone: "America/Chicago",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  const time = parsed.toLocaleTimeString("en-US", {
+    timeZone: "America/Chicago",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZoneName: "short",
+  });
+
+  const normalizedTime = time
+    .replace(/\sGMT[+-]\d{1,2}(?::\d{2})?/g, "")
+    .replace(/\b(?:CDT|CST)\b/g, "CST");
+
+  return `${date} · ${normalizedTime.includes("CST") ? normalizedTime : `${normalizedTime} CST`}`;
+}
+
+function mapRowToCandidate(item: Record<string, unknown>, index: number): Candidate {
+  const candidate = item.candidate && typeof item.candidate === "object"
+    ? (item.candidate as Record<string, unknown>)
+    : {};
+  const role = item.role && typeof item.role === "object"
+    ? (item.role as Record<string, unknown>)
+    : {};
+  const resumeAnalysis = item.resume_analysis && typeof item.resume_analysis === "object"
+    ? (item.resume_analysis as Record<string, unknown>)
+    : {};
+  const interviewAnalysis = item.interview_analysis && typeof item.interview_analysis === "object"
+    ? (item.interview_analysis as Record<string, unknown>)
+    : {};
+  const perceptionScores = item.perception_scores && typeof item.perception_scores === "object"
+    ? (item.perception_scores as Record<string, unknown>)
+    : {};
+  const transcriptScores = item.transcript_scores && typeof item.transcript_scores === "object"
+    ? (item.transcript_scores as Record<string, unknown>)
+    : {};
+
+  const resumeScore = toScoreOrNull(item.resume_score);
+  const interviewScore = toScoreOrNull(item.interview_score);
+  const overallScore = toScoreOrNull(item.overall_score);
+
+  const rawId = candidate.id ?? item.id ?? `candidate-${index + 1}`;
+  const id = typeof rawId === "string" || typeof rawId === "number"
+    ? rawId
+    : `candidate-${index + 1}`;
+  const candidateId = String(candidate.id || "").trim();
+  const roleId = String(role.id || "").trim();
+  const interviewId = String(item.id || "").trim();
+  const hasTranscript = Boolean(item.has_transcript) || Boolean(String(item.transcript_url || "").trim());
+  const transcriptText = typeof item.transcript === "string" ? item.transcript.trim() : "";
+
+  const resumeSummaryRaw = String(resumeAnalysis.summary || "").trim();
+  const interviewSummaryRaw = String(interviewAnalysis.summary || "").trim();
+  const riskRaw = String(transcriptScores.ai_aided_risk || "").trim().toLowerCase();
+  const riskFromTranscript: Candidate["risk"] | null =
+    riskRaw === "high" ? "High" : riskRaw === "medium" ? "Medium" : riskRaw === "low" ? "Low" : null;
+  const riskReasonFromTranscript = String(transcriptScores.ai_aided_risk_reason || "").trim();
+  const reliabilityFromTranscript = toScoreOrNull(transcriptScores.confidence);
+  const perceptionMode = String(perceptionScores.mode || "").trim().toLowerCase();
+  const isTextInterview = perceptionMode === "text" || perceptionScores.unavailable === true;
+  const perceptionUnavailable = perceptionMode === "text" || perceptionScores.unavailable === true;
+  const interviewSummaryLower = interviewSummaryRaw.toLowerCase();
+  const insufficientInterview =
+    !isTextInterview &&
+    (
+      interviewSummaryLower.includes("before any substantive responses were recorded") ||
+      interviewSummaryLower.includes("before substantive responses were captured") ||
+      interviewSummaryLower.includes("insufficient data")
+    );
+  const hasInterview = interviewScore !== null || Object.keys(transcriptScores).length > 0 || insufficientInterview;
+  const displayedInterviewScore = insufficientInterview ? null : interviewScore;
+  const displayedOverallScore = insufficientInterview ? null : overallScore;
+  const clarityScore = insufficientInterview || perceptionUnavailable ? null : toScoreOrNull(interviewAnalysis.clarity);
+  const confidenceScore = insufficientInterview || perceptionUnavailable ? null : toScoreOrNull(interviewAnalysis.confidence);
+  const engagementFromInterview = toScoreOrNull(interviewAnalysis.engagement);
+  const engagementLegacyFallback = engagementFromInterview === null ? toScoreOrNull(interviewAnalysis.body_language) : null;
+  const engagementCanonical = engagementFromInterview !== null ? engagementFromInterview : engagementLegacyFallback;
+  const engagementScore = insufficientInterview || perceptionUnavailable ? null : engagementCanonical;
+  const displayedRisk = insufficientInterview ? null : (hasInterview ? riskFromTranscript : null);
+  const displayedRiskReason = insufficientInterview ? "" : riskReasonFromTranscript;
+  const reliabilityState: Candidate["reliabilityState"] =
+    !hasInterview ? "unavailable" : isTextInterview ? "not_applicable" : reliabilityFromTranscript !== null ? "available" : "unavailable";
+
+  return {
+    id,
+    candidateId,
+    roleId,
+    interviewId,
+    hasTranscript,
+    transcriptText,
+    name: String(candidate.name || "").trim() || "Unnamed Candidate",
+    email: String(candidate.email || "").trim() || "—",
+    role: String(role.title || "").trim() || "—",
+    resume: resumeScore,
+    interview: displayedInterviewScore,
+    overall: displayedOverallScore,
+    insufficientInterview,
+    created: formatCreated(item.created_at),
+    createdSort: toSortDate(item.created_at),
+    resumeSubs: [
+      { label: "Experience", score: toScoreOrNull(resumeAnalysis.experience), color: "#A380F6" },
+      { label: "Skills", score: toScoreOrNull(resumeAnalysis.skills), color: "#02ABE0" },
+      { label: "Education", score: toScoreOrNull(resumeAnalysis.education), color: "#02D99D" },
+    ],
+    resumeSummary: resumeSummaryRaw || "No resume summary available yet.",
+    interviewSubs: [
+      { label: "Clarity", score: clarityScore, color: "#02ABE0", state: clarityScore === null ? "unavailable" : "available" },
+      { label: "Confidence", score: confidenceScore, color: "#A380F6", state: confidenceScore === null ? "unavailable" : "available" },
+      {
+        label: "Engagement",
+        score: engagementScore,
+        color: "#02D99D",
+        state: isTextInterview ? "not_applicable" : engagementScore !== null ? "available" : "unavailable",
+      },
+    ],
+    interviewSummary: hasInterview
+      ? (interviewSummaryRaw || "No interview summary available yet.")
+      : "Interview not yet completed.",
+    unanswered: hasInterview ? "Not available in this view." : "Interview not yet completed.",
+    reliability: reliabilityState === "available" ? reliabilityFromTranscript : null,
+    reliabilityState,
+    risk: displayedRisk,
+    riskText: insufficientInterview ? "" : displayedRiskReason,
+  };
+}
 
 /* ── Placeholder data ───────────────────────────────── */
 const CANDIDATES: Candidate[] = [
@@ -228,12 +434,13 @@ function scoreBg(score: number | null): string {
   return "rgba(255,107,107,0.10)";
 }
 
-function riskColor(risk: "Low" | "Medium" | "High"): string {
-  return risk === "Low" ? "#02D99D" : risk === "Medium" ? "#F0A500" : "#FF6B6B";
+function riskColor(risk: Candidate["risk"]): string {
+  return risk === "Low" ? "#02D99D" : risk === "Medium" ? "#F0A500" : risk === "High" ? "#FF6B6B" : "rgba(10,21,71,0.35)";
 }
 
 /* ── Score number color: dynamic by value ───────────── */
-function subScoreNumColor(score: number): string {
+function subScoreNumColor(score: number | null): string {
+  if (score === null) return "rgba(10,21,71,0.25)";
   if (score === 0) return "rgba(10,21,71,0.25)";
   if (score >= 80) return "#02D99D";
   if (score >= 70) return "#F0A500";
@@ -253,6 +460,8 @@ const LABEL_TOOLTIPS: Record<string, string> = {
 function ScoreBar({ label, score, barColor }: SubScore & { barColor: string }) {
   const numColor = subScoreNumColor(score);
   const tip = LABEL_TOOLTIPS[label];
+  const hasScore = typeof score === "number";
+  const scoreText = hasScore ? `${score}%` : "—";
   return (
     <div className="mb-3 last:mb-0">
       <div className="flex items-center justify-between mb-1">
@@ -260,12 +469,12 @@ function ScoreBar({ label, score, barColor }: SubScore & { barColor: string }) {
           {label}
           {tip && <InfoTooltip content={tip} side="top" iconClassName="w-2.5 h-2.5 text-[#0A1547]/20" />}
         </span>
-        <span className="text-xs font-black" style={{ color: numColor }}>{score > 0 ? `${score}%` : "—"}</span>
+        <span className="text-xs font-black" style={{ color: numColor }}>{scoreText}</span>
       </div>
       <div className="w-full bg-gray-100 rounded-full h-1.5">
         <div
           className="h-1.5 rounded-full transition-all duration-500"
-          style={{ width: `${score}%`, backgroundColor: score > 0 ? barColor : "transparent" }}
+          style={{ width: hasScore ? `${score}%` : "0%", backgroundColor: hasScore ? barColor : "transparent" }}
         />
       </div>
     </div>
@@ -294,29 +503,76 @@ function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
 }
 
 /* ── Expanded row panel ─────────────────────────────── */
-function ExpandedPanel({ c }: { c: Candidate }) {
-  const hasInterview = c.interview !== null;
+function ExpandedPanel({
+  c,
+  onRefresh,
+  onOpenTranscript,
+  onOpenResume,
+  onDownloadPdf,
+  actionLoading,
+  actionError,
+}: {
+  c: Candidate;
+  onRefresh: (candidate: Candidate) => void;
+  onOpenTranscript: (candidate: Candidate) => void;
+  onOpenResume: (candidate: Candidate) => void;
+  onDownloadPdf: (candidate: Candidate) => void;
+  actionLoading: Record<string, boolean>;
+  actionError?: string;
+}) {
+  const hasInterview = c.interview !== null || c.risk !== null || c.reliabilityState === "not_applicable" || c.insufficientInterview === true;
+  const refreshing = Boolean(actionLoading[`${String(c.id)}:refresh`]);
+  const openingTranscript = Boolean(actionLoading[`${String(c.id)}:transcript`]);
+  const openingResume = Boolean(actionLoading[`${String(c.id)}:resume`]);
+  const openingPdf = Boolean(actionLoading[`${String(c.id)}:pdf`]);
+  const transcriptDisabled = openingTranscript || !c.transcriptText;
+  const resumeDisabled = openingResume || !c.candidateId;
+  const pdfDisabled = openingPdf || (!c.candidateId && !c.interviewId);
+
   return (
     <div className="border-t border-gray-100 bg-[#F8F9FD] px-6 py-5">
       {/* Action buttons */}
       <div className="flex flex-wrap gap-2 mb-5">
-        {[
-          { label: "Refresh",      icon: RefreshCw },
-          { label: "Transcript",   icon: FileText },
-          { label: "Resume",       icon: Download },
-          { label: "Download PDF", icon: FileDown },
-        ].map(({ label, icon: Icon }) => (
-          <button
-            key={label}
-            onClick={() => {}}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-full border transition-all hover:shadow-sm active:scale-[0.98]"
-            style={{ backgroundColor: "white", borderColor: "rgba(10,21,71,0.12)", color: "#0A1547" }}
-          >
-            <Icon className="w-3.5 h-3.5" />
-            {label}
-          </button>
-        ))}
+        <button
+          onClick={() => onRefresh(c)}
+          disabled={refreshing}
+          className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-full border transition-all hover:shadow-sm active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+          style={{ backgroundColor: "white", borderColor: "rgba(10,21,71,0.12)", color: "#0A1547" }}
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
+          {refreshing ? "Refreshing…" : "Refresh"}
+        </button>
+        <button
+          onClick={() => onOpenTranscript(c)}
+          disabled={transcriptDisabled}
+          className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-full border transition-all hover:shadow-sm active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+          style={{ backgroundColor: "white", borderColor: "rgba(10,21,71,0.12)", color: "#0A1547" }}
+        >
+          <FileText className="w-3.5 h-3.5" />
+          {openingTranscript ? "Opening…" : "Transcript"}
+        </button>
+        <button
+          onClick={() => onOpenResume(c)}
+          disabled={resumeDisabled}
+          className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-full border transition-all hover:shadow-sm active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+          style={{ backgroundColor: "white", borderColor: "rgba(10,21,71,0.12)", color: "#0A1547" }}
+        >
+          <Download className="w-3.5 h-3.5" />
+          {openingResume ? "Opening…" : "Resume"}
+        </button>
+        <button
+          onClick={() => onDownloadPdf(c)}
+          disabled={pdfDisabled}
+          className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-full border transition-all hover:shadow-sm active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+          style={{ backgroundColor: "white", borderColor: "rgba(10,21,71,0.12)", color: "#0A1547" }}
+        >
+          <FileDown className="w-3.5 h-3.5" />
+          {openingPdf ? "Generating…" : "Download PDF"}
+        </button>
       </div>
+      {actionError && (
+        <p className="text-xs font-semibold text-red-500 -mt-2 mb-4">{actionError}</p>
+      )}
 
       {/* 2×2 analysis grid */}
       <div className="grid md:grid-cols-2 gap-4">
@@ -392,17 +648,26 @@ function ExpandedPanel({ c }: { c: Candidate }) {
                     Evaluation Reliability
                     <InfoTooltip content="Confidence score for the overall AI evaluation based on response completeness and consistency" side="top" />
                   </span>
-                  <span className="text-xs font-black text-[#0A1547]">{c.reliability}%</span>
+                  <span className="text-xs font-black text-[#0A1547]">
+                    {typeof c.reliability === "number" ? `${c.reliability}%` : "—"}
+                  </span>
                 </div>
                 <div className="w-full bg-gray-100 rounded-full h-1.5">
                   <div
                     className="h-1.5 rounded-full"
                     style={{
-                      width: `${c.reliability}%`,
-                      backgroundColor: c.reliability >= 70 ? "#02D99D" : c.reliability >= 55 ? "#F0A500" : "#FF6B6B",
+                      width: typeof c.reliability === "number" ? `${c.reliability}%` : "0%",
+                      backgroundColor: typeof c.reliability === "number"
+                        ? (c.reliability >= 70 ? "#02D99D" : c.reliability >= 55 ? "#F0A500" : "#FF6B6B")
+                        : "transparent",
                     }}
                   />
                 </div>
+                {typeof c.reliability !== "number" && (
+                  <p className="text-[11px] text-[#0A1547]/45 mt-2">
+                    {c.reliabilityState === "not_applicable" ? "Not applicable for text interviews." : "Not yet available."}
+                  </p>
+                )}
               </div>
 
               {/* AI-aided interview risk */}
@@ -413,15 +678,19 @@ function ExpandedPanel({ c }: { c: Candidate }) {
                 </span>
                 <span
                   className="w-2 h-2 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: riskColor(c.risk) }}
+                  style={{ backgroundColor: c.insufficientInterview ? "rgba(10,21,71,0.35)" : riskColor(c.risk) }}
                 />
-                <span className="text-xs font-bold" style={{ color: riskColor(c.risk) }}>{c.risk}</span>
+                <span className="text-xs font-bold" style={{ color: c.insufficientInterview ? "rgba(10,21,71,0.65)" : riskColor(c.risk) }}>
+                  {c.insufficientInterview ? "—" : (c.risk ?? "—")}
+                </span>
               </div>
 
               {/* Risk narrative text */}
-              <p className="text-[11px] text-[#0A1547]/50 leading-relaxed border-t border-gray-100 pt-3">
-                {c.riskText}
-              </p>
+              {c.riskText && (
+                <p className="text-[11px] text-[#0A1547]/50 leading-relaxed border-t border-gray-100 pt-3">
+                  {c.riskText}
+                </p>
+              )}
             </div>
           ) : (
             <p className="text-xs text-[#0A1547]/40 italic">Signals will appear after the interview is completed.</p>
@@ -434,15 +703,22 @@ function ExpandedPanel({ c }: { c: Candidate }) {
 
 /* ── Main page ──────────────────────────────────────── */
 export default function CandidatesPage() {
-  const [expandedId, setExpandedId]     = useState<number | null>(null);
+  const { selectedClientId, loading: clientLoading, error: clientError } = useClient();
+  const [expandedId, setExpandedId] = useState<string | number | null>(null);
   const [minScore, setMinScore]         = useState("");
   const [sortKey, setSortKey]           = useState<SortKey | null>(null);
   const [sortDir, setSortDir]           = useState<SortDir>("asc");
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [candidatesLoading, setCandidatesLoading] = useState(false);
+  const [candidatesError, setCandidatesError] = useState("");
+  const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
+  const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
+  const [transcriptModal, setTranscriptModal] = useState<{ candidateName: string; transcript: string } | null>(null);
   const minScoreInputRef                = useRef<HTMLInputElement>(null);
 
   const minScoreNum = minScore === "" ? null : parseInt(minScore, 10);
 
-  const toggle = (id: number) => setExpandedId((prev) => (prev === id ? null : id));
+  const toggle = (id: string | number) => setExpandedId((prev) => (prev === id ? null : id));
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -453,8 +729,225 @@ export default function CandidatesPage() {
     }
   };
 
+  const loadCandidates = useCallback(async (options: { showPageLoader?: boolean; preserveOnError?: boolean } = {}) => {
+    const showPageLoader = options.showPageLoader !== false;
+    const preserveOnError = options.preserveOnError === true;
+
+    if (clientLoading) return;
+    if (clientError) {
+      if (!preserveOnError) {
+        setCandidates([]);
+        setCandidatesError(clientError);
+      }
+      throw new Error(clientError);
+    }
+    if (!selectedClientId) {
+      if (!preserveOnError) {
+        setCandidates([]);
+        setCandidatesError("");
+      }
+      return;
+    }
+    if (!backendBase) {
+      const message = "Missing backend base URL configuration.";
+      if (!preserveOnError) {
+        setCandidates([]);
+        setCandidatesError(message);
+      }
+      throw new Error(message);
+    }
+
+    if (showPageLoader) setCandidatesLoading(true);
+    if (!preserveOnError) setCandidatesError("");
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = String(session?.access_token || "").trim();
+      if (!token) throw new Error("Missing session token.");
+
+      const response = await fetch(
+        `${backendBase}/dashboard/rows?client_id=${encodeURIComponent(selectedClientId)}`,
+        {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "omit",
+        },
+      );
+
+      const text = await response.text();
+      if (!response.ok) {
+        throw new Error(extractErrorMessage(text));
+      }
+
+      const payload = parseJsonSafe(text);
+      const items = payload && typeof payload === "object" && Array.isArray((payload as { items?: unknown }).items)
+        ? (payload as { items: unknown[] }).items
+        : [];
+
+      const mapped = items
+        .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+        .map(mapRowToCandidate);
+
+      setCandidates(mapped);
+      if (!preserveOnError) setCandidatesError("");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load candidates.";
+      if (!preserveOnError) {
+        setCandidates([]);
+        setCandidatesError(message);
+      }
+      throw new Error(message);
+    } finally {
+      if (showPageLoader) setCandidatesLoading(false);
+    }
+  }, [selectedClientId, clientLoading, clientError]);
+
+  const withCandidateAction = useCallback(async (
+    candidate: Candidate,
+    action: "refresh" | "transcript" | "resume" | "pdf",
+    runner: () => Promise<void>,
+  ) => {
+    const candidateKey = String(candidate.id);
+    const loadingKey = `${candidateKey}:${action}`;
+    setActionLoading((prev) => ({ ...prev, [loadingKey]: true }));
+    setActionErrors((prev) => {
+      const next = { ...prev };
+      delete next[candidateKey];
+      return next;
+    });
+    try {
+      await runner();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Action failed.";
+      setActionErrors((prev) => ({ ...prev, [candidateKey]: message }));
+    } finally {
+      setActionLoading((prev) => ({ ...prev, [loadingKey]: false }));
+    }
+  }, []);
+
+  const openTranscriptForCandidate = useCallback((candidate: Candidate) => {
+    void withCandidateAction(candidate, "transcript", async () => {
+      const transcript = String(candidate.transcriptText || "").trim();
+      if (!transcript) {
+        throw new Error("Transcript is not available yet.");
+      }
+      setTranscriptModal({
+        candidateName: String(candidate.name || "").trim() || "Candidate",
+        transcript,
+      });
+    });
+  }, [withCandidateAction]);
+
+  const openResumeForCandidate = useCallback((candidate: Candidate) => {
+    void withCandidateAction(candidate, "resume", async () => {
+      if (!candidate.candidateId) throw new Error("Resume is not available.");
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = String(session?.access_token || "").trim();
+      if (!token) throw new Error("Missing session token.");
+
+      const response = await fetch(
+        `${backendBase}/files/resume-signed-url?candidate_id=${encodeURIComponent(candidate.candidateId)}`,
+        {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "omit",
+        },
+      );
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text));
+      const data = parseJsonSafe(text) as { url?: unknown } | null;
+      const url = typeof data?.url === "string" ? data.url.trim() : "";
+      if (!url) throw new Error("Could not open resume.");
+      window.open(url, "_blank", "noopener,noreferrer");
+    });
+  }, [withCandidateAction]);
+
+  const downloadPdfForCandidate = useCallback((candidate: Candidate) => {
+    void withCandidateAction(candidate, "pdf", async () => {
+      if (!candidate.candidateId && !candidate.interviewId) {
+        throw new Error("Report cannot be generated for this candidate.");
+      }
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = String(session?.access_token || "").trim();
+      if (!token) throw new Error("Missing session token.");
+
+      const response = await fetch(`${backendBase}/reports/generate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "omit",
+        body: JSON.stringify({
+          candidate_id: candidate.candidateId || null,
+          role_id: candidate.roleId || null,
+          interview_id: candidate.interviewId || null,
+        }),
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text));
+      const data = parseJsonSafe(text) as { signed_url?: unknown; url?: unknown; report_url?: unknown; report_id?: unknown } | null;
+      const directUrl =
+        (typeof data?.signed_url === "string" && data.signed_url.trim()) ||
+        (typeof data?.url === "string" && data.url.trim()) ||
+        (typeof data?.report_url === "string" && data.report_url.trim()) ||
+        "";
+      if (/^https?:\/\//i.test(directUrl)) {
+        window.open(directUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      const downloadId = String(data?.report_id || candidate.interviewId || "").trim();
+      if (!downloadId) throw new Error("Report URL not available.");
+
+      const downloadResponse = await fetch(
+        `${backendBase}/reports/${encodeURIComponent(downloadId)}/download`,
+        {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "omit",
+        },
+      );
+      if (!downloadResponse.ok) {
+        const downloadText = await downloadResponse.text();
+        throw new Error(extractErrorMessage(downloadText));
+      }
+      const blob = await downloadResponse.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = `Candidate_Report_${downloadId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(objectUrl);
+    });
+  }, [withCandidateAction]);
+
+  const refreshCandidatesFromRow = useCallback((candidate: Candidate) => {
+    void withCandidateAction(candidate, "refresh", async () => {
+      await loadCandidates({ showPageLoader: false, preserveOnError: true });
+    });
+  }, [loadCandidates, withCandidateAction]);
+
+  useEffect(() => {
+    void loadCandidates({ showPageLoader: true }).catch(() => {});
+  }, [loadCandidates]);
+
+  useEffect(() => {
+    if (expandedId === null) return;
+    const hasExpanded = candidates.some((candidate) => candidate.id === expandedId);
+    if (!hasExpanded) setExpandedId(null);
+  }, [candidates, expandedId]);
+
   /* Filter */
-  const filtered = CANDIDATES.filter((c) => {
+  const filtered = candidates.filter((c) => {
     if (minScoreNum !== null && !isNaN(minScoreNum)) {
       if (c.overall === null || c.overall < minScoreNum) return false;
     }
@@ -473,7 +966,7 @@ export default function CandidatesPage() {
           case "resume":    av = a.resume ?? -1; bv = b.resume ?? -1; break;
           case "interview": av = a.interview ?? -1; bv = b.interview ?? -1; break;
           case "overall":   av = a.overall ?? -1; bv = b.overall ?? -1; break;
-          case "created":   av = a.id; bv = b.id; break;
+          case "created":   av = a.createdSort ?? 0; bv = b.createdSort ?? 0; break;
           default:          av = 0; bv = 0;
         }
         if (av === null) av = "";
@@ -596,10 +1089,22 @@ export default function CandidatesPage() {
               </tr>
             </thead>
             <tbody>
-              {sorted.length === 0 ? (
+              {clientLoading || candidatesLoading ? (
                 <tr>
                   <td colSpan={8} className="text-center py-12 text-sm text-[#0A1547]/35 font-semibold">
-                    No candidates match your filters.
+                    Loading candidates...
+                  </td>
+                </tr>
+              ) : clientError || candidatesError ? (
+                <tr>
+                  <td colSpan={8} className="text-center py-12 text-sm text-red-500 font-semibold">
+                    {clientError || candidatesError}
+                  </td>
+                </tr>
+              ) : sorted.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="text-center py-12 text-sm text-[#0A1547]/35 font-semibold">
+                    {candidates.length === 0 ? "No candidates yet." : "No candidates match your filters."}
                   </td>
                 </tr>
               ) : (
@@ -687,7 +1192,15 @@ export default function CandidatesPage() {
                       {isExpanded && (
                         <tr className={!isLast ? "border-b border-gray-100" : ""}>
                           <td colSpan={8} className="p-0">
-                            <ExpandedPanel c={c} />
+                            <ExpandedPanel
+                              c={c}
+                              onRefresh={refreshCandidatesFromRow}
+                              onOpenTranscript={openTranscriptForCandidate}
+                              onOpenResume={openResumeForCandidate}
+                              onDownloadPdf={downloadPdfForCandidate}
+                              actionLoading={actionLoading}
+                              actionError={actionErrors[String(c.id)]}
+                            />
                           </td>
                         </tr>
                       )}
@@ -702,10 +1215,44 @@ export default function CandidatesPage() {
         {/* Footer row count */}
         <div className="px-6 py-3 border-t border-gray-100 flex items-center">
           <p className="text-[11px] text-[#0A1547]/35 font-semibold">
-            {sorted.length} of {CANDIDATES.length} candidate{CANDIDATES.length !== 1 ? "s" : ""}
+            {sorted.length} of {candidates.length} candidate{candidates.length !== 1 ? "s" : ""}
           </p>
         </div>
       </div>
+      {transcriptModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-6">
+          <button
+            type="button"
+            onClick={() => setTranscriptModal(null)}
+            className="absolute inset-0 bg-[#0A1547]/45"
+            aria-label="Close transcript"
+          />
+          <div
+            className="relative w-full max-w-4xl max-h-[85vh] bg-white rounded-2xl overflow-hidden"
+            style={{ border: "1px solid rgba(10,21,71,0.10)", boxShadow: "0 20px 44px rgba(10,21,71,0.24)" }}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">Transcript</p>
+                <h3 className="text-sm font-black text-[#0A1547] leading-snug">{transcriptModal.candidateName}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTranscriptModal(null)}
+                className="w-8 h-8 rounded-lg inline-flex items-center justify-center text-[#0A1547]/40 hover:text-[#0A1547] hover:bg-gray-100 transition-colors"
+                aria-label="Close transcript"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-5 py-4 overflow-y-auto max-h-[calc(85vh-72px)]">
+              <pre className="text-sm leading-relaxed text-[#0A1547]/85 whitespace-pre-wrap break-words font-semibold">
+                {transcriptModal.transcript}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   );
 }

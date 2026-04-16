@@ -1,11 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { RefreshCw, Download } from "lucide-react";
 import AdminLayout from "@/components/AdminLayout";
+import { useAdminClient } from "@/context/AdminClientContext";
+import { supabase } from "@/lib/supabaseClient";
 
 /* ── Types ───────────────────────────────────────────────────── */
 interface AuditLog {
-  id:      number;
+  id:      string;
   date:    string;
+  dateTs:  number;
   type:    string;
   status:  "success" | "error" | "warning";
   errors:  number;
@@ -14,10 +17,22 @@ interface AuditLog {
   note:    string;
 }
 
+interface BillingReconciliationRow {
+  id:            string;
+  clientId:      string;
+  client:        string;
+  expectedAmount:string;
+  actualBilled:  string;
+  difference:    string;
+  stripeStatus:  string;
+  lastChecked:   string;
+}
+
 interface CancellationRun {
-  id:           number;
+  id:           string;
+  clientId:     string;
   client:       string;
-  status:       "completed" | "failed" | "running";
+  status:       string;
   triggeredBy:  string;
   started:      string;
   completed:    string;
@@ -26,45 +41,6 @@ interface CancellationRun {
   note:         string;
   error:        string;
 }
-
-/* ── Dummy data ──────────────────────────────────────────────── */
-const AUDIT_LOGS: AuditLog[] = [
-  { id:1,  date:"4/13/2026, 2:05:56 AM", type:"cron", status:"success", errors:0, logId:"...78e99d0e", eventId:"—", note:"—" },
-  { id:2,  date:"4/12/2026, 2:05:50 AM", type:"cron", status:"success", errors:0, logId:"...a12b3c4d", eventId:"—", note:"—" },
-  { id:3,  date:"4/11/2026, 2:05:48 AM", type:"cron", status:"success", errors:0, logId:"...b23c4d5e", eventId:"—", note:"—" },
-  { id:4,  date:"4/10/2026, 2:05:52 AM", type:"cron", status:"success", errors:0, logId:"...c34d5e6f", eventId:"—", note:"—" },
-  { id:5,  date:"4/9/2026, 2:05:54 AM",  type:"cron", status:"success", errors:0, logId:"...d45e6f7g", eventId:"—", note:"—" },
-  { id:6,  date:"4/8/2026, 2:05:50 AM",  type:"cron", status:"success", errors:0, logId:"...e56f7g8h", eventId:"—", note:"—" },
-  { id:7,  date:"4/7/2026, 2:05:55 AM",  type:"cron", status:"success", errors:0, logId:"...f67g8h9i", eventId:"—", note:"—" },
-  { id:8,  date:"4/6/2026, 2:05:51 AM",  type:"cron", status:"success", errors:0, logId:"...g78h9i0j", eventId:"—", note:"—" },
-  { id:9,  date:"4/5/2026, 2:05:54 AM",  type:"cron", status:"success", errors:0, logId:"...h89i0j1k", eventId:"—", note:"—" },
-  { id:10, date:"4/4/2026, 2:05:56 AM",  type:"cron", status:"success", errors:0, logId:"...78e99d0e", eventId:"—", note:"—" },
-  { id:11, date:"4/3/2026, 2:05:50 AM",  type:"cron", status:"success", errors:0, logId:"...086a0f04", eventId:"—", note:"—" },
-  { id:12, date:"4/2/2026, 2:05:54 AM",  type:"cron", status:"success", errors:0, logId:"...63e01707", eventId:"—", note:"—" },
-  { id:13, date:"4/1/2026, 2:05:52 AM",  type:"cron", status:"success", errors:0, logId:"...8ce56341", eventId:"—", note:"—" },
-  { id:14, date:"3/31/2026, 2:08:24 AM", type:"cron", status:"success", errors:0, logId:"...76b4753e", eventId:"—", note:"—" },
-  { id:15, date:"3/30/2026, 2:06:13 AM", type:"cron", status:"success", errors:0, logId:"...1ea6bf51", eventId:"—", note:"—" },
-  { id:16, date:"3/29/2026, 2:06:29 AM", type:"cron", status:"success", errors:0, logId:"...5e015d16", eventId:"—", note:"—" },
-  { id:17, date:"3/28/2026, 2:06:46 AM", type:"cron", status:"success", errors:0, logId:"...dc3da64f", eventId:"—", note:"—" },
-  { id:18, date:"3/27/2026, 2:06:55 AM", type:"cron", status:"success", errors:0, logId:"...47966253", eventId:"—", note:"—" },
-  { id:19, date:"3/26/2026, 2:06:37 AM", type:"cron", status:"success", errors:0, logId:"...351d7b77", eventId:"—", note:"—" },
-  { id:20, date:"3/25/2026, 2:06:13 AM", type:"cron", status:"success", errors:0, logId:"...13cd8cde", eventId:"—", note:"—" },
-  { id:21, date:"3/24/2026, 2:05:56 AM", type:"cron", status:"success", errors:0, logId:"...eea40fb5", eventId:"—", note:"—" },
-  { id:22, date:"3/23/2026, 2:05:52 AM", type:"cron", status:"success", errors:0, logId:"...77e5357e", eventId:"—", note:"—" },
-  { id:23, date:"3/22/2026, 2:05:51 AM", type:"cron", status:"success", errors:0, logId:"...12ed05e6", eventId:"—", note:"—" },
-  { id:24, date:"3/21/2026, 2:05:52 AM", type:"cron", status:"success", errors:0, logId:"...caed28ab", eventId:"—", note:"—" },
-  { id:25, date:"3/20/2026, 2:05:50 AM", type:"cron", status:"success", errors:0, logId:"...fda8d728", eventId:"—", note:"—" },
-];
-
-const CANCELLATION_RUNS: CancellationRun[] = [
-  { id:1, client:"Acme Dental Group",       status:"completed", triggeredBy:"jason@alphasourceai.com", started:"3/26/2026, 9:21 AM",  completed:"3/26/2026, 9:21 AM",  finalInvoice:"—", stripeInvoice:"—", note:"—", error:"—" },
-  { id:2, client:"Ridge Medical Partners",  status:"completed", triggeredBy:"jason@alphasourceai.com", started:"3/24/2026, 9:05 AM",  completed:"3/24/2026, 9:05 AM",  finalInvoice:"—", stripeInvoice:"—", note:"—", error:"—" },
-  { id:3, client:"Summit Health Network",   status:"completed", triggeredBy:"jason@alphasourceai.com", started:"3/19/2026, 2:25 PM",  completed:"3/19/2026, 2:25 PM",  finalInvoice:"—", stripeInvoice:"—", note:"—", error:"—" },
-  { id:4, client:"Crestwood Orthopedics",   status:"completed", triggeredBy:"jason@alphasourceai.com", started:"3/19/2026, 1:50 PM",  completed:"3/19/2026, 1:50 PM",  finalInvoice:"—", stripeInvoice:"—", note:"—", error:"—" },
-  { id:5, client:"Lakeside Dermatology",    status:"completed", triggeredBy:"jason@alphasourceai.com", started:"3/18/2026, 10:57 AM", completed:"3/18/2026, 10:57 AM", finalInvoice:"—", stripeInvoice:"—", note:"—", error:"—" },
-  { id:6, client:"Pinnacle Surgical Group", status:"completed", triggeredBy:"jason@alphasourceai.com", started:"3/18/2026, 8:47 AM",  completed:"3/18/2026, 8:47 AM",  finalInvoice:"—", stripeInvoice:"—", note:"—", error:"—" },
-  { id:7, client:"Harbor Cove Family Health",status:"completed",triggeredBy:"jason@alphasourceai.com", started:"3/18/2026, 8:18 AM",  completed:"3/18/2026, 8:18 AM",  finalInvoice:"—", stripeInvoice:"—", note:"—", error:"—" },
-];
 
 const statusColors = {
   success:   { bg: "rgba(2,217,157,0.10)",   text: "#00886A" },
@@ -93,21 +69,275 @@ const cardStyle = { border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 2px 1
 const thCls = "px-4 py-3 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 text-left whitespace-nowrap";
 const tdCls = "px-4 py-3 text-xs text-[#0A1547]/60 font-medium align-top";
 
+const env =
+  typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
+
+function trimTrailingSlashes(value: unknown): string {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function firstBase(...values: unknown[]): string {
+  for (const value of values) {
+    const normalized = trimTrailingSlashes(value);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+const backendBase = firstBase(
+  (env as Record<string, unknown>).VITE_BACKEND_URL,
+  (env as Record<string, unknown>).VITE_API_URL,
+  (env as Record<string, unknown>).VITE_PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).BACKEND_URL,
+);
+
+function parseJsonSafe(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function extractErrorMessage(text: string, fallback: string): string {
+  if (!text) return fallback;
+  const data = parseJsonSafe(text);
+  const detail =
+    data && typeof data === "object"
+      ? (data as { detail?: unknown }).detail ??
+        (data as { message?: unknown }).message ??
+        (data as { error?: unknown }).error
+      : null;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  return text;
+}
+
+function formatDateTime(value: unknown): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "—";
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return "—";
+  return parsed.toLocaleString();
+}
+
+function toTimestamp(value: unknown): number {
+  const raw = String(value || "").trim();
+  if (!raw) return 0;
+  const parsed = new Date(raw).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseBoundary(value: string, endOfDay: boolean): number | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  if (endOfDay) parsed.setHours(23, 59, 59, 999);
+  else parsed.setHours(0, 0, 0, 0);
+  return parsed.getTime();
+}
+
+function shortTail(value: unknown): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "—";
+  return `...${raw.slice(-8)}`;
+}
+
 export default function AdminAuditLogsPage() {
-  const [dateFrom, setDateFrom] = useState("04/13/2026");
-  const [dateTo,   setDateTo]   = useState("04/13/2026");
+  const { selectedClientId } = useAdminClient();
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo,   setDateTo]   = useState("");
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [billingRows, setBillingRows] = useState<BillingReconciliationRow[]>([]);
+  const [cancellationRuns, setCancellationRuns] = useState<CancellationRun[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [cancellationLoading, setCancellationLoading] = useState(false);
+  const [auditError, setAuditError] = useState("");
+  const [billingError, setBillingError] = useState("");
+  const [cancellationError, setCancellationError] = useState("");
 
   const inputCls =
     "px-3 py-2 rounded-xl text-xs text-[#0A1547] font-medium border border-[rgba(10,21,71,0.10)] " +
     "bg-white focus:outline-none focus:border-[#A380F6] transition-colors w-32";
 
-  const refreshBtn = (label = "Refresh") => (
+  const authedGet = async (path: string, fallback: string): Promise<unknown> => {
+    if (!backendBase) throw new Error("Missing backend base URL configuration.");
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const token = String(session?.access_token || "").trim();
+    if (!token) throw new Error("Missing session token.");
+
+    const response = await fetch(`${backendBase}${path}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+      credentials: "omit",
+    });
+    const text = await response.text();
+    if (!response.ok) throw new Error(extractErrorMessage(text, fallback));
+    return parseJsonSafe(text);
+  };
+
+  const refreshAuditLogs = async () => {
+    setAuditLoading(true);
+    setAuditError("");
+    try {
+      const payload = await authedGet("/admin/audit/contract-processing-runs", "Failed to load audit logs.");
+      const items =
+        payload && typeof payload === "object" && Array.isArray((payload as { items?: unknown }).items)
+          ? ((payload as { items: unknown[] }).items || [])
+          : [];
+      const mapped: AuditLog[] = items
+        .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+        .map((item, index) => {
+          const summary =
+            item.summary && typeof item.summary === "object"
+              ? (item.summary as Record<string, unknown>)
+              : {};
+          const due = Number(summary.due || 0);
+          const renewed = Number(summary.renewed || 0);
+          const deactivated = Number(summary.deactivated || 0);
+          const skipped = Number(summary.skipped_no_action || 0) + Number(summary.skipped_manual_override || 0);
+          const errors = Number(summary.errors || 0);
+          const processedOk = item.processed_ok === true ? true : item.processed_ok === false ? false : null;
+          const status: "success" | "error" | "warning" =
+            processedOk === true ? "success" : processedOk === false ? "error" : "warning";
+          const startedAt = item.started_at || item.created_at;
+          const summaryText = `due ${due}, renewed ${renewed}, deactivated ${deactivated}, skipped ${skipped}, errors ${errors}`;
+          return {
+            id: String(item.id || `audit-${index}`),
+            date: formatDateTime(startedAt),
+            dateTs: toTimestamp(startedAt),
+            type: String(item.trigger_source || "—"),
+            status,
+            errors,
+            logId: shortTail(item.request_id),
+            eventId: String(item.triggered_by_email || "—"),
+            note: String(item.error || "").trim() || summaryText,
+          };
+        });
+      setAuditLogs(mapped);
+    } catch (error) {
+      setAuditLogs([]);
+      setAuditError(error instanceof Error ? error.message : "Failed to load audit logs.");
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
+  const refreshBillingReconciliation = async () => {
+    setBillingLoading(true);
+    setBillingError("");
+    try {
+      const payload = await authedGet("/admin/audit/billing-reconciliation", "Failed to load billing reconciliation.");
+      const items =
+        payload && typeof payload === "object" && Array.isArray((payload as { items?: unknown }).items)
+          ? ((payload as { items: unknown[] }).items || [])
+          : [];
+      const mapped: BillingReconciliationRow[] = items
+        .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+        .map((item, index) => {
+          const clientId = String(item.id || "");
+          const appStatus =
+            item.manual_active_override === true
+              ? `${String(item.billing_status || "—")} (manual)`
+              : String(item.billing_status || "—");
+          const overrideMode = String(item.access_override_mode || "inherit");
+          const reason = String(item.reason || "—");
+          const subscriptionStatus = String(item.subscription_status || "—");
+          const cancelAtTermEnd = item.cancel_at_term_end === true ? "cancel_at_term_end" : "";
+          const stripeStatus = [subscriptionStatus, cancelAtTermEnd].filter(Boolean).join(" / ") || "—";
+          const checkedAt = item.current_term_end || item.contract_end_at;
+          return {
+            id: `${clientId || `billing-${index}`}-${reason}`,
+            clientId,
+            client: String(item.name || "—"),
+            expectedAmount: appStatus,
+            actualBilled: overrideMode,
+            difference: reason,
+            stripeStatus,
+            lastChecked: formatDateTime(checkedAt),
+          };
+        });
+      setBillingRows(mapped);
+    } catch (error) {
+      setBillingRows([]);
+      setBillingError(error instanceof Error ? error.message : "Failed to load billing reconciliation.");
+    } finally {
+      setBillingLoading(false);
+    }
+  };
+
+  const refreshCancellationRuns = async () => {
+    setCancellationLoading(true);
+    setCancellationError("");
+    try {
+      const payload = await authedGet("/admin/audit/contract-cancellation-runs", "Failed to load contract cancellation runs.");
+      const items =
+        payload && typeof payload === "object" && Array.isArray((payload as { items?: unknown }).items)
+          ? ((payload as { items: unknown[] }).items || [])
+          : [];
+      const mapped: CancellationRun[] = items
+        .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+        .map((item, index) => ({
+          id: String(item.id || `cancel-${index}`),
+          clientId: String(item.client_id || ""),
+          client: String(item.client_name || "—"),
+          status: String(item.status || "—"),
+          triggeredBy: String(item.triggered_by_email || "—"),
+          started: formatDateTime(item.started_at),
+          completed: formatDateTime(item.completed_at),
+          finalInvoice:
+            item.final_invoice_amount == null || item.final_invoice_amount === ""
+              ? "—"
+              : String(item.final_invoice_amount),
+          stripeInvoice: String(item.stripe_invoice_id || "—"),
+          note: String(item.note || "—"),
+          error: String(item.error || "—"),
+        }));
+      setCancellationRuns(mapped);
+    } catch (error) {
+      setCancellationRuns([]);
+      setCancellationError(error instanceof Error ? error.message : "Failed to load contract cancellation runs.");
+    } finally {
+      setCancellationLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshAuditLogs();
+    void refreshBillingReconciliation();
+    void refreshCancellationRuns();
+  }, []);
+
+  const startTs = parseBoundary(dateFrom, false);
+  const endTs = parseBoundary(dateTo, true);
+  const filteredAuditLogs = auditLogs.filter((log) => {
+    if (startTs != null && log.dateTs < startTs) return false;
+    if (endTs != null && log.dateTs > endTs) return false;
+    return true;
+  });
+  const filteredBillingRows =
+    selectedClientId === "all"
+      ? billingRows
+      : billingRows.filter((row) => row.clientId === selectedClientId);
+  const filteredCancellationRuns =
+    selectedClientId === "all"
+      ? cancellationRuns
+      : cancellationRuns.filter((run) => run.clientId === selectedClientId);
+
+  const refreshBtn = (label: string, onClick: () => Promise<void>, loading = false) => (
     <button
+      onClick={() => void onClick()}
+      disabled={loading}
       className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold text-white transition-opacity hover:opacity-90 flex-shrink-0"
       style={{ backgroundColor: "#A380F6" }}
     >
-      <RefreshCw className="w-3.5 h-3.5" />
-      {label}
+      <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+      {loading ? "Loading..." : label}
     </button>
   );
 
@@ -149,7 +379,7 @@ export default function AdminAuditLogsPage() {
             Export CSV
           </button>
 
-          {refreshBtn()}
+          {refreshBtn("Refresh", refreshAuditLogs, auditLoading)}
         </div>
 
         {/* Table — scrollable */}
@@ -167,27 +397,47 @@ export default function AdminAuditLogsPage() {
               </tr>
             </thead>
             <tbody>
-              {AUDIT_LOGS.map((log, idx) => (
-                <tr
-                  key={log.id}
-                  className="border-b border-gray-50 hover:bg-gray-50/40 transition-colors"
-                  style={idx === AUDIT_LOGS.length - 1 ? { borderBottom: "none" } : {}}
-                >
-                  <td className={tdCls + " pl-5 font-semibold text-[#0A1547]/70 whitespace-nowrap"}>{log.date}</td>
-                  <td className={tdCls}>{log.type}</td>
-                  <td className={tdCls}><StatusBadge status={log.status} /></td>
-                  <td className={tdCls}>errors {log.errors}</td>
-                  <td className={tdCls + " font-mono text-[#0A1547]/40 text-[11px]"}>{log.logId}</td>
-                  <td className={tdCls + " text-[#0A1547]/30"}>{log.eventId}</td>
-                  <td className={tdCls + " pr-5 text-[#0A1547]/30"}>{log.note}</td>
+              {auditLoading ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-12 text-sm text-[#0A1547]/30 font-semibold">
+                    Loading audit logs...
+                  </td>
                 </tr>
-              ))}
+              ) : auditError ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-12 text-sm text-red-500 font-semibold">
+                    {auditError}
+                  </td>
+                </tr>
+              ) : filteredAuditLogs.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-12 text-sm text-[#0A1547]/30 font-semibold">
+                    No audit log runs yet.
+                  </td>
+                </tr>
+              ) : (
+                filteredAuditLogs.map((log, idx) => (
+                  <tr
+                    key={log.id}
+                    className="border-b border-gray-50 hover:bg-gray-50/40 transition-colors"
+                    style={idx === filteredAuditLogs.length - 1 ? { borderBottom: "none" } : {}}
+                  >
+                    <td className={tdCls + " pl-5 font-semibold text-[#0A1547]/70 whitespace-nowrap"}>{log.date}</td>
+                    <td className={tdCls}>{log.type}</td>
+                    <td className={tdCls}><StatusBadge status={log.status} /></td>
+                    <td className={tdCls}>errors {log.errors}</td>
+                    <td className={tdCls + " font-mono text-[#0A1547]/40 text-[11px]"}>{log.logId}</td>
+                    <td className={tdCls + " text-[#0A1547]/30"}>{log.eventId}</td>
+                    <td className={tdCls + " pr-5 text-[#0A1547]/30"}>{log.note}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
 
         <div className="px-5 py-2.5 border-t border-gray-100">
-          <p className="text-[11px] text-[#0A1547]/35 font-semibold">{AUDIT_LOGS.length} entries</p>
+          <p className="text-[11px] text-[#0A1547]/35 font-semibold">{filteredAuditLogs.length} entries</p>
         </div>
       </div>
 
@@ -195,10 +445,9 @@ export default function AdminAuditLogsPage() {
       <div className={card} style={cardStyle}>
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <p className="text-sm font-black text-[#0A1547]">Billing Reconciliation</p>
-          {refreshBtn()}
+          {refreshBtn("Refresh", refreshBillingReconciliation, billingLoading)}
         </div>
 
-        {/* Columns shown even when empty for structure */}
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[650px]">
             <thead>
@@ -212,11 +461,40 @@ export default function AdminAuditLogsPage() {
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td colSpan={6} className="text-center py-10 text-sm text-[#0A1547]/30 font-semibold">
-                  No billing mismatches found.
-                </td>
-              </tr>
+              {billingLoading ? (
+                <tr>
+                  <td colSpan={6} className="text-center py-10 text-sm text-[#0A1547]/30 font-semibold">
+                    Loading billing reconciliation...
+                  </td>
+                </tr>
+              ) : billingError ? (
+                <tr>
+                  <td colSpan={6} className="text-center py-10 text-sm text-red-500 font-semibold">
+                    {billingError}
+                  </td>
+                </tr>
+              ) : filteredBillingRows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="text-center py-10 text-sm text-[#0A1547]/30 font-semibold">
+                    No billing mismatches found.
+                  </td>
+                </tr>
+              ) : (
+                filteredBillingRows.map((row, idx) => (
+                  <tr
+                    key={row.id}
+                    className="border-b border-gray-50 hover:bg-gray-50/40 transition-colors"
+                    style={idx === filteredBillingRows.length - 1 ? { borderBottom: "none" } : {}}
+                  >
+                    <td className={tdCls + " pl-5 font-bold text-[#0A1547]/80"}>{row.client}</td>
+                    <td className={tdCls}>{row.expectedAmount}</td>
+                    <td className={tdCls}>{row.actualBilled}</td>
+                    <td className={tdCls + " text-[#0A1547]/45"}>{row.difference}</td>
+                    <td className={tdCls}>{row.stripeStatus}</td>
+                    <td className={tdCls + " pr-5 whitespace-nowrap"}>{row.lastChecked}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -226,7 +504,7 @@ export default function AdminAuditLogsPage() {
       <div className={card} style={cardStyle}>
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <p className="text-sm font-black text-[#0A1547]">Contract Cancellation Runs</p>
-          {refreshBtn()}
+          {refreshBtn("Refresh", refreshCancellationRuns, cancellationLoading)}
         </div>
 
         <div className="overflow-x-auto">
@@ -245,23 +523,43 @@ export default function AdminAuditLogsPage() {
               </tr>
             </thead>
             <tbody>
-              {CANCELLATION_RUNS.map((run, idx) => (
-                <tr
-                  key={run.id}
-                  className="border-b border-gray-50 hover:bg-gray-50/40 transition-colors"
-                  style={idx === CANCELLATION_RUNS.length - 1 ? { borderBottom: "none" } : {}}
-                >
-                  <td className={tdCls + " pl-5 font-bold text-[#0A1547]/80"}>{run.client}</td>
-                  <td className={tdCls}><StatusBadge status={run.status} /></td>
-                  <td className={tdCls + " text-[#0A1547]/45"}>{run.triggeredBy}</td>
-                  <td className={tdCls + " whitespace-nowrap"}>{run.started}</td>
-                  <td className={tdCls + " whitespace-nowrap"}>{run.completed}</td>
-                  <td className={tdCls + " text-[#0A1547]/30"}>{run.finalInvoice}</td>
-                  <td className={tdCls + " text-[#0A1547]/30"}>{run.stripeInvoice}</td>
-                  <td className={tdCls + " text-[#0A1547]/30"}>{run.note}</td>
-                  <td className={tdCls + " pr-5 text-[#0A1547]/30"}>{run.error}</td>
+              {cancellationLoading ? (
+                <tr>
+                  <td colSpan={9} className="text-center py-10 text-sm text-[#0A1547]/30 font-semibold">
+                    Loading contract cancellation runs...
+                  </td>
                 </tr>
-              ))}
+              ) : cancellationError ? (
+                <tr>
+                  <td colSpan={9} className="text-center py-10 text-sm text-red-500 font-semibold">
+                    {cancellationError}
+                  </td>
+                </tr>
+              ) : filteredCancellationRuns.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="text-center py-10 text-sm text-[#0A1547]/30 font-semibold">
+                    No contract cancellation runs yet.
+                  </td>
+                </tr>
+              ) : (
+                filteredCancellationRuns.map((run, idx) => (
+                  <tr
+                    key={run.id}
+                    className="border-b border-gray-50 hover:bg-gray-50/40 transition-colors"
+                    style={idx === filteredCancellationRuns.length - 1 ? { borderBottom: "none" } : {}}
+                  >
+                    <td className={tdCls + " pl-5 font-bold text-[#0A1547]/80"}>{run.client}</td>
+                    <td className={tdCls}><StatusBadge status={run.status} /></td>
+                    <td className={tdCls + " text-[#0A1547]/45"}>{run.triggeredBy}</td>
+                    <td className={tdCls + " whitespace-nowrap"}>{run.started}</td>
+                    <td className={tdCls + " whitespace-nowrap"}>{run.completed}</td>
+                    <td className={tdCls + " text-[#0A1547]/30"}>{run.finalInvoice}</td>
+                    <td className={tdCls + " text-[#0A1547]/30"}>{run.stripeInvoice}</td>
+                    <td className={tdCls + " text-[#0A1547]/30"}>{run.note}</td>
+                    <td className={tdCls + " pr-5 text-[#0A1547]/30"}>{run.error}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

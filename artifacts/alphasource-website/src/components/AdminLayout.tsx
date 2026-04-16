@@ -19,7 +19,7 @@ import {
   Check,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { useAdminClient, ADMIN_CLIENTS } from "@/context/AdminClientContext";
+import { useAdminClient } from "@/context/AdminClientContext";
 
 interface NavItem {
   label: string;
@@ -50,8 +50,9 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
   const [location, setLocation]               = useLocation();
   const { logout }                            = useAuth();
-  const { selectedClient, setSelectedClient } = useAdminClient();
+  const { selectedClient, setSelectedClient, clients, loading: clientsLoading, error: clientsError } = useAdminClient();
   const dropdownRef                           = useRef<HTMLDivElement>(null);
+  const availableClients                      = clients.length > 0 ? clients : [selectedClient];
 
   const handleSignOut = () => {
     logout();
@@ -160,7 +161,9 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
               </div>
               <div className="min-w-0 flex-1 text-left">
                 <p className="text-xs font-black text-[#0A1547] truncate leading-tight">{selectedClient.name}</p>
-                <p className="text-[10px] text-[#0A1547]/40">Admin view</p>
+                <p className="text-[10px] text-[#0A1547]/40">
+                  {clientsLoading ? "Loading clients..." : clientsError ? "Client load error" : "Admin view"}
+                </p>
               </div>
               <ChevronDown
                 className={`w-3.5 h-3.5 text-[#0A1547]/30 flex-shrink-0 transition-transform duration-200 ${clientDropdownOpen ? "rotate-180" : ""}`}
@@ -173,24 +176,30 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
               className="absolute left-3 right-3 z-50 bg-white rounded-xl shadow-lg border border-gray-100 py-1 mt-1 max-h-64 overflow-y-auto"
               style={{ top: "100%" }}
             >
-              {ADMIN_CLIENTS.map((client) => (
-                <button
-                  key={client.id}
-                  onClick={() => { setSelectedClient(client); setClientDropdownOpen(false); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 transition-colors text-left"
-                >
-                  <div
-                    className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 text-[10px] font-black text-white"
-                    style={{ backgroundColor: client.color === "#0A1547" ? "#A380F6" : client.color }}
+              {clientsLoading ? (
+                <p className="px-3 py-2 text-xs font-semibold text-[#0A1547]/45">Loading clients...</p>
+              ) : clientsError ? (
+                <p className="px-3 py-2 text-xs font-semibold text-red-500">{clientsError}</p>
+              ) : (
+                availableClients.map((client) => (
+                  <button
+                    key={client.id}
+                    onClick={() => { setSelectedClient(client); setClientDropdownOpen(false); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 transition-colors text-left"
                   >
-                    {client.letter === "∗" ? "✦" : client.letter}
-                  </div>
-                  <span className="flex-1 text-xs font-semibold text-[#0A1547] truncate">{client.name}</span>
-                  {selectedClient.id === client.id && (
-                    <Check className="w-3.5 h-3.5 flex-shrink-0" style={{ color: "#A380F6" }} />
-                  )}
-                </button>
-              ))}
+                    <div
+                      className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 text-[10px] font-black text-white"
+                      style={{ backgroundColor: client.color === "#0A1547" ? "#A380F6" : client.color }}
+                    >
+                      {client.letter === "∗" ? "✦" : client.letter}
+                    </div>
+                    <span className="flex-1 text-xs font-semibold text-[#0A1547] truncate">{client.name}</span>
+                    {selectedClient.id === client.id && (
+                      <Check className="w-3.5 h-3.5 flex-shrink-0" style={{ color: "#A380F6" }} />
+                    )}
+                  </button>
+                ))
+              )}
             </div>
           )}
         </div>

@@ -1,16 +1,25 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/lib/supabaseClient";
+import { buildPwResetUrl } from "@/lib/urlConfig";
 
 export default function Navbar() {
+  const isValidEmail = (value: string) =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [resetError, setResetError] = useState("");
+  const [resetSuccess, setResetSuccess] = useState("");
   const [location, setLocation] = useLocation();
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const { login } = useAuth();
+  const signInInFlightRef = useRef(false);
+  const { login, clientLoginLoading, clientLoginError } = useAuth();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -28,12 +37,55 @@ export default function Navbar() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [loginOpen]);
 
-  const handleSignIn = (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    login();
+    if (signInInFlightRef.current || clientLoginLoading) return;
+
+    setResetError("");
+    setResetSuccess("");
+    const normalizedEmail = email.trim();
+    if (!normalizedEmail || !password) return;
+    if (!isValidEmail(normalizedEmail)) {
+      setEmailError("Please enter a valid email address.");
+      return;
+    }
+    setEmailError("");
+
+    signInInFlightRef.current = true;
+    const { error } = await login(normalizedEmail, password);
+    signInInFlightRef.current = false;
+    if (error) return;
+
     setLoginOpen(false);
     setMobileOpen(false);
-    setLocation("/dashboard");
+    const next = new URL(window.location.href).searchParams.get("next");
+    setLocation(next || "/dashboard");
+  };
+
+  const startReset = async () => {
+    setResetError("");
+    setResetSuccess("");
+
+    const normalizedEmail = email.trim();
+    if (!normalizedEmail) {
+      setResetError("Enter your email first.");
+      return;
+    }
+    if (!isValidEmail(normalizedEmail)) {
+      setEmailError("Please enter a valid email address.");
+      return;
+    }
+    setEmailError("");
+
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+      redirectTo: buildPwResetUrl({ origin: "client" }),
+    });
+
+    if (error) {
+      setResetError(`Could not start reset: ${error.message}`);
+      return;
+    }
+    setResetSuccess("Check your email for a password reset link.");
   };
 
   const navLinks = [
@@ -109,7 +161,10 @@ export default function Navbar() {
                       type="email"
                       placeholder="Email address"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        setEmailError("");
+                      }}
                       className="w-full px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/30 focus:border-[#A380F6] transition-all"
                     />
                     <input
@@ -121,12 +176,33 @@ export default function Navbar() {
                     />
                     <button
                       type="submit"
+                      disabled={clientLoginLoading || !email || !password}
                       className="w-full py-2.5 text-sm font-semibold text-white rounded-full transition-all hover:opacity-90 active:scale-[0.99]"
                       style={{ backgroundColor: "#A380F6" }}
                     >
-                      Sign In
+                      {clientLoginLoading ? "Signing in..." : "Sign In"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={startReset}
+                      className="text-xs text-[#A380F6] hover:underline"
+                      style={{ background: "none", border: "none", padding: 0, cursor: "pointer", font: "inherit" }}
+                    >
+                      Forgot password?
                     </button>
                   </form>
+                  {clientLoginError && (
+                    <p className="mt-2 text-xs text-red-500">{clientLoginError}</p>
+                  )}
+                  {emailError && (
+                    <p className="mt-2 text-xs text-red-500">{emailError}</p>
+                  )}
+                  {resetError && (
+                    <p className="mt-2 text-xs text-red-500">{resetError}</p>
+                  )}
+                  {resetSuccess && (
+                    <p className="mt-2 text-xs text-[#02D99D]">{resetSuccess}</p>
+                  )}
 
                   <p className="mt-4 text-center text-xs text-[#0A1547]/40">
                     Need access?{" "}
@@ -187,7 +263,10 @@ export default function Navbar() {
                 type="email"
                 placeholder="Email address"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setEmailError("");
+                }}
                 className="w-full px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm placeholder-gray-400 focus:outline-none"
               />
               <input
@@ -199,11 +278,32 @@ export default function Navbar() {
               />
               <button
                 type="submit"
+                disabled={clientLoginLoading || !email || !password}
                 className="w-full py-2.5 text-sm font-semibold text-white rounded-full"
                 style={{ backgroundColor: "#A380F6" }}
               >
-                Sign In
+                {clientLoginLoading ? "Signing in..." : "Sign In"}
               </button>
+              <button
+                type="button"
+                onClick={startReset}
+                className="text-xs text-[#A380F6] hover:underline"
+                style={{ background: "none", border: "none", padding: 0, cursor: "pointer", font: "inherit" }}
+              >
+                Forgot password?
+              </button>
+              {clientLoginError && (
+                <p className="text-xs text-red-500">{clientLoginError}</p>
+              )}
+              {emailError && (
+                <p className="text-xs text-red-500">{emailError}</p>
+              )}
+              {resetError && (
+                <p className="text-xs text-red-500">{resetError}</p>
+              )}
+              {resetSuccess && (
+                <p className="text-xs text-[#02D99D]">{resetSuccess}</p>
+              )}
             </form>
           </div>
         </div>

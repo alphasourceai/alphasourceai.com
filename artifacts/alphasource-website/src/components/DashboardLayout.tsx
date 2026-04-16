@@ -20,7 +20,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { useClient, CLIENTS } from "@/context/ClientContext";
+import { useClient } from "@/context/ClientContext";
 
 /* ── Nav items ───────────────────────────────────────────────── */
 interface NavItem {
@@ -118,6 +118,9 @@ function TourSpotlight({
       spotRect.top + spotRect.height / 2 - calloutTop - 8
     )
   );
+  const portalTarget = typeof document !== "undefined" ? document.body : null;
+
+  if (!portalTarget) return null;
 
   return createPortal(
     <>
@@ -272,7 +275,7 @@ function TourSpotlight({
         </div>
       </div>
     </>,
-    document.body
+    portalTarget
   );
 }
 
@@ -292,15 +295,18 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
 
   const [location, setLocation] = useLocation();
   const { logout }              = useAuth();
-  const { selectedClient, setSelectedClient } = useClient();
+  const { selectedClient, setSelectedClient, clients, loading: clientsLoading, error: clientsError } = useClient();
   const dropdownRef  = useRef<HTMLDivElement>(null);
+  const activeTourStep = TOUR_STEPS[tourStep] || null;
 
   /* One ref per nav item */
   const navRefs = useRef<(HTMLAnchorElement | null)[]>([]);
 
   /* Measure the current tour nav item */
   const measureStep = useCallback((step: number) => {
-    const el = navRefs.current[TOUR_STEPS[step].navIndex];
+    const stepConfig = TOUR_STEPS[step];
+    if (!stepConfig) return;
+    const el = navRefs.current[stepConfig.navIndex];
     if (el) {
       const r = el.getBoundingClientRect();
       setSpotRect({ top: r.top, left: r.left, width: r.width, height: r.height });
@@ -442,7 +448,15 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
               className="absolute left-3 right-3 z-50 bg-white rounded-xl shadow-lg border border-gray-100 py-1 mt-1"
               style={{ top: "100%" }}
             >
-              {CLIENTS.map((client) => (
+              {clientsLoading && (
+                <div className="px-3 py-2 text-xs font-semibold text-[#0A1547]/45">Loading clients...</div>
+              )}
+              {!clientsLoading && clients.length === 0 && (
+                <div className="px-3 py-2 text-xs font-semibold text-[#0A1547]/45">
+                  {clientsError ? "Could not load clients." : "No client access."}
+                </div>
+              )}
+              {!clientsLoading && clients.map((client) => (
                 <button
                   key={client.id}
                   onClick={() => { setSelectedClient(client); setClientDropdownOpen(false); }}
@@ -571,10 +585,10 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
       </div>
 
       {/* ── Spotlight tour ───────────────────────────────────── */}
-      {tourActive && spotRect && (
+      {tourActive && spotRect && activeTourStep && (
         <TourSpotlight
           spotRect={spotRect}
-          step={TOUR_STEPS[tourStep]}
+          step={activeTourStep}
           stepIndex={tourStep}
           total={TOUR_STEPS.length}
           sidebarRight={sidebarRight}

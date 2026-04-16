@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Trash2, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import AdminLayout from "@/components/AdminLayout";
 import { useAdminClient } from "@/context/AdminClientContext";
+import { supabase } from "@/lib/supabaseClient";
 
 /* ── Types ───────────────────────────────────────────────────── */
 type MemberRole = "Manager" | "Member";
@@ -9,24 +10,62 @@ type SortKey    = "name" | "role";
 type SortDir    = "asc"  | "desc";
 
 interface Member {
-  id:    number;
+  id:    string;
   name:  string;
   email: string;
   role:  MemberRole;
 }
 
-/* ── Seed data per client ────────────────────────────────────── */
-const SEED: Record<string, Member[]> = {
-  acme:      [{ id: 1, name: "Sarah Nguyen",   email: "sarah.nguyen@acmedental.com",       role: "Manager" }, { id: 2, name: "Derek Hall",     email: "derek.hall@acmedental.com",         role: "Member" }],
-  ridge:     [{ id: 3, name: "Monica Reyes",   email: "monica.reyes@ridgemedical.com",      role: "Manager" }, { id: 4, name: "Tom Waller",     email: "tom.waller@ridgemedical.com",        role: "Member" }],
-  summit:    [{ id: 5, name: "Grace Liu",      email: "grace.liu@summithealth.com",         role: "Manager" }],
-  crestwood: [{ id: 6, name: "Evan Brooks",    email: "evan.brooks@crestwoodortho.com",     role: "Manager" }, { id: 7, name: "Nina Shah",      email: "nina.shah@crestwoodortho.com",       role: "Member" }],
-  lakeside:  [{ id: 8, name: "Carla Mendez",   email: "carla.mendez@lakesidederm.com",      role: "Member"  }],
-  pinnacle:  [{ id: 9, name: "Josh Tucker",    email: "josh.tucker@pinnaclesurgical.com",   role: "Manager" }],
-  harbor:    [{ id: 10,name: "Amy Colton",     email: "amy.colton@harborcovefh.com",        role: "Member"  }],
-};
+const env =
+  typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
 
-const ALL_MEMBERS: Member[] = Object.values(SEED).flat();
+function trimTrailingSlashes(value: unknown): string {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function firstBase(...values: unknown[]): string {
+  for (const value of values) {
+    const normalized = trimTrailingSlashes(value);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+const backendBase = firstBase(
+  (env as Record<string, unknown>).VITE_BACKEND_URL,
+  (env as Record<string, unknown>).VITE_API_URL,
+  (env as Record<string, unknown>).VITE_PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).BACKEND_URL,
+);
+
+function parseJsonSafe(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function extractErrorMessage(text: string): string {
+  if (!text) return "Failed to load members.";
+  const data = parseJsonSafe(text);
+  const detail =
+    data && typeof data === "object"
+      ? (data as { detail?: unknown }).detail ??
+        (data as { message?: unknown }).message ??
+        (data as { error?: unknown }).error
+      : null;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  return text;
+}
+
+function normalizeMemberRole(value: unknown): MemberRole {
+  const role = String(value || "").trim().toLowerCase();
+  if (role === "manager" || role === "admin" || role === "tester") return "Manager";
+  return "Member";
+}
 
 let _nextId = 20;
 
@@ -56,46 +95,291 @@ const inputCls =
   "placeholder:text-[#0A1547]/30 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/20 " +
   "focus:border-[#A380F6] transition-all";
 
-function seedForClient(id: string): Member[] {
-  return id === "all" ? ALL_MEMBERS : (SEED[id] ?? []);
-}
-
 export default function AdminMembersPage() {
-  const { selectedClient } = useAdminClient();
+  const {
+    selectedClientId,
+    clients: adminClients,
+    loading: adminClientsLoading,
+    error: adminClientsError,
+  } = useAdminClient();
 
-  const [members, setMembers]     = useState<Member[]>(() => seedForClient(selectedClient.id));
+  const [members, setMembers]     = useState<Member[]>([]);
+  const [membersLoading, setMembersLoading] = useState<boolean>(false);
+  const [membersError, setMembersError] = useState<string>("");
   const [name, setName]           = useState("");
   const [email, setEmail]         = useState("");
   const [role, setRole]           = useState<MemberRole>("Member");
   const [submitted, setSubmitted] = useState(false);
   const [sortKey, setSortKey]     = useState<SortKey | null>(null);
   const [sortDir, setSortDir]     = useState<SortDir>("asc");
+  const [actionNotice, setActionNotice] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+  const [addingMember, setAddingMember] = useState<boolean>(false);
+  const [removingMembers, setRemovingMembers] = useState<Record<string, boolean>>({});
+  const [resettingMembers, setResettingMembers] = useState<Record<string, boolean>>({});
 
-  /* Reset the list whenever the selected client changes */
+  /* Reset local form/sort state whenever selected client changes */
   useEffect(() => {
-    setMembers(seedForClient(selectedClient.id));
+    setMembers([]);
     setName("");
     setEmail("");
     setRole("Member");
     setSubmitted(false);
     setSortKey(null);
     setSortDir("asc");
-  }, [selectedClient.id]);
+    setActionNotice(null);
+    setAddingMember(false);
+    setRemovingMembers({});
+    setResettingMembers({});
+  }, [selectedClientId]);
+
+  useEffect(() => {
+    if (!actionNotice) return;
+    const timer = setTimeout(() => setActionNotice(null), 3200);
+    return () => clearTimeout(timer);
+  }, [actionNotice]);
+
+  const getSessionToken = async (): Promise<string> => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const token = String(session?.access_token || "").trim();
+    if (!token) throw new Error("Missing session token.");
+    return token;
+  };
+
+  useEffect(() => {
+    let alive = true;
+
+    const fetchMembersForClient = async (clientId: string, token: string): Promise<Member[]> => {
+      const response = await fetch(
+        `${backendBase}/admin/client-members?client_id=${encodeURIComponent(clientId)}`,
+        {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "omit",
+        },
+      );
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text));
+      const payload = parseJsonSafe(text);
+      const items =
+        payload && typeof payload === "object" && Array.isArray((payload as { items?: unknown }).items)
+          ? ((payload as { items: unknown[] }).items || [])
+          : [];
+      return items
+        .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+        .map((item, index) => ({
+          id: String(item.id || item.user_id || item.email || `${clientId}:${index}`),
+          name: String(item.name || "").trim() || "—",
+          email: String(item.email || "").trim() || "—",
+          role: normalizeMemberRole(item.role),
+        }));
+    };
+
+    const loadMembers = async () => {
+      if (adminClientsLoading) return;
+      if (adminClientsError) {
+        if (!alive) return;
+        setMembers([]);
+        setMembersError(adminClientsError);
+        setMembersLoading(false);
+        return;
+      }
+      if (!backendBase) {
+        if (!alive) return;
+        setMembers([]);
+        setMembersError("Missing backend base URL configuration.");
+        setMembersLoading(false);
+        return;
+      }
+
+      if (!alive) return;
+      setMembersLoading(true);
+      setMembersError("");
+
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const token = String(session?.access_token || "").trim();
+        if (!token) throw new Error("Missing session token.");
+
+        let nextMembers: Member[] = [];
+        if (selectedClientId === "all") {
+          const scopedClientIds = adminClients
+            .map((client) => String(client.id || "").trim())
+            .filter((clientId) => clientId && clientId !== "all");
+
+          const bundles = await Promise.all(
+            scopedClientIds.map(async (clientId) => {
+              try {
+                return await fetchMembersForClient(clientId, token);
+              } catch {
+                return [];
+              }
+            }),
+          );
+          nextMembers = bundles.flat();
+        } else if (selectedClientId) {
+          nextMembers = await fetchMembersForClient(selectedClientId, token);
+        }
+
+        if (!alive) return;
+        setMembers(nextMembers);
+      } catch (error) {
+        if (!alive) return;
+        setMembers([]);
+        setMembersError(error instanceof Error ? error.message : "Failed to load members.");
+      } finally {
+        if (alive) setMembersLoading(false);
+      }
+    };
+
+    void loadMembers();
+    return () => {
+      alive = false;
+    };
+  }, [selectedClientId, adminClients, adminClientsLoading, adminClientsError]);
 
   const nameErr  = submitted && name.trim() === "";
   const emailErr = submitted && !isValidEmail(email);
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     setSubmitted(true);
     if (!name.trim() || !isValidEmail(email)) return;
-    setMembers((prev) => [
-      ...prev,
-      { id: _nextId++, name: name.trim(), email: email.trim(), role },
-    ]);
-    setName(""); setEmail(""); setRole("Member"); setSubmitted(false);
+    if (!backendBase) {
+      setActionNotice({ tone: "error", text: "Missing backend base URL configuration." });
+      return;
+    }
+    if (!selectedClientId || selectedClientId === "all") {
+      setActionNotice({ tone: "error", text: "Select a client to perform this action." });
+      return;
+    }
+
+    setActionNotice(null);
+    setAddingMember(true);
+    try {
+      const token = await getSessionToken();
+      const response = await fetch(`${backendBase}/admin/client-members`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "omit",
+        body: JSON.stringify({
+          client_id: selectedClientId,
+          email: email.trim(),
+          name: name.trim(),
+          role: role === "Manager" ? "manager" : "member",
+        }),
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text));
+      const payload = parseJsonSafe(text);
+      const item =
+        payload && typeof payload === "object"
+          ? (payload as { item?: unknown }).item
+          : null;
+
+      if (item && typeof item === "object") {
+        const row = item as Record<string, unknown>;
+        const nextMember: Member = {
+          id: String(row.id || row.user_id || row.email || `member:${_nextId++}`),
+          name: String(row.name || "").trim() || "—",
+          email: String(row.email || "").trim() || "—",
+          role: normalizeMemberRole(row.role),
+        };
+        setMembers((prev) => [nextMember, ...prev]);
+      }
+
+      setName("");
+      setEmail("");
+      setRole("Member");
+      setSubmitted(false);
+      setActionNotice({ tone: "success", text: "Invite sent and member added." });
+    } catch (error) {
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not add member.",
+      });
+    } finally {
+      setAddingMember(false);
+    }
   };
 
-  const handleRemove = (id: number) => setMembers((prev) => prev.filter((m) => m.id !== id));
+  const handleRemove = async (id: string) => {
+    if (!id) return;
+    if (!backendBase) {
+      setActionNotice({ tone: "error", text: "Missing backend base URL configuration." });
+      return;
+    }
+    if (!selectedClientId || selectedClientId === "all") {
+      setActionNotice({ tone: "error", text: "Select a client to perform this action." });
+      return;
+    }
+    if (removingMembers[id]) return;
+
+    setActionNotice(null);
+    setRemovingMembers((prev) => ({ ...prev, [id]: true }));
+    try {
+      const token = await getSessionToken();
+      const response = await fetch(
+        `${backendBase}/admin/client-members/${encodeURIComponent(id)}?client_id=${encodeURIComponent(selectedClientId)}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "omit",
+        },
+      );
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text));
+      setMembers((prev) => prev.filter((m) => m.id !== id));
+      setActionNotice({ tone: "success", text: "Member removed." });
+    } catch (error) {
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not remove member.",
+      });
+    } finally {
+      setRemovingMembers((prev) => ({ ...prev, [id]: false }));
+    }
+  };
+
+  const handleSendPasswordReset = async (member: Member) => {
+    const key = member.id || member.email;
+    if (!key || !member.email) return;
+    if (!backendBase) {
+      setActionNotice({ tone: "error", text: "Missing backend base URL configuration." });
+      return;
+    }
+    if (resettingMembers[key]) return;
+
+    setActionNotice(null);
+    setResettingMembers((prev) => ({ ...prev, [key]: true }));
+    try {
+      const token = await getSessionToken();
+      const response = await fetch(`${backendBase}/admin/send-password-reset`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "omit",
+        body: JSON.stringify({ email: member.email }),
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text));
+      setActionNotice({ tone: "success", text: "Password reset email sent." });
+    } catch (error) {
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Failed to send password reset email.",
+      });
+    } finally {
+      setResettingMembers((prev) => ({ ...prev, [key]: false }));
+    }
+  };
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -123,6 +407,18 @@ export default function AdminMembersPage() {
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-black text-[#0A1547]">Members</h2>
       </div>
+      {actionNotice && (
+        <div
+          className="mb-4 px-4 py-2.5 rounded-xl text-sm font-semibold"
+          style={{
+            border: actionNotice.tone === "error" ? "1px solid rgba(239,68,68,0.25)" : "1px solid rgba(2,217,157,0.25)",
+            backgroundColor: actionNotice.tone === "error" ? "rgba(239,68,68,0.08)" : "rgba(2,217,157,0.10)",
+            color: actionNotice.tone === "error" ? "#DC2626" : "#047857",
+          }}
+        >
+          {actionNotice.text}
+        </div>
+      )}
 
       <div
         className="bg-white rounded-2xl overflow-hidden"
@@ -174,11 +470,14 @@ export default function AdminMembersPage() {
 
             {/* Add */}
             <button
-              onClick={handleAdd}
+              onClick={() => {
+                void handleAdd();
+              }}
+              disabled={addingMember}
               className="flex-shrink-0 px-5 py-2.5 rounded-full text-sm font-bold text-white transition-opacity hover:opacity-90 active:scale-[0.97]"
               style={{ backgroundColor: "#A380F6" }}
             >
-              Add
+              {addingMember ? "Adding..." : "Add"}
             </button>
           </div>
         </div>
@@ -213,7 +512,19 @@ export default function AdminMembersPage() {
               </tr>
             </thead>
             <tbody>
-              {sorted.length === 0 ? (
+              {membersLoading ? (
+                <tr>
+                  <td colSpan={4} className="text-center py-14 text-sm text-[#0A1547]/30 font-semibold">
+                    Loading members...
+                  </td>
+                </tr>
+              ) : membersError ? (
+                <tr>
+                  <td colSpan={4} className="text-center py-14 text-sm text-red-500 font-semibold">
+                    {membersError}
+                  </td>
+                </tr>
+              ) : sorted.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="text-center py-14 text-sm text-[#0A1547]/30 font-semibold">
                     No members yet — add one above.
@@ -240,6 +551,10 @@ export default function AdminMembersPage() {
                     {/* Reset */}
                     <td className="px-4 py-4 text-center">
                       <button
+                        onClick={() => {
+                          void handleSendPasswordReset(m);
+                        }}
+                        disabled={resettingMembers[m.id || m.email] === true}
                         className="inline-flex items-center justify-center p-2 rounded-lg text-[#0A1547]/25 hover:text-[#A380F6] hover:bg-[rgba(163,128,246,0.08)] transition-all"
                         title={`Reset password for ${m.name}`}
                       >
@@ -250,7 +565,10 @@ export default function AdminMembersPage() {
                     {/* Remove */}
                     <td className="px-4 py-4 pr-5 text-center">
                       <button
-                        onClick={() => handleRemove(m.id)}
+                        onClick={() => {
+                          void handleRemove(m.id);
+                        }}
+                        disabled={removingMembers[m.id] === true}
                         className="inline-flex items-center justify-center p-2 rounded-lg text-[#0A1547]/25 hover:text-red-500 hover:bg-red-50 transition-colors"
                         title={`Remove ${m.name}`}
                       >

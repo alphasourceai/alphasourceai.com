@@ -31,6 +31,7 @@ export default function InfoTooltip({
   const hide = () => setVisible(false);
 
   const translateY = side === "top" ? "-100%" : "0%";
+  const portalTarget = typeof document !== "undefined" ? document.body : null;
 
   return (
     <span
@@ -43,7 +44,7 @@ export default function InfoTooltip({
     >
       <Info className={iconClassName} />
 
-      {visible &&
+      {visible && portalTarget &&
         createPortal(
           <span
             role="tooltip"
@@ -67,7 +68,7 @@ export default function InfoTooltip({
               ].join(" ")}
             />
           </span>,
-          document.body
+          portalTarget
         )}
     </span>
   );

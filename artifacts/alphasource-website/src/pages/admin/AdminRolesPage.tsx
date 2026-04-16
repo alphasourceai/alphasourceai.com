@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronUp, FileText, Copy, Trash2, Upload } from "lucide-react";
 import AdminLayout from "@/components/AdminLayout";
 import { useAdminClient } from "@/context/AdminClientContext";
+import { supabase } from "@/lib/supabaseClient";
 
 /* ── Types ───────────────────────────────────────────────────── */
 type RoleType = "Basic" | "Detailed" | "Technical";
@@ -9,29 +10,129 @@ type SortKey  = "name" | "created" | "type";
 type SortDir  = "asc" | "desc";
 
 interface Role {
-  id:        string;
-  clientId:  string;
-  name:      string;
-  token:     string;
-  created:   string;
+  id: string;
+  clientId: string;
+  clientName: string;
+  name: string;
+  token: string;
+  created: string;
   createdTs: number;
-  type:      RoleType;
-  hasJD:     boolean;
+  type: RoleType;
+  hasJD: boolean;
+  hasRubric: boolean;
+  rubricQuestions: string[];
 }
 
-/* ── Dummy data ──────────────────────────────────────────────── */
-const ROLES: Role[] = [
-  { id: "r1",  clientId: "acme",     name: "Dental Hygienist",         token: "a3f2-19b7-c08d", created: "4/1/2026, 9:00 AM",   createdTs: 9,  type: "Basic",     hasJD: true  },
-  { id: "r2",  clientId: "acme",     name: "Front Desk Coordinator",    token: "bb41-72e0-d9c3", created: "3/28/2026, 2:15 PM",  createdTs: 8,  type: "Detailed",  hasJD: true  },
-  { id: "r3",  clientId: "acme",     name: "Dental Assistant",          token: "c510-84fa-0e7b", created: "3/10/2026, 8:45 AM",  createdTs: 7,  type: "Technical", hasJD: false },
-  { id: "r4",  clientId: "ridge",    name: "Medical Receptionist",      token: "d6a1-30bc-f25e", created: "3/15/2026, 11:30 AM", createdTs: 6,  type: "Basic",     hasJD: true  },
-  { id: "r5",  clientId: "summit",   name: "Nurse Practitioner",        token: "e7b2-41cd-g36f", created: "2/20/2026, 4:00 PM",  createdTs: 5,  type: "Technical", hasJD: true  },
-  { id: "r6",  clientId: "summit",   name: "Office Manager",            token: "f8c3-52de-h47g", created: "2/15/2026, 10:00 AM", createdTs: 4,  type: "Detailed",  hasJD: false },
-  { id: "r7",  clientId: "crestwood",name: "Surgical Tech",             token: "g9d4-63ef-i58h", created: "3/5/2026, 1:00 PM",   createdTs: 3,  type: "Technical", hasJD: true  },
-  { id: "r8",  clientId: "pinnacle", name: "Patient Coordinator",       token: "h0e5-74fg-j69i", created: "4/5/2026, 3:30 PM",   createdTs: 2,  type: "Basic",     hasJD: false },
-  { id: "r9",  clientId: "lakeside", name: "Patient Coordinator",       token: "i1f6-85gh-k70j", created: "4/8/2026, 10:00 AM",  createdTs: 2,  type: "Basic",     hasJD: true  },
-  { id: "r10", clientId: "harbor",   name: "Medical Assistant",         token: "j2g7-96hi-l81k", created: "4/10/2026, 2:45 PM",  createdTs: 1,  type: "Basic",     hasJD: true  },
-];
+const env =
+  typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
+
+function trimTrailingSlashes(value: unknown): string {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function firstBase(...values: unknown[]): string {
+  for (const value of values) {
+    const normalized = trimTrailingSlashes(value);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+const backendBase = firstBase(
+  (env as Record<string, unknown>).VITE_BACKEND_URL,
+  (env as Record<string, unknown>).VITE_API_URL,
+  (env as Record<string, unknown>).VITE_PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).BACKEND_URL,
+);
+
+function parseJsonSafe(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function extractErrorMessage(text: string): string {
+  if (!text) return "Failed to load roles.";
+  const data = parseJsonSafe(text);
+  const detail =
+    data && typeof data === "object"
+      ? (data as { detail?: unknown }).detail ??
+        (data as { message?: unknown }).message ??
+        (data as { error?: unknown }).error
+      : null;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  return text;
+}
+
+function normalizeRoleType(value: unknown): RoleType {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "technical") return "Technical";
+  if (normalized === "detailed") return "Detailed";
+  return "Basic";
+}
+
+function formatRoleCreated(value: unknown): { text: string; ts: number } {
+  const raw = String(value || "").trim();
+  if (!raw) return { text: "—", ts: 0 };
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return { text: "—", ts: 0 };
+  return { text: parsed.toLocaleString(), ts: parsed.getTime() };
+}
+
+function extractRubricQuestions(rubric: unknown): string[] {
+  const questions: string[] = [];
+  const seen = new Set<string>();
+  const add = (value: unknown) => {
+    const text = value == null ? "" : String(value).trim();
+    if (!text || seen.has(text)) return;
+    seen.add(text);
+    questions.push(text);
+  };
+  const handleItem = (item: unknown) => {
+    if (item == null) return;
+    if (typeof item === "string" || typeof item === "number") {
+      add(item);
+      return;
+    }
+    if (Array.isArray(item)) {
+      item.forEach(handleItem);
+      return;
+    }
+    if (typeof item === "object") {
+      const obj = item as Record<string, unknown>;
+      const candidate = obj.question || obj.text || obj.prompt || obj.label || obj.value;
+      if (candidate) add(candidate);
+      if (Array.isArray(obj.questions)) obj.questions.forEach(handleItem);
+      if (Array.isArray(obj.rubric)) obj.rubric.forEach(handleItem);
+      if (Array.isArray(obj.items)) obj.items.forEach(handleItem);
+      if (Array.isArray(obj.prompts)) obj.prompts.forEach(handleItem);
+    }
+  };
+
+  if (rubric == null) return questions;
+  if (typeof rubric === "string") {
+    const raw = rubric.trim();
+    if (!raw) return questions;
+    if ((raw.startsWith("{") && raw.endsWith("}")) || (raw.startsWith("[") && raw.endsWith("]"))) {
+      try {
+        handleItem(JSON.parse(raw));
+        return questions;
+      } catch {
+        add(raw);
+        return questions;
+      }
+    }
+    add(raw);
+    return questions;
+  }
+
+  handleItem(rubric);
+  return questions;
+}
 
 const typeColors: Record<RoleType, { bg: string; text: string }> = {
   Basic:     { bg: "rgba(163,128,246,0.12)", text: "#7C5FCC" },
@@ -50,11 +151,141 @@ const selectCls =
   "focus:outline-none focus:border-[#A380F6] transition-colors cursor-pointer";
 
 export default function AdminRolesPage() {
-  const { selectedClient } = useAdminClient();
+  const {
+    selectedClient,
+    selectedClientId,
+    clients: adminClients,
+    loading: adminClientsLoading,
+    error: adminClientsError,
+  } = useAdminClient();
   const [sortKey, setSortKey] = useState<SortKey>("created");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [copied,  setCopied]  = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [rolesLoading, setRolesLoading] = useState<boolean>(false);
+  const [rolesError, setRolesError] = useState<string>("");
+  const [actionNotice, setActionNotice] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+  const [openingJd, setOpeningJd] = useState<Record<string, boolean>>({});
+  const [loadingRubric, setLoadingRubric] = useState<Record<string, boolean>>({});
+  const [deletingRoles, setDeletingRoles] = useState<Record<string, boolean>>({});
+  const [rubricModal, setRubricModal] = useState<{ roleName: string; questions: string[] } | null>(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
   const [form, setForm] = useState({ title: "", type: "Basic", jdFileName: "" });
+
+  const clientNameById = useMemo(
+    () =>
+      Object.fromEntries(
+        adminClients
+          .filter((client) => client.id !== "all")
+          .map((client) => [client.id, client.name]),
+      ),
+    [adminClients],
+  );
+
+  useEffect(() => {
+    if (!actionNotice) return;
+    const timer = setTimeout(() => setActionNotice(null), 3200);
+    return () => clearTimeout(timer);
+  }, [actionNotice]);
+
+  const getSessionToken = async (): Promise<string> => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const token = String(session?.access_token || "").trim();
+    if (!token) throw new Error("Missing session token.");
+    return token;
+  };
+
+  useEffect(() => {
+    let alive = true;
+
+    const loadRoles = async () => {
+      if (adminClientsLoading) return;
+      if (adminClientsError) {
+        if (!alive) return;
+        setRoles([]);
+        setRolesError(adminClientsError);
+        setRolesLoading(false);
+        return;
+      }
+      if (!backendBase) {
+        if (!alive) return;
+        setRoles([]);
+        setRolesError("Missing backend base URL configuration.");
+        setRolesLoading(false);
+        return;
+      }
+
+      if (!alive) return;
+      setRolesLoading(true);
+      setRolesError("");
+
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const token = String(session?.access_token || "").trim();
+        if (!token) throw new Error("Missing session token.");
+
+        const isAllClients = selectedClientId === "all";
+        const url = isAllClients
+          ? `${backendBase}/admin/roles`
+          : `${backendBase}/admin/roles?client_id=${encodeURIComponent(selectedClientId)}`;
+
+        const response = await fetch(url, {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "omit",
+        });
+
+        const text = await response.text();
+        if (!response.ok) throw new Error(extractErrorMessage(text));
+
+        const payload = parseJsonSafe(text);
+        const items = payload && typeof payload === "object" && Array.isArray((payload as { items?: unknown }).items)
+          ? (payload as { items: unknown[] }).items
+          : [];
+
+        const mappedRoles: Role[] = items
+          .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+          .map((item) => {
+            const roleId = String(item.id || "").trim();
+            const roleClientId = String(item.client_id || "").trim();
+            const created = formatRoleCreated(item.created_at);
+            const rubricQuestions = extractRubricQuestions(item.rubric);
+            return {
+              id: roleId,
+              clientId: roleClientId,
+              clientName: String(clientNameById[roleClientId] || "").trim(),
+              name: String(item.title || "").trim() || "Untitled role",
+              token: String(item.slug_or_token || roleId).trim(),
+              created: created.text,
+              createdTs: created.ts,
+              type: normalizeRoleType(item.interview_type),
+              hasJD: Boolean(String(item.job_description_url || "").trim()),
+              hasRubric: rubricQuestions.length > 0,
+              rubricQuestions,
+            };
+          })
+          .filter((item) => Boolean(item.id));
+
+        if (!alive) return;
+        setRoles(mappedRoles);
+      } catch (error) {
+        if (!alive) return;
+        setRoles([]);
+        setRolesError(error instanceof Error ? error.message : "Failed to load roles.");
+      } finally {
+        if (alive) setRolesLoading(false);
+      }
+    };
+
+    void loadRoles();
+    return () => {
+      alive = false;
+    };
+  }, [selectedClientId, adminClientsLoading, adminClientsError, clientNameById, refreshNonce]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -62,9 +293,9 @@ export default function AdminRolesPage() {
   };
 
   /* Filter by selected client */
-  const filtered = selectedClient.id === "all"
-    ? ROLES
-    : ROLES.filter((r) => r.clientId === selectedClient.id);
+  const filtered = selectedClientId === "all"
+    ? roles
+    : roles.filter((r) => r.clientId === selectedClientId);
 
   /* Sort */
   const sorted = [...filtered].sort((a, b) => {
@@ -78,10 +309,197 @@ export default function AdminRolesPage() {
     return 0;
   });
 
-  /* Copy link placeholder */
-  const handleCopy = (id: string) => {
-    setCopied(id);
+  const safeCopy = async (text: string): Promise<boolean> => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+      throw new Error("clipboard_api_unavailable");
+    } catch {
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.style.position = "fixed";
+        textarea.style.top = "-9999px";
+        textarea.style.left = "-9999px";
+        textarea.setAttribute("readonly", "");
+        document.body.appendChild(textarea);
+        textarea.select();
+        textarea.setSelectionRange(0, textarea.value.length);
+        const successful = document.execCommand("copy");
+        textarea.remove();
+        return successful;
+      } catch {
+        return false;
+      }
+    }
+  };
+
+  const buildInterviewShareUrl = (token: string): string => {
+    const normalizedToken = String(token || "").trim();
+    const origin =
+      typeof window !== "undefined" && window.location
+        ? trimTrailingSlashes(window.location.origin)
+        : "";
+    return `${origin}/interview-access/${encodeURIComponent(normalizedToken)}`;
+  };
+
+  const handleCopy = async (role: Role) => {
+    const token = String(role.token || "").trim();
+    if (!token) {
+      setActionNotice({ tone: "error", text: "Missing role token." });
+      return;
+    }
+    const ok = await safeCopy(buildInterviewShareUrl(token));
+    if (!ok) {
+      setActionNotice({ tone: "error", text: "Could not copy link." });
+      return;
+    }
+    setCopied(role.id);
     setTimeout(() => setCopied(null), 1500);
+    setActionNotice({ tone: "success", text: "Link copied." });
+  };
+
+  const openRoleJd = async (role: Role) => {
+    if (!role.id || openingJd[role.id]) return;
+    if (!backendBase) {
+      setActionNotice({ tone: "error", text: "Missing backend base URL configuration." });
+      return;
+    }
+
+    setActionNotice(null);
+    setOpeningJd((prev) => ({ ...prev, [role.id]: true }));
+    try {
+      const token = await getSessionToken();
+      const response = await fetch(`${backendBase}/api/roles/${encodeURIComponent(role.id)}/jd-signed-url`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "omit",
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text));
+      const payload = parseJsonSafe(text) as { url?: unknown } | null;
+      const url = String(payload?.url || "").trim();
+      if (!url) throw new Error("Could not open Job Description.");
+      window.open(url, "_blank", "noopener,noreferrer");
+      setActionNotice({ tone: "success", text: "Job description opened." });
+    } catch (error) {
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not open Job Description.",
+      });
+    } finally {
+      setOpeningJd((prev) => ({ ...prev, [role.id]: false }));
+    }
+  };
+
+  const openRoleRubric = async (role: Role) => {
+    if (!role.id || loadingRubric[role.id]) return;
+
+    if (role.rubricQuestions.length > 0) {
+      setRubricModal({ roleName: role.name, questions: role.rubricQuestions });
+      return;
+    }
+
+    if (!backendBase) {
+      setActionNotice({ tone: "error", text: "Missing backend base URL configuration." });
+      return;
+    }
+
+    const clientId = String(role.clientId || "").trim() || String(selectedClientId || "").trim();
+    if (!clientId || clientId === "all") {
+      setActionNotice({ tone: "error", text: "Select a client to view role config." });
+      return;
+    }
+
+    setActionNotice(null);
+    setLoadingRubric((prev) => ({ ...prev, [role.id]: true }));
+    try {
+      const token = await getSessionToken();
+      const response = await fetch(
+        `${backendBase}/admin/roles/${encodeURIComponent(role.id)}/interview-config?client_id=${encodeURIComponent(clientId)}`,
+        {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "omit",
+        },
+      );
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text));
+      const payload = parseJsonSafe(text) as { item?: unknown } | null;
+      const item = payload?.item && typeof payload.item === "object"
+        ? (payload.item as { rubric_questions?: unknown })
+        : null;
+      const questions = Array.isArray(item?.rubric_questions)
+        ? item.rubric_questions.map((q) => String(q || "").trim()).filter(Boolean)
+        : [];
+      if (!questions.length) throw new Error("No rubric questions found.");
+      setRubricModal({ roleName: role.name, questions });
+    } catch (error) {
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not load role config.",
+      });
+    } finally {
+      setLoadingRubric((prev) => ({ ...prev, [role.id]: false }));
+    }
+  };
+
+  const deleteRole = async (role: Role) => {
+    if (!role.id || deletingRoles[role.id]) return;
+    if (!backendBase) {
+      setActionNotice({ tone: "error", text: "Missing backend base URL configuration." });
+      return;
+    }
+
+    const clientId = String(role.clientId || "").trim() || String(selectedClientId || "").trim();
+    if (!clientId || clientId === "all") {
+      setActionNotice({ tone: "error", text: "Select a client to perform this action." });
+      return;
+    }
+    if (!window.confirm(`Delete role "${role.name}"? This cannot be undone.`)) return;
+
+    setActionNotice(null);
+    setDeletingRoles((prev) => ({ ...prev, [role.id]: true }));
+    try {
+      const token = await getSessionToken();
+      const response = await fetch(
+        `${backendBase}/admin/roles?id=${encodeURIComponent(role.id)}&client_id=${encodeURIComponent(clientId)}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "omit",
+        },
+      );
+
+      if (!response.ok) {
+        const text = await response.text();
+        if (response.status !== 404) throw new Error(extractErrorMessage(text));
+        const fallbackResponse = await fetch(`${backendBase}/admin/roles/delete`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          credentials: "omit",
+          body: JSON.stringify({ id: role.id, client_id: clientId }),
+        });
+        const fallbackText = await fallbackResponse.text();
+        if (!fallbackResponse.ok) throw new Error(extractErrorMessage(fallbackText));
+      }
+
+      setRoles((prev) => prev.filter((item) => item.id !== role.id));
+      setActionNotice({ tone: "success", text: "Role deleted." });
+      setRefreshNonce((value) => value + 1);
+    } catch (error) {
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not delete role.",
+      });
+    } finally {
+      setDeletingRoles((prev) => ({ ...prev, [role.id]: false }));
+    }
   };
 
   function SortIcon({ col }: { col: SortKey }) {
@@ -101,6 +519,18 @@ export default function AdminRolesPage() {
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-black text-[#0A1547]">Roles</h2>
       </div>
+      {actionNotice && (
+        <div
+          className="mb-4 px-4 py-2.5 rounded-xl text-sm font-semibold"
+          style={{
+            border: actionNotice.tone === "error" ? "1px solid rgba(239,68,68,0.25)" : "1px solid rgba(2,217,157,0.25)",
+            backgroundColor: actionNotice.tone === "error" ? "rgba(239,68,68,0.08)" : "rgba(2,217,157,0.10)",
+            color: actionNotice.tone === "error" ? "#DC2626" : "#047857",
+          }}
+        >
+          {actionNotice.text}
+        </div>
+      )}
 
       {/* ── Create role form ──────────────────────────────── */}
       <div
@@ -194,102 +624,150 @@ export default function AdminRolesPage() {
 
         {/* Rows */}
         <div className="divide-y divide-gray-50">
-          {sorted.map((role) => {
-            const tc = typeColors[role.type];
-            const isCopied = copied === role.id;
-            return (
-              <div
-                key={role.id}
-                className={`grid items-center px-5 py-3.5 hover:bg-gray-50/60 transition-colors ${
-                  showClient
-                    ? "grid-cols-[1fr_120px_130px_110px_56px_56px_120px_48px]"
-                    : "grid-cols-[1fr_130px_110px_56px_56px_120px_48px]"
-                }`}
-              >
-                {/* Name + token */}
-                <div className="min-w-0 pr-3">
-                  <p className="text-sm font-bold text-[#0A1547] leading-snug truncate">{role.name}</p>
-                  <p className="text-[10px] text-[#0A1547]/30 mt-0.5 font-mono truncate">
-                    Token: {role.token}
-                  </p>
-                </div>
-
-                {/* Client (all-clients view only) */}
-                {showClient && (
-                  <p className="text-xs font-semibold text-[#0A1547]/50 truncate pr-2">
-                    {ROLES.find((r) => r.id === role.id)
-                      ? ["Acme Dental","Ridge Medical","Summit Health","Crestwood Ortho","Lakeside Derm","Pinnacle Surgical","Harbor Cove"][
-                          ["acme","ridge","summit","crestwood","lakeside","pinnacle","harbor"].indexOf(role.clientId)
-                        ]
-                      : "—"}
-                  </p>
-                )}
-
-                {/* Created */}
-                <p className="text-xs text-[#0A1547]/50 font-semibold pr-2">{role.created}</p>
-
-                {/* Type badge */}
-                <span
-                  className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-bold w-fit"
-                  style={{ backgroundColor: tc.bg, color: tc.text }}
+          {rolesLoading ? (
+            <div className="py-12 text-center">
+              <p className="text-sm text-[#0A1547]/35 font-semibold">Loading roles...</p>
+            </div>
+          ) : rolesError ? (
+            <div className="py-12 text-center">
+              <p className="text-sm text-red-500 font-semibold">{rolesError}</p>
+            </div>
+          ) : (
+            sorted.map((role) => {
+              const tc = typeColors[role.type];
+              const isCopied = copied === role.id;
+              return (
+                <div
+                  key={role.id}
+                  className={`grid items-center px-5 py-3.5 hover:bg-gray-50/60 transition-colors ${
+                    showClient
+                      ? "grid-cols-[1fr_120px_130px_110px_56px_56px_120px_48px]"
+                      : "grid-cols-[1fr_130px_110px_56px_56px_120px_48px]"
+                  }`}
                 >
-                  {role.type}
-                </span>
+                  {/* Name + token */}
+                  <div className="min-w-0 pr-3">
+                    <p className="text-sm font-bold text-[#0A1547] leading-snug truncate">{role.name}</p>
+                    <p className="text-[10px] text-[#0A1547]/30 mt-0.5 font-mono truncate">
+                      Token: {role.token}
+                    </p>
+                  </div>
 
-                {/* Rubric icon */}
-                <div className="flex justify-center">
-                  <button
-                    className="p-1.5 rounded-lg text-[#0A1547]/30 hover:text-[#A380F6] hover:bg-[rgba(163,128,246,0.08)] transition-all"
-                    title="View rubric"
+                  {/* Client (all-clients view only) */}
+                  {showClient && (
+                    <p className="text-xs font-semibold text-[#0A1547]/50 truncate pr-2">
+                      {role.clientName || "—"}
+                    </p>
+                  )}
+
+                  {/* Created */}
+                  <p className="text-xs text-[#0A1547]/50 font-semibold pr-2">{role.created}</p>
+
+                  {/* Type badge */}
+                  <span
+                    className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-bold w-fit"
+                    style={{ backgroundColor: tc.bg, color: tc.text }}
                   >
-                    <FileText className="w-4 h-4" />
-                  </button>
-                </div>
+                    {role.type}
+                  </span>
 
-                {/* JD icon */}
-                <div className="flex justify-center">
-                  {role.hasJD ? (
+                  {/* Rubric icon */}
+                  <div className="flex justify-center">
                     <button
+                      onClick={() => {
+                        void openRoleRubric(role);
+                      }}
+                      disabled={loadingRubric[role.id] === true}
                       className="p-1.5 rounded-lg text-[#0A1547]/30 hover:text-[#A380F6] hover:bg-[rgba(163,128,246,0.08)] transition-all"
-                      title="View job description"
+                      title="View rubric"
                     >
                       <FileText className="w-4 h-4" />
                     </button>
-                  ) : (
-                    <span className="text-sm text-[#0A1547]/20 font-semibold">—</span>
-                  )}
-                </div>
+                  </div>
 
-                {/* Copy link */}
-                <button
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-white transition-all hover:opacity-90 active:scale-95 w-fit"
-                  style={{ backgroundColor: isCopied ? "#02D99D" : "#A380F6" }}
-                  onClick={() => handleCopy(role.id)}
-                >
-                  <Copy className="w-3 h-3" />
-                  {isCopied ? "Copied!" : "Copy link"}
-                </button>
+                  {/* JD icon */}
+                  <div className="flex justify-center">
+                    {role.hasJD ? (
+                      <button
+                        onClick={() => {
+                          void openRoleJd(role);
+                        }}
+                        disabled={openingJd[role.id] === true}
+                        className="p-1.5 rounded-lg text-[#0A1547]/30 hover:text-[#A380F6] hover:bg-[rgba(163,128,246,0.08)] transition-all"
+                        title="View job description"
+                      >
+                        <FileText className="w-4 h-4" />
+                      </button>
+                    ) : (
+                      <span className="text-sm text-[#0A1547]/20 font-semibold">—</span>
+                    )}
+                  </div>
 
-                {/* Delete */}
-                <div className="flex justify-center">
+                  {/* Copy link */}
                   <button
-                    className="p-1.5 rounded-lg text-[#0A1547]/25 hover:text-red-500 hover:bg-red-50 transition-all"
-                    title={`Delete ${role.name}`}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-white transition-all hover:opacity-90 active:scale-95 w-fit"
+                    style={{ backgroundColor: isCopied ? "#02D99D" : "#A380F6" }}
+                    onClick={() => {
+                      void handleCopy(role);
+                    }}
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Copy className="w-3 h-3" />
+                    {isCopied ? "Copied!" : "Copy link"}
                   </button>
-                </div>
-              </div>
-            );
-          })}
 
-          {sorted.length === 0 && (
+                  {/* Delete */}
+                  <div className="flex justify-center">
+                    <button
+                      onClick={() => {
+                        void deleteRole(role);
+                      }}
+                      disabled={deletingRoles[role.id] === true}
+                      className="p-1.5 rounded-lg text-[#0A1547]/25 hover:text-red-500 hover:bg-red-50 transition-all"
+                      title={`Delete ${role.name}`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+
+          {!rolesLoading && !rolesError && sorted.length === 0 && (
             <div className="py-12 text-center">
               <p className="text-sm text-[#0A1547]/35 font-semibold">No roles found for this client.</p>
             </div>
           )}
         </div>
       </div>
+      {rubricModal && (
+        <div className="fixed inset-0 z-40 bg-black/35 backdrop-blur-[1px] flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl bg-white rounded-2xl border border-[rgba(10,21,71,0.10)] shadow-[0_20px_60px_rgba(10,21,71,0.22)] overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-base font-black text-[#0A1547]">Rubric — {rubricModal.roleName}</h3>
+              <button
+                className="px-3 py-1.5 rounded-full text-xs font-bold text-[#0A1547]/60 hover:bg-gray-100 transition-colors"
+                onClick={() => setRubricModal(null)}
+              >
+                Close
+              </button>
+            </div>
+            <div className="px-5 py-4 max-h-[60vh] overflow-auto">
+              {rubricModal.questions.length === 0 ? (
+                <p className="text-sm text-[#0A1547]/45 font-semibold">No rubric questions found.</p>
+              ) : (
+                <ol className="list-decimal pl-5 space-y-2">
+                  {rubricModal.questions.map((question, index) => (
+                    <li key={`${question}-${index}`} className="text-sm text-[#0A1547]/75 leading-relaxed">
+                      {question}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </AdminLayout>
   );
 }

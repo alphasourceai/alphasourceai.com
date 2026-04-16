@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { useLocation } from "wouter";
 import { Upload, FileText, Trash2, Check, ArrowRight, ChevronRight } from "lucide-react";
 
 /* ── Checklist copy (verbatim) ───────────────────────────────────── */
@@ -85,7 +86,58 @@ const inputCls =
 
 const errorCls = "text-red-500 text-[10px] mt-1 font-semibold";
 
+const env = (
+  typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {}
+) as Record<string, string | undefined>;
+
+function trimTrailingSlashes(value: string): string {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function firstBase(...values: Array<string | undefined>): string {
+  for (const value of values) {
+    const normalized = trimTrailingSlashes(value || "");
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+const backendBase = firstBase(
+  env.VITE_BACKEND_URL,
+  env.VITE_API_URL,
+  env.VITE_PUBLIC_BACKEND_URL,
+  env.PUBLIC_BACKEND_URL,
+  env.BACKEND_URL,
+);
+
+function joinUrl(base: string, path: string): string {
+  if (!base) return path;
+  if (base.endsWith("/") && path.startsWith("/")) return `${base.slice(0, -1)}${path}`;
+  if (!base.endsWith("/") && !path.startsWith("/")) return `${base}/${path}`;
+  return `${base}${path}`;
+}
+
+function readRoleToken(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const path = String(window.location.pathname || "");
+    const pathMatch = path.match(/^\/interview\/([^/?#]+)/);
+    if (pathMatch?.[1]) return decodeURIComponent(pathMatch[1]).trim();
+
+    const url = new URL(window.location.href);
+    return (
+      String(url.searchParams.get("role_token") || "").trim() ||
+      String(url.searchParams.get("role") || "").trim() ||
+      String(url.searchParams.get("token") || "").trim()
+    );
+  } catch {
+    return "";
+  }
+}
+
 export default function InterviewPage() {
+  const [, setLocation] = useLocation();
+
   /* ── Terms modal ─────────────────────────────────────────────── */
   const [termsOpen, setTermsOpen]     = useState(true);
   const [understood, setUnderstood]   = useState(false);
@@ -106,9 +158,27 @@ export default function InterviewPage() {
   /* ── Step 2 fields ───────────────────────────────────────────── */
   const [otp, setOtp]         = useState("");
   const [otpError, setOtpError] = useState("");
-
-  /* ── Interview container ref ─────────────────────────────────── */
-  const interviewRef = useRef<HTMLDivElement>(null);
+  const [submitLoading, setSubmitLoading] = useState(false);
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const [startLoading, setStartLoading] = useState(false);
+  const [startError, setStartError] = useState("");
+  const [interviewAuth, setInterviewAuth] = useState({
+    candidate_id: "",
+    role_id: "",
+    email: "",
+    role_token: readRoleToken(),
+  });
+  const [interviewStartState, setInterviewStartState] = useState<{
+    interview_id: string;
+    conversation_id: string;
+    conversation_url: string;
+    max_interview_minutes: number | null;
+  }>({
+    interview_id: "",
+    conversation_id: "",
+    conversation_url: "",
+    max_interview_minutes: null,
+  });
 
   /* ── Helpers ─────────────────────────────────────────────────── */
   function handleFile(file: File) {
@@ -128,54 +198,205 @@ export default function InterviewPage() {
     return Object.keys(e).length === 0;
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!validateStep1()) return;
-    setStep("otp");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+
+    const roleToken = String(interviewAuth.role_token || "").trim();
+    if (!roleToken) {
+      setErrors((e) => ({ ...e, submit: "Missing role link. Please use the interview URL you were sent." }));
+      return;
+    }
+    if (!backendBase) {
+      setErrors((e) => ({ ...e, submit: "Interview service is not configured. Please try again later." }));
+      return;
+    }
+
+    setSubmitLoading(true);
+    setErrors((e) => ({ ...e, submit: "" }));
+    setOtpError("");
+
+    try {
+      const body = new FormData();
+      body.append("first_name", firstName.trim());
+      body.append("last_name", lastName.trim());
+      body.append("email", email.trim());
+      body.append("phone", String(phone || "").replace(/\D/g, ""));
+      body.append("role_token", roleToken);
+      if (resumeFile) body.append("resume", resumeFile);
+
+      const resp = await fetch(joinUrl(backendBase, "/api/candidate/submit"), {
+        method: "POST",
+        body,
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        const hint = String(data?.hint || "").trim();
+        const detail = String(data?.detail || "").trim();
+        const msg = detail || String(data?.error || "").trim() || "Could not submit your information.";
+        setErrors((e) => ({ ...e, submit: hint ? `${msg} ${hint}` : msg }));
+        return;
+      }
+
+      const verifiedEmail = String(data?.email || email).trim();
+      setInterviewAuth({
+        candidate_id: String(data?.candidate_id || "").trim(),
+        role_id: String(data?.role_id || "").trim(),
+        email: verifiedEmail,
+        role_token: roleToken,
+      });
+      setEmail(verifiedEmail);
+      setStep("otp");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {
+      setErrors((e) => ({ ...e, submit: "Network error. Please try again." }));
+    } finally {
+      setSubmitLoading(false);
+    }
   }
 
-  function handleVerify() {
+  async function handleVerify() {
     if (!/^\d{6}$/.test(otp)) {
       setOtpError("Please enter a valid 6-digit code.");
       return;
     }
+    if (!backendBase) {
+      setOtpError("Interview service is not configured. Please try again later.");
+      return;
+    }
+
+    const verifyEmail = String(interviewAuth.email || email).trim().toLowerCase();
+    if (!verifyEmail || !interviewAuth.candidate_id || !interviewAuth.role_id) {
+      setOtpError("Missing interview session data. Please submit your information again.");
+      return;
+    }
+
+    setVerifyLoading(true);
     setOtpError("");
-    setStep("ready");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    try {
+      const resp = await fetch(joinUrl(backendBase, "/api/candidate/verify-otp"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: verifyEmail,
+          code: otp.trim(),
+          candidate_id: interviewAuth.candidate_id,
+          role_id: interviewAuth.role_id,
+        }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        const hint = String(data?.hint || "").trim();
+        const detail = String(data?.detail || "").trim();
+        const msg = detail || String(data?.error || "").trim() || "Verification failed.";
+        setOtpError(hint ? `${msg} ${hint}` : msg);
+        return;
+      }
+
+      const verifiedEmail = String(data?.email || verifyEmail).trim();
+      setInterviewAuth((prev) => ({
+        candidate_id: String(data?.candidate_id || prev.candidate_id).trim(),
+        role_id: String(data?.role_id || prev.role_id).trim(),
+        email: verifiedEmail,
+        role_token: prev.role_token,
+      }));
+      setStartError("");
+      setStep("ready");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {
+      setOtpError("Network error verifying code.");
+    } finally {
+      setVerifyLoading(false);
+    }
   }
 
   async function handleStartInterview() {
-    setStep("live");
-    try {
-      const el = interviewRef.current as any;
-      const reqFs = el?.requestFullscreen ?? el?.webkitRequestFullscreen ?? el?.mozRequestFullScreen;
-      if (reqFs) await reqFs.call(el);
-      const orientation = (screen as any).orientation;
-      if (orientation?.lock) await orientation.lock("landscape").catch(() => {});
-    } catch { /* fullscreen not available */ }
-  }
+    if (!backendBase) {
+      setStartError("Interview service is not configured. Please try again later.");
+      return;
+    }
 
-  /* ═══════════════════════════════════════════════════════════════
-     LIVE — full-screen interview container
-  ═══════════════════════════════════════════════════════════════ */
-  if (step === "live") {
-    return (
-      <div
-        ref={interviewRef}
-        className="fixed inset-0 bg-[#0A1547] flex flex-col items-center justify-center z-50"
-        style={{ fontFamily: "'Raleway', sans-serif" }}
-      >
-        <div className="text-center text-white/30 text-sm space-y-3">
-          <div className="w-16 h-16 rounded-full border-2 border-white/15 flex items-center justify-center mx-auto">
-            <div className="w-6 h-6 rounded-full bg-white/15" />
-          </div>
-          <p className="font-semibold text-white/40">Daily.co interview room</p>
-          <p className="text-xs text-white/20">
-            Replace this container with your Daily.co &lt;iframe&gt;
-          </p>
-        </div>
-      </div>
-    );
+    const candidateId = String(interviewAuth.candidate_id || "").trim();
+    const roleId = String(interviewAuth.role_id || "").trim();
+    const candidateEmail = String(interviewAuth.email || email).trim();
+    const roleToken = String(interviewAuth.role_token || "").trim();
+
+    if (!candidateId || !roleId || !candidateEmail || !roleToken) {
+      setStartError("Missing interview session data. Please submit and verify again.");
+      return;
+    }
+
+    setStartLoading(true);
+    setStartError("");
+
+    try {
+      const resp = await fetch(joinUrl(backendBase, "/create-tavus-interview"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          candidate_id: candidateId,
+          role_id: roleId,
+          email: candidateEmail,
+          roleToken,
+          role_token: roleToken,
+        }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        const hint = String(data?.hint || "").trim();
+        const detail = String(data?.detail || "").trim();
+        const msg = detail || String(data?.error || "").trim() || "Could not start interview.";
+        setStartError(hint ? `${msg} ${hint}` : msg);
+        return;
+      }
+
+      const conversationUrl = String(
+        data?.conversation_url ||
+        data?.video_url ||
+        data?.redirect_url ||
+        data?.url ||
+        "",
+      ).trim();
+      const conversationId = String(data?.conversation_id || "").trim();
+      const interviewId = String(data?.interview_id || "").trim();
+      const maxInterviewMinutesRaw = Number(data?.max_interview_minutes);
+      const maxInterviewMinutes = Number.isFinite(maxInterviewMinutesRaw) && maxInterviewMinutesRaw > 0
+        ? Math.floor(maxInterviewMinutesRaw)
+        : null;
+
+      setInterviewStartState({
+        interview_id: interviewId,
+        conversation_id: conversationId,
+        conversation_url: conversationUrl,
+        max_interview_minutes: maxInterviewMinutes,
+      });
+      if (!conversationUrl) {
+        setStartError("Interview room is initializing—try again in a moment.");
+        return;
+      }
+
+      try {
+        window.sessionStorage.setItem(
+          "alphasource_interview_live_state",
+          JSON.stringify({
+            conversation_url: conversationUrl,
+            conversation_id: conversationId,
+            interview_id: interviewId,
+            role_token: roleToken,
+            max_interview_minutes: maxInterviewMinutes,
+            email: candidateEmail,
+            candidate_id: candidateId,
+            role_id: roleId,
+          }),
+        );
+      } catch {}
+
+      setLocation("/interview-cvi");
+    } catch {
+      setStartError("Network error starting interview.");
+    }
+    finally {
+      setStartLoading(false);
+    }
   }
 
   /* ═══════════════════════════════════════════════════════════════
@@ -295,7 +516,7 @@ export default function InterviewPage() {
       <main className="flex-1 flex flex-col items-center justify-center px-4 py-12">
 
         {/* Step indicator */}
-        {step !== "live" && <StepIndicator current={step} />}
+        <StepIndicator current={step} />
 
         {/* ── STEP 1: Enter your information ─────────────────── */}
         {step === "info" && (
@@ -314,7 +535,7 @@ export default function InterviewPage() {
                   </label>
                   <input
                     value={firstName}
-                    onChange={(e) => { setFirstName(e.target.value); setErrors((er) => ({ ...er, firstName: "" })); }}
+                    onChange={(e) => { setFirstName(e.target.value); setErrors((er) => ({ ...er, firstName: "", submit: "" })); }}
                     placeholder="Jane"
                     className={inputCls}
                   />
@@ -326,7 +547,7 @@ export default function InterviewPage() {
                   </label>
                   <input
                     value={lastName}
-                    onChange={(e) => { setLastName(e.target.value); setErrors((er) => ({ ...er, lastName: "" })); }}
+                    onChange={(e) => { setLastName(e.target.value); setErrors((er) => ({ ...er, lastName: "", submit: "" })); }}
                     placeholder="Smith"
                     className={inputCls}
                   />
@@ -339,12 +560,12 @@ export default function InterviewPage() {
                 <label className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 block mb-1.5">
                   Email <span className="text-red-400">*</span>
                 </label>
-                <input
-                  value={email}
-                  onChange={(e) => { setEmail(e.target.value); setErrors((er) => ({ ...er, email: "" })); }}
-                  placeholder="jane@example.com"
-                  type="email"
-                  className={inputCls}
+                  <input
+                    value={email}
+                    onChange={(e) => { setEmail(e.target.value); setErrors((er) => ({ ...er, email: "", submit: "" })); }}
+                    placeholder="jane@example.com"
+                    type="email"
+                    className={inputCls}
                 />
                 {errors.email && <p className={errorCls}>{errors.email}</p>}
               </div>
@@ -354,12 +575,12 @@ export default function InterviewPage() {
                 <label className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 block mb-1.5">
                   Phone <span className="text-red-400">*</span>
                 </label>
-                <input
-                  value={phone}
-                  onChange={(e) => { setPhone(e.target.value); setErrors((er) => ({ ...er, phone: "" })); }}
-                  placeholder="(555) 123-4567"
-                  type="tel"
-                  className={inputCls}
+                  <input
+                    value={phone}
+                    onChange={(e) => { setPhone(e.target.value); setErrors((er) => ({ ...er, phone: "", submit: "" })); }}
+                    placeholder="(555) 123-4567"
+                    type="tel"
+                    className={inputCls}
                 />
                 {errors.phone && <p className={errorCls}>{errors.phone}</p>}
               </div>
@@ -382,6 +603,7 @@ export default function InterviewPage() {
                     e.preventDefault();
                     setDragging(false);
                     if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+                    setErrors((er) => ({ ...er, submit: "" }));
                   }}
                 >
                   <input
@@ -389,7 +611,10 @@ export default function InterviewPage() {
                     type="file"
                     accept=".pdf,.doc,.docx"
                     className="hidden"
-                    onChange={(e) => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }}
+                    onChange={(e) => {
+                      if (e.target.files?.[0]) handleFile(e.target.files[0]);
+                      setErrors((er) => ({ ...er, submit: "" }));
+                    }}
                   />
                   {resumeFile ? (
                     <>
@@ -397,7 +622,11 @@ export default function InterviewPage() {
                       <span className="text-xs font-semibold text-[#0A1547] truncate flex-1">{resumeFile.name}</span>
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); setResumeFile(null); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setResumeFile(null);
+                          setErrors((er) => ({ ...er, submit: "" }));
+                        }}
                         className="text-[#0A1547]/30 hover:text-red-500 transition-colors flex-shrink-0"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -413,20 +642,29 @@ export default function InterviewPage() {
                   )}
                 </div>
                 {errors.resume && <p className={errorCls}>{errors.resume}</p>}
+                {errors.submit && <p className={errorCls}>{errors.submit}</p>}
               </div>
             </div>
 
             {/* Submit */}
             <div className="mt-7 flex items-center justify-between">
-              <a href="#" className="text-xs text-[#A380F6] hover:underline transition-colors">
+              <a
+                href={
+                  interviewAuth.role_token
+                    ? `/accommodation-request/${encodeURIComponent(interviewAuth.role_token)}`
+                    : "/accommodation-request"
+                }
+                className="text-xs text-[#A380F6] hover:underline transition-colors"
+              >
                 Need an accommodation?
               </a>
               <button
                 onClick={handleSubmit}
+                disabled={submitLoading}
                 className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white transition-all hover:opacity-90 active:scale-[0.97]"
                 style={{ backgroundColor: "#A380F6" }}
               >
-                Submit &amp; Get OTP
+                {submitLoading ? "Submitting..." : "Submit & Get OTP"}
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -439,7 +677,7 @@ export default function InterviewPage() {
             <h1 className="text-xl font-black text-[#0A1547] mb-1">Verify your identity</h1>
             <p className="text-xs text-[#0A1547]/45 font-semibold mb-6">
               A one-time code was sent to{" "}
-              <span className="text-[#0A1547]/70">{email}</span>.
+              <span className="text-[#0A1547]/70">{interviewAuth.email || email}</span>.
             </p>
 
             <div>
@@ -470,10 +708,11 @@ export default function InterviewPage() {
 
             <button
               onClick={handleVerify}
+              disabled={verifyLoading}
               className="mt-7 w-full flex items-center justify-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white transition-all hover:opacity-90 active:scale-[0.97]"
               style={{ backgroundColor: "#A380F6" }}
             >
-              Verify
+              {verifyLoading ? "Verifying..." : "Verify"}
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </Card>
@@ -502,14 +741,16 @@ export default function InterviewPage() {
 
               <button
                 onClick={handleStartInterview}
+                disabled={startLoading}
                 className="flex items-center gap-2.5 px-8 py-3 rounded-full text-sm font-bold text-white transition-all hover:opacity-90 active:scale-[0.97] shadow-lg"
                 style={{ backgroundColor: "#02D99D", boxShadow: "0 4px 20px rgba(2,217,157,0.35)" }}
               >
                 <span
                   className="w-2 h-2 rounded-full bg-white animate-pulse flex-shrink-0"
                 />
-                Start Interview
+                {startLoading ? "Starting..." : "Start Interview"}
               </button>
+              {startError && <p className={errorCls}>{startError}</p>}
             </div>
           </Card>
         )}
