@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { X, Trash2, Plus, ChevronDown, ChevronUp } from "lucide-react";
 import AdminLayout from "@/components/AdminLayout";
 import { useAdminClient } from "@/context/AdminClientContext";
+import { supabase } from "@/lib/supabaseClient";
 
 /* ── Types ───────────────────────────────────────────────────── */
 type RoleType = "Basic" | "Detailed" | "Technical";
@@ -14,6 +15,7 @@ interface RubricQuestion {
 interface RoleConfig {
   id: string;
   clientId: string;
+  clientName: string;
   name: string;
   token: string;
   type: RoleType;
@@ -21,109 +23,116 @@ interface RoleConfig {
   questions: RubricQuestion[];
 }
 
-/* ── Dummy data ──────────────────────────────────────────────── */
-let _qId = 100;
-function q(text: string): RubricQuestion { return { id: _qId++, text }; }
+const env =
+  typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
 
-const ROLE_CONFIGS: RoleConfig[] = [
-  {
-    id: "r1", clientId: "acme", name: "Dental Hygienist", token: "a3f2-19b7-c08d", type: "Basic",
-    tavusPrompt: "",
-    questions: [
-      q("Tell me about your experience with periodontal charting and probing."),
-      q("Describe your patient education approach for oral hygiene maintenance."),
-      q("How do you handle a patient who is anxious about their appointment?"),
-      q("Walk me through your sterilization and infection control procedures."),
-      q("Describe a time you identified a clinical finding and escalated appropriately."),
-    ],
-  },
-  {
-    id: "r2", clientId: "acme", name: "Front Desk Coordinator", token: "bb41-72e0-d9c3", type: "Detailed",
-    tavusPrompt: "",
-    questions: [
-      q("How do you manage a busy multi-line phone environment?"),
-      q("Describe your experience verifying dental insurance eligibility."),
-      q("Tell me about a time you de-escalated a frustrated patient at check-in."),
-      q("How do you prioritize appointment scheduling when the schedule is overbooked?"),
-    ],
-  },
-  {
-    id: "r3", clientId: "acme", name: "Dental Assistant", token: "c510-84fa-0e7b", type: "Technical",
-    tavusPrompt: "",
-    questions: [
-      q("Describe your chairside assisting experience and which procedures you've supported."),
-      q("How do you prepare and maintain instrument trays for various procedures?"),
-      q("Tell me about your experience with digital X-ray systems."),
-      q("Describe a situation where you had to adapt quickly during a procedure."),
-    ],
-  },
-  {
-    id: "r4", clientId: "ridge", name: "Medical Receptionist", token: "d6a1-30bc-f25e", type: "Basic",
-    tavusPrompt: "",
-    questions: [
-      q("What EMR or practice management systems have you used?"),
-      q("How do you handle co-pay collection and billing inquiries at check-in?"),
-      q("Tell me about a time you managed a high patient volume day effectively."),
-    ],
-  },
-  {
-    id: "r5", clientId: "summit", name: "Nurse Practitioner", token: "e7b2-41cd-g36f", type: "Technical",
-    tavusPrompt: "",
-    questions: [
-      q("Describe your clinical decision-making process for a complex patient presentation."),
-      q("How do you approach medication management and patient education?"),
-      q("Tell me about your experience with collaborative physician oversight."),
-      q("Describe a time you identified a deteriorating patient and responded promptly."),
-      q("How do you stay current with evidence-based practice guidelines?"),
-    ],
-  },
-  {
-    id: "r6", clientId: "summit", name: "Office Manager", token: "f8c3-52de-h47g", type: "Detailed",
-    tavusPrompt: "",
-    questions: [
-      q("Describe your experience managing staff schedules and resolving HR issues."),
-      q("How have you reduced overhead or improved operational efficiency in a previous role?"),
-      q("Tell me about your approach to onboarding new clinical or administrative staff."),
-    ],
-  },
-  {
-    id: "r7", clientId: "crestwood", name: "Surgical Tech", token: "g9d4-63ef-i58h", type: "Technical",
-    tavusPrompt: "",
-    questions: [
-      q("Describe your experience scrubbing on orthopedic or surgical cases."),
-      q("How do you ensure sterile field integrity throughout a procedure?"),
-      q("Tell me about a time you anticipated a surgeon's need during a case."),
-      q("Describe your instrument counting process and how you handle count discrepancies."),
-    ],
-  },
-  {
-    id: "r8", clientId: "pinnacle", name: "Patient Coordinator", token: "h0e5-74fg-j69i", type: "Basic",
-    tavusPrompt: "",
-    questions: [
-      q("How do you build rapport with patients during the intake and scheduling process?"),
-      q("Describe how you explain treatment plans and financial responsibilities to patients."),
-      q("Tell me about a time you helped retain a patient who was considering leaving the practice."),
-    ],
-  },
-  {
-    id: "r9", clientId: "lakeside", name: "Patient Coordinator", token: "i1f6-85gh-k70j", type: "Basic",
-    tavusPrompt: "",
-    questions: [
-      q("How do you prioritize follow-up calls for patients with pending treatment plans?"),
-      q("Describe your experience coordinating referrals to specialists."),
-      q("Tell me about a time you navigated a difficult conversation about patient financial responsibility."),
-    ],
-  },
-  {
-    id: "r10", clientId: "harbor", name: "Medical Assistant", token: "j2g7-96hi-l81k", type: "Basic",
-    tavusPrompt: "",
-    questions: [
-      q("Describe your clinical skills including vitals, injections, and phlebotomy."),
-      q("How do you ensure accuracy when transcribing physician notes into the EHR?"),
-      q("Tell me about your experience supporting a busy outpatient clinic."),
-    ],
-  },
-];
+function trimTrailingSlashes(value: unknown): string {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function firstBase(...values: unknown[]): string {
+  for (const value of values) {
+    const normalized = trimTrailingSlashes(value);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+const backendBase = firstBase(
+  (env as Record<string, unknown>).VITE_BACKEND_URL,
+  (env as Record<string, unknown>).VITE_API_URL,
+  (env as Record<string, unknown>).VITE_PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).PUBLIC_BACKEND_URL,
+  (env as Record<string, unknown>).BACKEND_URL,
+);
+
+function parseJsonSafe(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function extractErrorMessage(text: string): string {
+  if (!text) return "Failed to load role configs.";
+  const data = parseJsonSafe(text);
+  const detail =
+    data && typeof data === "object"
+      ? (data as { detail?: unknown }).detail ??
+        (data as { message?: unknown }).message ??
+        (data as { error?: unknown }).error
+      : null;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  return text;
+}
+
+function normalizeRoleType(value: unknown): RoleType {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "technical") return "Technical";
+  if (normalized === "detailed") return "Detailed";
+  return "Basic";
+}
+
+let questionIdSeed = 100;
+function toRubricQuestions(values: string[]): RubricQuestion[] {
+  return values
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .map((text) => ({ id: questionIdSeed++, text }));
+}
+
+function extractRubricQuestions(rubric: unknown): string[] {
+  const questions: string[] = [];
+  const seen = new Set<string>();
+  const add = (value: unknown) => {
+    const text = value == null ? "" : String(value).trim();
+    if (!text || seen.has(text)) return;
+    seen.add(text);
+    questions.push(text);
+  };
+  const handleItem = (item: unknown) => {
+    if (item == null) return;
+    if (typeof item === "string" || typeof item === "number") {
+      add(item);
+      return;
+    }
+    if (Array.isArray(item)) {
+      item.forEach(handleItem);
+      return;
+    }
+    if (typeof item === "object") {
+      const obj = item as Record<string, unknown>;
+      const candidate = obj.question || obj.text || obj.prompt || obj.label || obj.value;
+      if (candidate) add(candidate);
+      if (Array.isArray(obj.questions)) obj.questions.forEach(handleItem);
+      if (Array.isArray(obj.rubric)) obj.rubric.forEach(handleItem);
+      if (Array.isArray(obj.items)) obj.items.forEach(handleItem);
+      if (Array.isArray(obj.prompts)) obj.prompts.forEach(handleItem);
+    }
+  };
+
+  if (rubric == null) return questions;
+  if (typeof rubric === "string") {
+    const raw = rubric.trim();
+    if (!raw) return questions;
+    if ((raw.startsWith("{") && raw.endsWith("}")) || (raw.startsWith("[") && raw.endsWith("]"))) {
+      try {
+        handleItem(JSON.parse(raw));
+        return questions;
+      } catch {
+        add(raw);
+        return questions;
+      }
+    }
+    add(raw);
+    return questions;
+  }
+
+  handleItem(rubric);
+  return questions;
+}
 
 const typeColors: Record<RoleType, { bg: string; text: string }> = {
   Basic:     { bg: "rgba(163,128,246,0.12)", text: "#7C5FCC" },
@@ -135,9 +144,11 @@ const typeColors: Record<RoleType, { bg: string; text: string }> = {
 interface EditModalProps {
   config: RoleConfig;
   onClose: () => void;
+  onSave: (next: { tavusPrompt: string; questions: RubricQuestion[] }) => void;
+  saving: boolean;
 }
 
-function EditModal({ config, onClose }: EditModalProps) {
+function EditModal({ config, onClose, onSave, saving }: EditModalProps) {
   const [tavus, setTavus]         = useState(config.tavusPrompt);
   const [questions, setQuestions] = useState<RubricQuestion[]>(config.questions);
 
@@ -254,9 +265,10 @@ function EditModal({ config, onClose }: EditModalProps) {
           <button
             className="px-6 py-2 rounded-full text-sm font-bold text-white transition-opacity hover:opacity-90"
             style={{ backgroundColor: "#A380F6" }}
-            onClick={onClose}
+            onClick={() => onSave({ tavusPrompt: tavus, questions })}
+            disabled={saving}
           >
-            Save
+            {saving ? "Saving..." : "Save"}
           </button>
         </div>
       </div>
@@ -266,19 +278,135 @@ function EditModal({ config, onClose }: EditModalProps) {
 
 /* ── Main Page ───────────────────────────────────────────────── */
 export default function AdminRoleConfigPage() {
-  const { selectedClient } = useAdminClient();
+  const {
+    selectedClientId,
+    clients,
+    loading: adminClientsLoading,
+    error: adminClientsError,
+  } = useAdminClient();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [sortKey, setSortKey]     = useState<"name" | "type">("name");
   const [sortDir, setSortDir]     = useState<"asc" | "desc">("asc");
+  const [roles, setRoles] = useState<RoleConfig[]>([]);
+  const [rolesLoading, setRolesLoading] = useState(false);
+  const [rolesError, setRolesError] = useState("");
+  const [actionNotice, setActionNotice] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+  const [loadingConfig, setLoadingConfig] = useState<Record<string, boolean>>({});
+  const [savingConfig, setSavingConfig] = useState<Record<string, boolean>>({});
+
+  const clientNameById = useMemo(
+    () =>
+      Object.fromEntries(
+        clients
+          .filter((client) => client.id !== "all")
+          .map((client) => [client.id, client.name]),
+      ),
+    [clients],
+  );
+
+  useEffect(() => {
+    if (!actionNotice) return;
+    const timer = setTimeout(() => setActionNotice(null), 3200);
+    return () => clearTimeout(timer);
+  }, [actionNotice]);
+
+  const getSessionToken = async (): Promise<string> => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const token = String(session?.access_token || "").trim();
+    if (!token) throw new Error("Missing session token.");
+    return token;
+  };
+
+  useEffect(() => {
+    let alive = true;
+
+    const loadRoles = async () => {
+      if (adminClientsLoading) return;
+      if (adminClientsError) {
+        if (!alive) return;
+        setRoles([]);
+        setRolesError(adminClientsError);
+        setRolesLoading(false);
+        return;
+      }
+      if (!backendBase) {
+        if (!alive) return;
+        setRoles([]);
+        setRolesError("Missing backend base URL configuration.");
+        setRolesLoading(false);
+        return;
+      }
+
+      if (!alive) return;
+      setRolesLoading(true);
+      setRolesError("");
+
+      try {
+        const token = await getSessionToken();
+        const isAllClients = selectedClientId === "all";
+        const url = isAllClients
+          ? `${backendBase}/admin/roles`
+          : `${backendBase}/admin/roles?client_id=${encodeURIComponent(selectedClientId)}`;
+
+        const response = await fetch(url, {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "omit",
+        });
+        const text = await response.text();
+        if (!response.ok) throw new Error(extractErrorMessage(text));
+
+        const payload = parseJsonSafe(text);
+        const items =
+          payload && typeof payload === "object" && Array.isArray((payload as { items?: unknown }).items)
+            ? (payload as { items: unknown[] }).items
+            : [];
+
+        const mapped: RoleConfig[] = items
+          .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+          .map((item) => {
+            const roleId = String(item.id || "").trim();
+            const roleClientId = String(item.client_id || "").trim();
+            return {
+              id: roleId,
+              clientId: roleClientId,
+              clientName: String(clientNameById[roleClientId] || "").trim(),
+              name: String(item.title || "").trim() || "Untitled role",
+              token: String(item.slug_or_token || roleId).trim(),
+              type: normalizeRoleType(item.interview_type),
+              tavusPrompt: "",
+              questions: toRubricQuestions(extractRubricQuestions(item.rubric)),
+            };
+          })
+          .filter((role) => Boolean(role.id));
+
+        if (!alive) return;
+        setRoles(mapped);
+      } catch (error) {
+        if (!alive) return;
+        setRoles([]);
+        setRolesError(error instanceof Error ? error.message : "Failed to load role configs.");
+      } finally {
+        if (alive) setRolesLoading(false);
+      }
+    };
+
+    void loadRoles();
+    return () => {
+      alive = false;
+    };
+  }, [selectedClientId, adminClientsLoading, adminClientsError, clientNameById]);
 
   const handleSort = (key: "name" | "type") => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else { setSortKey(key); setSortDir("asc"); }
   };
 
-  const filtered = selectedClient.id === "all"
-    ? ROLE_CONFIGS
-    : ROLE_CONFIGS.filter((r) => r.clientId === selectedClient.id);
+  const filtered = selectedClientId === "all"
+    ? roles
+    : roles.filter((role) => role.clientId === selectedClientId);
 
   const sorted = [...filtered].sort((a, b) => {
     const av = sortKey === "name" ? a.name.toLowerCase() : a.type.toLowerCase();
@@ -288,7 +416,121 @@ export default function AdminRoleConfigPage() {
     return 0;
   });
 
-  const editingConfig = editingId ? ROLE_CONFIGS.find((r) => r.id === editingId) ?? null : null;
+  const editingConfig = editingId ? roles.find((role) => role.id === editingId) ?? null : null;
+
+  const openRoleConfig = async (role: RoleConfig) => {
+    if (!role.id || !role.clientId || loadingConfig[role.id]) return;
+    if (!backendBase) {
+      setActionNotice({ tone: "error", text: "Missing backend base URL configuration." });
+      return;
+    }
+
+    setActionNotice(null);
+    setLoadingConfig((prev) => ({ ...prev, [role.id]: true }));
+    try {
+      const token = await getSessionToken();
+      const response = await fetch(
+        `${backendBase}/admin/roles/${encodeURIComponent(role.id)}/interview-config?client_id=${encodeURIComponent(role.clientId)}`,
+        {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "omit",
+        },
+      );
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text));
+
+      const payload = parseJsonSafe(text) as { item?: unknown } | null;
+      const item = payload?.item && typeof payload.item === "object"
+        ? (payload.item as { tavus_prompt?: unknown; rubric_questions?: unknown })
+        : null;
+      const nextPrompt = typeof item?.tavus_prompt === "string" ? item.tavus_prompt : "";
+      const nextQuestionsRaw = Array.isArray(item?.rubric_questions)
+        ? item.rubric_questions.map((question) => String(question || "").trim()).filter(Boolean)
+        : [];
+      const nextQuestions = toRubricQuestions(nextQuestionsRaw);
+
+      setRoles((prev) =>
+        prev.map((entry) =>
+          entry.id === role.id
+            ? { ...entry, tavusPrompt: nextPrompt, questions: nextQuestions }
+            : entry,
+        ),
+      );
+      setEditingId(role.id);
+    } catch (error) {
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not load role config.",
+      });
+    } finally {
+      setLoadingConfig((prev) => ({ ...prev, [role.id]: false }));
+    }
+  };
+
+  const saveRoleConfig = async (next: { tavusPrompt: string; questions: RubricQuestion[] }) => {
+    if (!editingConfig || !editingConfig.id || !editingConfig.clientId || savingConfig[editingConfig.id]) return;
+    if (!backendBase) {
+      setActionNotice({ tone: "error", text: "Missing backend base URL configuration." });
+      return;
+    }
+
+    const roleId = editingConfig.id;
+    setActionNotice(null);
+    setSavingConfig((prev) => ({ ...prev, [roleId]: true }));
+    try {
+      const token = await getSessionToken();
+      const cleanedPrompt = String(next.tavusPrompt || "").trim();
+      const rubricQuestions = next.questions
+        .map((question) => String(question.text || "").trim())
+        .filter(Boolean);
+
+      const response = await fetch(
+        `${backendBase}/admin/roles/${encodeURIComponent(roleId)}/interview-config?client_id=${encodeURIComponent(editingConfig.clientId)}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          credentials: "omit",
+          body: JSON.stringify({
+            tavus_prompt: cleanedPrompt ? cleanedPrompt : null,
+            rubric_questions: rubricQuestions,
+          }),
+        },
+      );
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text));
+
+      const payload = parseJsonSafe(text) as { item?: unknown } | null;
+      const item = payload?.item && typeof payload.item === "object"
+        ? (payload.item as { tavus_prompt?: unknown; rubric_questions?: unknown })
+        : null;
+      const nextPrompt = typeof item?.tavus_prompt === "string" ? item.tavus_prompt : cleanedPrompt;
+      const nextQuestionsRaw = Array.isArray(item?.rubric_questions)
+        ? item.rubric_questions.map((question) => String(question || "").trim()).filter(Boolean)
+        : rubricQuestions;
+      const nextQuestionsMapped = toRubricQuestions(nextQuestionsRaw);
+
+      setRoles((prev) =>
+        prev.map((entry) =>
+          entry.id === roleId
+            ? { ...entry, tavusPrompt: nextPrompt, questions: nextQuestionsMapped }
+            : entry,
+        ),
+      );
+      setActionNotice({ tone: "success", text: "Role config saved." });
+      setEditingId(null);
+    } catch (error) {
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not save role config.",
+      });
+    } finally {
+      setSavingConfig((prev) => ({ ...prev, [roleId]: false }));
+    }
+  };
 
   function SortIcon({ col }: { col: "name" | "type" }) {
     if (sortKey !== col) return <ChevronDown className="w-3 h-3 text-[#0A1547]/20 ml-0.5 flex-shrink-0" />;
@@ -300,12 +542,29 @@ export default function AdminRoleConfigPage() {
   return (
     <AdminLayout title="Role Config">
       {editingConfig && (
-        <EditModal config={editingConfig} onClose={() => setEditingId(null)} />
+        <EditModal
+          config={editingConfig}
+          onClose={() => setEditingId(null)}
+          onSave={saveRoleConfig}
+          saving={savingConfig[editingConfig.id] === true}
+        />
       )}
 
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-black text-[#0A1547]">Role Config</h2>
       </div>
+      {actionNotice && (
+        <div
+          className="mb-4 px-4 py-2.5 rounded-xl text-sm font-semibold"
+          style={{
+            border: actionNotice.tone === "error" ? "1px solid rgba(239,68,68,0.25)" : "1px solid rgba(2,217,157,0.25)",
+            backgroundColor: actionNotice.tone === "error" ? "rgba(239,68,68,0.08)" : "rgba(2,217,157,0.10)",
+            color: actionNotice.tone === "error" ? "#DC2626" : "#047857",
+          }}
+        >
+          {actionNotice.text}
+        </div>
+      )}
 
       <div
         className="bg-white rounded-2xl overflow-hidden"
@@ -330,8 +589,17 @@ export default function AdminRoleConfigPage() {
 
         {/* Rows */}
         <div className="divide-y divide-gray-50">
-          {sorted.map((role) => {
+          {rolesLoading ? (
+            <div className="py-12 text-center">
+              <p className="text-sm text-[#0A1547]/35 font-semibold">Loading role configs...</p>
+            </div>
+          ) : rolesError ? (
+            <div className="py-12 text-center">
+              <p className="text-sm text-red-500 font-semibold">{rolesError}</p>
+            </div>
+          ) : sorted.map((role) => {
             const tc = typeColors[role.type];
+            const showClientContext = selectedClientId === "all";
             return (
               <div
                 key={role.id}
@@ -340,6 +608,9 @@ export default function AdminRoleConfigPage() {
                 <div className="min-w-0 pr-4">
                   <p className="text-sm font-bold text-[#0A1547] leading-snug truncate">{role.name}</p>
                   <p className="text-[10px] font-mono text-[#0A1547]/30 mt-0.5 truncate">{role.token}</p>
+                  {showClientContext && (
+                    <p className="text-[10px] text-[#0A1547]/40 mt-0.5 truncate">{role.clientName || "Unknown client"}</p>
+                  )}
                 </div>
 
                 <span
@@ -352,15 +623,18 @@ export default function AdminRoleConfigPage() {
                 <button
                   className="px-4 py-1.5 rounded-full text-xs font-bold text-white transition-opacity hover:opacity-90 active:scale-95 w-fit"
                   style={{ backgroundColor: "#A380F6" }}
-                  onClick={() => setEditingId(role.id)}
+                  onClick={() => {
+                    void openRoleConfig(role);
+                  }}
+                  disabled={loadingConfig[role.id] === true}
                 >
-                  Edit
+                  {loadingConfig[role.id] === true ? "Loading..." : "Edit"}
                 </button>
               </div>
             );
           })}
 
-          {sorted.length === 0 && (
+          {!rolesLoading && !rolesError && sorted.length === 0 && (
             <div className="py-12 text-center">
               <p className="text-sm text-[#0A1547]/35 font-semibold">No roles configured for this client.</p>
             </div>
