@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/lib/supabaseClient";
+import { buildPwResetUrl } from "@/lib/urlConfig";
 
 export default function Footer() {
   const isValidEmail = (value: string) =>
@@ -10,6 +12,8 @@ export default function Footer() {
   const [email, setEmail]                   = useState("");
   const [password, setPassword]             = useState("");
   const [emailError, setEmailError]         = useState("");
+  const [resetError, setResetError]         = useState("");
+  const [resetSuccess, setResetSuccess]     = useState("");
   const dropdownRef                         = useRef<HTMLDivElement>(null);
   const { loginAdmin, adminLoginLoading, adminLoginError, clearAdminLoginError } = useAuth();
   const [, setLocation]                     = useLocation();
@@ -26,6 +30,8 @@ export default function Footer() {
 
   const handleAdminSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
+    setResetError("");
+    setResetSuccess("");
     const normalizedEmail = email.trim();
     if (!normalizedEmail || !password) {
       setEmailError("Email and password are required.");
@@ -42,6 +48,34 @@ export default function Footer() {
     if (error) return;
     setAdminLoginOpen(false);
     setLocation("/admin");
+  };
+
+  const startAdminReset = async () => {
+    setResetError("");
+    setResetSuccess("");
+    clearAdminLoginError();
+
+    const normalizedEmail = email.trim();
+    if (!normalizedEmail) {
+      setResetError("Enter your email first.");
+      return;
+    }
+    if (!isValidEmail(normalizedEmail)) {
+      setEmailError("Please enter a valid email address.");
+      return;
+    }
+    setEmailError("");
+
+    const redirectTo = buildPwResetUrl({ origin: "admin" });
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+      redirectTo,
+    });
+    if (error) {
+      setResetError(`Could not start reset: ${error.message}`);
+      return;
+    }
+
+    setResetSuccess("Check your email for a password reset link.");
   };
 
   return (
@@ -135,6 +169,8 @@ export default function Footer() {
                 onClick={() => {
                   setAdminLoginOpen((o) => !o);
                   setEmailError("");
+                  setResetError("");
+                  setResetSuccess("");
                   clearAdminLoginError();
                 }}
                 className="text-white/25 text-xs hover:text-white/50 transition-colors font-semibold"
@@ -172,6 +208,8 @@ export default function Footer() {
                       onChange={(e) => {
                         setEmail(e.target.value);
                         setEmailError("");
+                        setResetError("");
+                        setResetSuccess("");
                         clearAdminLoginError();
                       }}
                       className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all"
@@ -194,12 +232,26 @@ export default function Footer() {
                     >
                       {adminLoginLoading ? "Signing in..." : "Sign In"}
                     </button>
+                    <button
+                      type="button"
+                      onClick={startAdminReset}
+                      className="text-xs text-[#A380F6] hover:underline text-left"
+                      style={{ background: "none", border: "none", padding: 0, cursor: "pointer", font: "inherit" }}
+                    >
+                      Forgot password?
+                    </button>
                   </form>
                   {emailError && (
                     <p className="mt-2 text-xs text-red-500">{emailError}</p>
                   )}
                   {adminLoginError && (
                     <p className="mt-2 text-xs text-red-500">{adminLoginError}</p>
+                  )}
+                  {resetError && (
+                    <p className="mt-2 text-xs text-red-500">{resetError}</p>
+                  )}
+                  {resetSuccess && (
+                    <p className="mt-2 text-xs text-[#02D99D]">{resetSuccess}</p>
                   )}
                 </div>
               )}

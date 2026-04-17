@@ -403,8 +403,9 @@ export default function MembersPage() {
     setResettingPasswords((prev) => ({ ...prev, [memberId]: true }));
 
     try {
+      const redirectTo = buildPwResetUrl({ origin: "client" });
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: buildPwResetUrl({ origin: "client" }),
+        redirectTo,
       });
       if (error) throw error;
       setActionNotice({ tone: "success", text: "Password reset email sent." });

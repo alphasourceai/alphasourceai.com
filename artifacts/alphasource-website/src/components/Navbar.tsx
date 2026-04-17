@@ -77,8 +77,9 @@ export default function Navbar() {
     }
     setEmailError("");
 
+    const redirectTo = buildPwResetUrl({ origin: "client" });
     const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-      redirectTo: buildPwResetUrl({ origin: "client" }),
+      redirectTo,
     });
 
     if (error) {
