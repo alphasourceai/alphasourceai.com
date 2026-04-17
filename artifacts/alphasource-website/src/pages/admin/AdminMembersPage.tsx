@@ -1,19 +1,22 @@
 import { useState, useEffect } from "react";
-import { Trash2, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
+import { Trash2, ChevronDown, ChevronUp, Key } from "lucide-react";
 import AdminLayout from "@/components/AdminLayout";
 import { useAdminClient } from "@/context/AdminClientContext";
 import { supabase } from "@/lib/supabaseClient";
 
 /* ── Types ───────────────────────────────────────────────────── */
 type MemberRole = "Manager" | "Member";
-type SortKey    = "name" | "role";
+type SortKey    = "name" | "role" | "client";
 type SortDir    = "asc"  | "desc";
 
 interface Member {
-  id:    string;
-  name:  string;
+  id: string;
+  rowKey: string;
+  clientId: string;
+  clientName: string;
+  name: string;
   email: string;
-  role:  MemberRole;
+  role: MemberRole;
 }
 
 const env =
@@ -116,6 +119,8 @@ export default function AdminMembersPage() {
   const [addingMember, setAddingMember] = useState<boolean>(false);
   const [removingMembers, setRemovingMembers] = useState<Record<string, boolean>>({});
   const [resettingMembers, setResettingMembers] = useState<Record<string, boolean>>({});
+  const activeClientId = String(selectedClientId || "").trim();
+  const isAllClientsView = activeClientId === "all";
 
   /* Reset local form/sort state whenever selected client changes */
   useEffect(() => {
@@ -150,7 +155,7 @@ export default function AdminMembersPage() {
   useEffect(() => {
     let alive = true;
 
-    const fetchMembersForClient = async (clientId: string, token: string): Promise<Member[]> => {
+    const fetchMembersForClient = async (clientId: string, clientName: string, token: string): Promise<Member[]> => {
       const response = await fetch(
         `${backendBase}/admin/client-members?client_id=${encodeURIComponent(clientId)}`,
         {
@@ -168,12 +173,21 @@ export default function AdminMembersPage() {
           : [];
       return items
         .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
-        .map((item, index) => ({
-          id: String(item.id || item.user_id || item.email || `${clientId}:${index}`),
-          name: String(item.name || "").trim() || "—",
-          email: String(item.email || "").trim() || "—",
-          role: normalizeMemberRole(item.role),
-        }));
+        .map((item, index) => {
+          const memberId = String(item.id || item.user_id || item.email || `${clientId}:${index}`);
+          const memberEmail = String(item.email || "").trim() || "—";
+          const createdAt = String(item.created_at || "").trim();
+          const rowKey = `${clientId}:${memberId}:${createdAt || `idx:${index}`}:${memberEmail}`;
+          return {
+            id: memberId,
+            rowKey,
+            clientId,
+            clientName: String(item.client_name || clientName || "—").trim() || "—",
+            name: String(item.name || "").trim() || "—",
+            email: memberEmail,
+            role: normalizeMemberRole(item.role),
+          };
+        });
     };
 
     const loadMembers = async () => {
@@ -205,23 +219,28 @@ export default function AdminMembersPage() {
         if (!token) throw new Error("Missing session token.");
 
         let nextMembers: Member[] = [];
-        if (selectedClientId === "all") {
-          const scopedClientIds = adminClients
-            .map((client) => String(client.id || "").trim())
-            .filter((clientId) => clientId && clientId !== "all");
+        if (activeClientId === "all") {
+          const scopedClients = adminClients
+            .map((client) => ({
+              id: String(client.id || "").trim(),
+              name: String(client.name || "").trim(),
+            }))
+            .filter((client) => client.id && client.id !== "all");
 
           const bundles = await Promise.all(
-            scopedClientIds.map(async (clientId) => {
+            scopedClients.map(async (client) => {
               try {
-                return await fetchMembersForClient(clientId, token);
+                return await fetchMembersForClient(client.id, client.name || "—", token);
               } catch {
                 return [];
               }
             }),
           );
           nextMembers = bundles.flat();
-        } else if (selectedClientId) {
-          nextMembers = await fetchMembersForClient(selectedClientId, token);
+        } else if (activeClientId) {
+          const selectedClientName =
+            adminClients.find((client) => String(client.id || "").trim() === activeClientId)?.name || "—";
+          nextMembers = await fetchMembersForClient(activeClientId, selectedClientName, token);
         }
 
         if (!alive) return;
@@ -251,7 +270,7 @@ export default function AdminMembersPage() {
       setActionNotice({ tone: "error", text: "Missing backend base URL configuration." });
       return;
     }
-    if (!selectedClientId || selectedClientId === "all") {
+    if (!activeClientId || activeClientId === "all") {
       setActionNotice({ tone: "error", text: "Select a client to perform this action." });
       return;
     }
@@ -268,7 +287,7 @@ export default function AdminMembersPage() {
         },
         credentials: "omit",
         body: JSON.stringify({
-          client_id: selectedClientId,
+          client_id: activeClientId,
           email: email.trim(),
           name: name.trim(),
           role: role === "Manager" ? "manager" : "member",
@@ -284,10 +303,19 @@ export default function AdminMembersPage() {
 
       if (item && typeof item === "object") {
         const row = item as Record<string, unknown>;
+        const memberId = String(row.id || row.user_id || row.email || `member:${_nextId++}`);
+        const memberEmail = String(row.email || "").trim() || "—";
+        const createdAt = String(row.created_at || "").trim();
         const nextMember: Member = {
-          id: String(row.id || row.user_id || row.email || `member:${_nextId++}`),
+          id: memberId,
+          rowKey: `${activeClientId}:${memberId}:${createdAt || `local:${_nextId++}`}:${memberEmail}`,
+          clientId: activeClientId,
+          clientName:
+            String(
+              adminClients.find((client) => String(client.id || "").trim() === activeClientId)?.name || "—",
+            ).trim() || "—",
           name: String(row.name || "").trim() || "—",
-          email: String(row.email || "").trim() || "—",
+          email: memberEmail,
           role: normalizeMemberRole(row.role),
         };
         setMembers((prev) => [nextMember, ...prev]);
@@ -308,24 +336,26 @@ export default function AdminMembersPage() {
     }
   };
 
-  const handleRemove = async (id: string) => {
+  const handleRemove = async (member: Member) => {
+    const id = member.id;
+    const rowKey = member.rowKey;
     if (!id) return;
     if (!backendBase) {
       setActionNotice({ tone: "error", text: "Missing backend base URL configuration." });
       return;
     }
-    if (!selectedClientId || selectedClientId === "all") {
+    if (!activeClientId || activeClientId === "all") {
       setActionNotice({ tone: "error", text: "Select a client to perform this action." });
       return;
     }
-    if (removingMembers[id]) return;
+    if (removingMembers[rowKey]) return;
 
     setActionNotice(null);
-    setRemovingMembers((prev) => ({ ...prev, [id]: true }));
+    setRemovingMembers((prev) => ({ ...prev, [rowKey]: true }));
     try {
       const token = await getSessionToken();
       const response = await fetch(
-        `${backendBase}/admin/client-members/${encodeURIComponent(id)}?client_id=${encodeURIComponent(selectedClientId)}`,
+        `${backendBase}/admin/client-members/${encodeURIComponent(id)}?client_id=${encodeURIComponent(activeClientId)}`,
         {
           method: "DELETE",
           headers: { Authorization: `Bearer ${token}` },
@@ -334,7 +364,7 @@ export default function AdminMembersPage() {
       );
       const text = await response.text();
       if (!response.ok) throw new Error(extractErrorMessage(text));
-      setMembers((prev) => prev.filter((m) => m.id !== id));
+      setMembers((prev) => prev.filter((m) => !(m.clientId === member.clientId && m.id === id)));
       setActionNotice({ tone: "success", text: "Member removed." });
     } catch (error) {
       setActionNotice({
@@ -342,12 +372,12 @@ export default function AdminMembersPage() {
         text: error instanceof Error ? error.message : "Could not remove member.",
       });
     } finally {
-      setRemovingMembers((prev) => ({ ...prev, [id]: false }));
+      setRemovingMembers((prev) => ({ ...prev, [rowKey]: false }));
     }
   };
 
   const handleSendPasswordReset = async (member: Member) => {
-    const key = member.id || member.email;
+    const key = member.rowKey || member.id || member.email;
     if (!key || !member.email) return;
     if (!backendBase) {
       setActionNotice({ tone: "error", text: "Missing backend base URL configuration." });
@@ -386,14 +416,18 @@ export default function AdminMembersPage() {
     else { setSortKey(key); setSortDir("asc"); }
   };
 
+  const visibleMembers = isAllClientsView
+    ? members
+    : members.filter((member) => member.clientId === activeClientId);
+
   const sorted = sortKey
-    ? [...members].sort((a, b) => {
-        const av = a[sortKey].toLowerCase();
-        const bv = b[sortKey].toLowerCase();
+    ? [...visibleMembers].sort((a, b) => {
+        const av = (sortKey === "client" ? a.clientName : a[sortKey]).toLowerCase();
+        const bv = (sortKey === "client" ? b.clientName : b[sortKey]).toLowerCase();
         const cmp = av.localeCompare(bv);
         return sortDir === "asc" ? cmp : -cmp;
       })
-    : members;
+    : visibleMembers;
 
   function SortIcon({ col }: { col: SortKey }) {
     if (sortKey !== col) return <ChevronDown className="w-3 h-3 text-[#0A1547]/20 ml-0.5 flex-shrink-0" />;
@@ -503,6 +537,16 @@ export default function AdminMembersPage() {
                     Role <SortIcon col="role" />
                   </button>
                 </th>
+                {isAllClientsView && (
+                  <th className="px-4 py-3.5 text-left">
+                    <button
+                      className="flex items-center text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 hover:text-[#0A1547]/70 transition-colors"
+                      onClick={() => handleSort("client")}
+                    >
+                      Client <SortIcon col="client" />
+                    </button>
+                  </th>
+                )}
                 <th className="px-4 py-3.5 text-center text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">
                   Reset
                 </th>
@@ -514,26 +558,26 @@ export default function AdminMembersPage() {
             <tbody>
               {membersLoading ? (
                 <tr>
-                  <td colSpan={4} className="text-center py-14 text-sm text-[#0A1547]/30 font-semibold">
+                  <td colSpan={isAllClientsView ? 5 : 4} className="text-center py-14 text-sm text-[#0A1547]/30 font-semibold">
                     Loading members...
                   </td>
                 </tr>
               ) : membersError ? (
                 <tr>
-                  <td colSpan={4} className="text-center py-14 text-sm text-red-500 font-semibold">
+                  <td colSpan={isAllClientsView ? 5 : 4} className="text-center py-14 text-sm text-red-500 font-semibold">
                     {membersError}
                   </td>
                 </tr>
               ) : sorted.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="text-center py-14 text-sm text-[#0A1547]/30 font-semibold">
+                  <td colSpan={isAllClientsView ? 5 : 4} className="text-center py-14 text-sm text-[#0A1547]/30 font-semibold">
                     No members yet — add one above.
                   </td>
                 </tr>
               ) : (
                 sorted.map((m, idx) => (
                   <tr
-                    key={m.id}
+                    key={m.rowKey}
                     className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors"
                     style={idx === sorted.length - 1 ? { borderBottom: "none" } : {}}
                   >
@@ -548,17 +592,24 @@ export default function AdminMembersPage() {
                       <RoleBadge role={m.role} />
                     </td>
 
+                    {/* Client */}
+                    {isAllClientsView && (
+                      <td className="px-4 py-4">
+                        <p className="text-sm font-semibold text-[#0A1547]/75">{m.clientName}</p>
+                      </td>
+                    )}
+
                     {/* Reset */}
                     <td className="px-4 py-4 text-center">
                       <button
                         onClick={() => {
                           void handleSendPasswordReset(m);
                         }}
-                        disabled={resettingMembers[m.id || m.email] === true}
-                        className="inline-flex items-center justify-center p-2 rounded-lg text-[#0A1547]/25 hover:text-[#A380F6] hover:bg-[rgba(163,128,246,0.08)] transition-all"
-                        title={`Reset password for ${m.name}`}
+                        disabled={resettingMembers[m.rowKey || m.id || m.email] === true}
+                        className="inline-flex items-center justify-center p-2 rounded-lg text-[#0A1547]/25 hover:text-[#A380F6] hover:bg-[#A380F6]/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                        title={resettingMembers[m.rowKey || m.id || m.email] === true ? "Sending password reset..." : `Send password reset to ${m.name}`}
                       >
-                        <RotateCcw className="w-4 h-4" />
+                        <Key className={`w-4 h-4 ${resettingMembers[m.rowKey || m.id || m.email] === true ? "animate-spin" : ""}`} />
                       </button>
                     </td>
 
@@ -566,9 +617,9 @@ export default function AdminMembersPage() {
                     <td className="px-4 py-4 pr-5 text-center">
                       <button
                         onClick={() => {
-                          void handleRemove(m.id);
+                          void handleRemove(m);
                         }}
-                        disabled={removingMembers[m.id] === true}
+                        disabled={removingMembers[m.rowKey] === true}
                         className="inline-flex items-center justify-center p-2 rounded-lg text-[#0A1547]/25 hover:text-red-500 hover:bg-red-50 transition-colors"
                         title={`Remove ${m.name}`}
                       >
