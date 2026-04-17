@@ -7,6 +7,7 @@ import {
   FileText,
   Download,
   FileDown,
+  Copy,
   X,
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -94,6 +95,47 @@ function parseJsonSafe(text: string): unknown {
   } catch {
     return null;
   }
+}
+
+async function copyTextToClipboard(text: string): Promise<void> {
+  const value = String(text || "");
+  if (!value) throw new Error("Transcript is empty.");
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(value);
+      return;
+    }
+  } catch {
+    // fall through to legacy copy path
+  }
+
+  const ta = document.createElement("textarea");
+  ta.value = value;
+  ta.style.position = "fixed";
+  ta.style.left = "-9999px";
+  ta.setAttribute("readonly", "");
+  document.body.appendChild(ta);
+  ta.select();
+  const copied = document.execCommand("copy");
+  document.body.removeChild(ta);
+  if (!copied) throw new Error("Could not copy transcript.");
+}
+
+function downloadTranscriptText(candidateName: string, transcript: string): void {
+  const safeBase = String(candidateName || "candidate")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "candidate";
+  const blob = new Blob([String(transcript || "")], { type: "text/plain;charset=utf-8" });
+  const objectUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = `${safeBase}-transcript.txt`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(objectUrl);
 }
 
 function toScoreOrNull(value: unknown): number | null {
@@ -714,6 +756,7 @@ export default function CandidatesPage() {
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
   const [transcriptModal, setTranscriptModal] = useState<{ candidateName: string; transcript: string } | null>(null);
+  const [transcriptModalNotice, setTranscriptModalNotice] = useState<{ tone: "success" | "error"; text: string } | null>(null);
   const minScoreInputRef                = useRef<HTMLInputElement>(null);
 
   const minScoreNum = minScore === "" ? null : parseInt(minScore, 10);
@@ -936,6 +979,32 @@ export default function CandidatesPage() {
     });
   }, [loadCandidates, withCandidateAction]);
 
+  const copyTranscriptFromModal = useCallback(async () => {
+    if (!transcriptModal) return;
+    try {
+      await copyTextToClipboard(transcriptModal.transcript);
+      setTranscriptModalNotice({ tone: "success", text: "Transcript copied." });
+    } catch (error) {
+      setTranscriptModalNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not copy transcript.",
+      });
+    }
+  }, [transcriptModal]);
+
+  const downloadTranscriptFromModal = useCallback(() => {
+    if (!transcriptModal) return;
+    try {
+      downloadTranscriptText(transcriptModal.candidateName, transcriptModal.transcript);
+      setTranscriptModalNotice({ tone: "success", text: "Transcript downloaded." });
+    } catch (error) {
+      setTranscriptModalNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not download transcript.",
+      });
+    }
+  }, [transcriptModal]);
+
   useEffect(() => {
     void loadCandidates({ showPageLoader: true }).catch(() => {});
   }, [loadCandidates]);
@@ -945,6 +1014,10 @@ export default function CandidatesPage() {
     const hasExpanded = candidates.some((candidate) => candidate.id === expandedId);
     if (!hasExpanded) setExpandedId(null);
   }, [candidates, expandedId]);
+
+  useEffect(() => {
+    setTranscriptModalNotice(null);
+  }, [transcriptModal]);
 
   /* Filter */
   const filtered = candidates.filter((c) => {
@@ -1249,6 +1322,41 @@ export default function CandidatesPage() {
               <pre className="text-sm leading-relaxed text-[#0A1547]/85 whitespace-pre-wrap break-words font-semibold">
                 {transcriptModal.transcript}
               </pre>
+              {transcriptModalNotice && (
+                <p
+                  className={`mt-4 text-xs font-semibold ${
+                    transcriptModalNotice.tone === "success" ? "text-[#009E73]" : "text-red-500"
+                  }`}
+                >
+                  {transcriptModalNotice.text}
+                </p>
+              )}
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTranscriptModal(null)}
+                  className="px-4 py-2 text-xs font-bold rounded-full border border-gray-200 text-[#0A1547]/70 hover:bg-gray-50 transition-colors"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { void copyTranscriptFromModal(); }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-full border border-gray-200 text-[#0A1547]/70 hover:bg-gray-50 transition-colors"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  Copy Transcript
+                </button>
+                <button
+                  type="button"
+                  onClick={downloadTranscriptFromModal}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white rounded-full transition-all hover:opacity-90"
+                  style={{ backgroundColor: "#A380F6" }}
+                >
+                  <FileDown className="w-3.5 h-3.5" />
+                  Download Transcript
+                </button>
+              </div>
             </div>
           </div>
         </div>
