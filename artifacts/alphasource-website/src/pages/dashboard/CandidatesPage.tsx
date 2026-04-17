@@ -1301,7 +1301,7 @@ export default function CandidatesPage() {
             aria-label="Close transcript"
           />
           <div
-            className="relative w-full max-w-4xl max-h-[85vh] bg-white rounded-2xl overflow-hidden"
+            className="relative w-full max-w-2xl max-h-[85vh] bg-white rounded-2xl overflow-hidden"
             style={{ border: "1px solid rgba(10,21,71,0.10)", boxShadow: "0 20px 44px rgba(10,21,71,0.24)" }}
           >
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
@@ -1319,12 +1319,12 @@ export default function CandidatesPage() {
               </button>
             </div>
             <div className="px-5 py-4 overflow-y-auto max-h-[calc(85vh-72px)]">
-              <pre className="text-sm leading-relaxed text-[#0A1547]/85 whitespace-pre-wrap break-words font-semibold">
+              <p className="text-sm leading-relaxed text-[#0A1547]/80 whitespace-pre-wrap break-words font-semibold">
                 {transcriptModal.transcript}
-              </pre>
+              </p>
               {transcriptModalNotice && (
                 <p
-                  className={`mt-4 text-xs font-semibold ${
+                  className={`mt-2 text-xs font-semibold ${
                     transcriptModalNotice.tone === "success" ? "text-[#009E73]" : "text-red-500"
                   }`}
                 >
