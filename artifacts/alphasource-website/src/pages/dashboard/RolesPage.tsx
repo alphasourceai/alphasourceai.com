@@ -1058,14 +1058,14 @@ export default function RolesPage() {
                 <th className="text-center px-4 py-3.5 whitespace-nowrap">
                   <span className="flex items-center justify-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">
                     Rubric
-                    <InfoTooltip content="AI-generated scoring rubric for evaluating candidates" />
+                    <InfoTooltip content="Role-specific interview question set and scoring rubric generated for this role" />
                   </span>
                 </th>
                 {/* JD — not sortable */}
                 <th className="text-center px-4 py-3.5 whitespace-nowrap">
                   <span className="flex items-center justify-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">
                     JD
-                    <InfoTooltip content="Job description document attached to this role" />
+                    <InfoTooltip content="Job description file used as source input to generate this role's rubric" />
                   </span>
                 </th>
                 {/* Interview Link */}

@@ -495,7 +495,7 @@ const LABEL_TOOLTIPS: Record<string, string> = {
   Education:   "Credential match against stated educational requirements",
   Clarity:     "How clearly the candidate expressed their thoughts",
   Confidence:  "Composure and assurance demonstrated throughout the interview",
-  Engagement:  "Level of enthusiasm and active participation shown",
+  Engagement:  "Engagement and non-verbal cues such as posture and eye contact",
 };
 
 /* ── Sub-components ─────────────────────────────────── */
@@ -679,7 +679,7 @@ function ExpandedPanel({
         >
           <div className="flex items-center gap-1.5 mb-4">
             <p className="text-xs font-black uppercase tracking-widest text-[#0A1547]/75">Signals</p>
-            <InfoTooltip content="Behavioral signals detected during the interview, including response reliability and AI-assisted answer risk" side="bottom" />
+            <InfoTooltip content="Interview signals based on transcript evidence strength and AI-aided response-risk indicators" side="bottom" />
           </div>
           {hasInterview ? (
             <div className="space-y-3">
@@ -688,7 +688,7 @@ function ExpandedPanel({
                 <div className="flex items-center justify-between mb-1">
                   <span className="flex items-center gap-1 text-xs font-semibold text-[#0A1547]/60">
                     Evaluation Reliability
-                    <InfoTooltip content="Confidence score for the overall AI evaluation based on response completeness and consistency" side="top" />
+                    <InfoTooltip content="Strength of transcript evidence supporting the interview score, not a verdict by itself" side="top" />
                   </span>
                   <span className="text-xs font-black text-[#0A1547]">
                     {typeof c.reliability === "number" ? `${c.reliability}%` : "—"}
@@ -716,7 +716,7 @@ function ExpandedPanel({
               <div className="flex items-center gap-2 pt-1">
                 <span className="flex items-center gap-1 text-xs font-semibold text-[#0A1547]/60">
                   AI-aided interview risk
-                  <InfoTooltip content="Likelihood that the candidate used AI tools or scripted assistance during the interview" side="top" />
+                  <InfoTooltip content="Probabilistic cue of possible AI-assisted responses for follow-up, not a definitive judgment" side="top" />
                 </span>
                 <span
                   className="w-2 h-2 rounded-full flex-shrink-0"

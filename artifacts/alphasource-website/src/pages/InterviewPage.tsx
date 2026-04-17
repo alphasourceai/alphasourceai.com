@@ -4,7 +4,7 @@ import { Upload, FileText, Trash2, Check, ArrowRight, ChevronRight } from "lucid
 
 /* ── Checklist copy (verbatim) ───────────────────────────────────── */
 const CHECKLIST = [
-  "Current resume in PDF or DOCX format",
+  "Current resume in PDF, DOC, or DOCX format",
   "Stable internet connection",
   "3 uninterrupted minutes to complete the interview",
   "Quiet environment free of background conversations and distractions",
@@ -85,6 +85,9 @@ const inputCls =
   "focus:border-[#A380F6] transition-all";
 
 const errorCls = "text-red-500 text-[10px] mt-1 font-semibold";
+const isValidPhone = (value: string) => /^(\d{10}|\(\d{3}\)\s?\d{3}-\d{4}|\d{3}-\d{3}-\d{4}|\d{3}\.\d{3}\.\d{4})$/.test(String(value || "").trim());
+const isValidResumeFile = (file: File | null | undefined) =>
+  Boolean(file && /\.(pdf|doc|docx)$/i.test(String(file.name || "")));
 
 const env = (
   typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {}
@@ -182,9 +185,16 @@ export default function InterviewPage() {
 
   /* ── Helpers ─────────────────────────────────────────────────── */
   function handleFile(file: File) {
-    if (!/\.(pdf|doc|docx)$/i.test(file.name)) return;
+    if (!isValidResumeFile(file)) {
+      if (fileRef.current) fileRef.current.value = "";
+      setErrors((e) => ({
+        ...e,
+        resume: "Resume must be a PDF, DOC, or DOCX file.",
+      }));
+      return;
+    }
     setResumeFile(file);
-    setErrors((e) => ({ ...e, resume: "" }));
+    setErrors((e) => ({ ...e, resume: "", submit: "" }));
   }
 
   function validateStep1() {
@@ -192,7 +202,7 @@ export default function InterviewPage() {
     if (!firstName.trim()) e.firstName = "Required";
     if (!lastName.trim())  e.lastName  = "Required";
     if (!email.trim() || !/\S+@\S+\.\S+/.test(email)) e.email = "A valid email is required";
-    if (!phone.trim())     e.phone     = "Required";
+    if (!isValidPhone(phone)) e.phone = "Enter a valid phone number: XXXXXXXXXX, (XXX) XXX-XXXX, XXX-XXX-XXXX, or XXX.XXX.XXXX.";
     if (!resumeFile)       e.resume    = "Please upload your resume";
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -636,7 +646,7 @@ export default function InterviewPage() {
                     <>
                       <Upload className="w-4 h-4 flex-shrink-0 text-gray-400" />
                       <span className="text-xs text-gray-400">
-                        PDF, DOCX, or DOC — drag here or click to browse
+                        PDF, DOC, or DOCX — drag here or click to browse
                       </span>
                     </>
                   )}

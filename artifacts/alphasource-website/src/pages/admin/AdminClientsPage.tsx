@@ -754,8 +754,8 @@ export default function AdminClientsPage() {
         <div className="flex gap-3">
           <input
             className={inputCls}
-            placeholder="Candidate assistance contact (email)"
-            type="email"
+            placeholder="Candidate assistance contact (email or phone)"
+            type="text"
             value={form.candidateContact}
             onChange={(e) => setForm({ ...form, candidateContact: e.target.value })}
           />

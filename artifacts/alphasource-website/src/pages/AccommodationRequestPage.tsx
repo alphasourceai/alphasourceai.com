@@ -272,7 +272,7 @@ export default function AccommodationRequestPage({ params }: { params?: { role_t
                   className="w-full px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm text-left hover:bg-gray-100 transition-colors"
                   disabled={submitting}
                 >
-                  {form.resume ? form.resume.name : "Upload resume (PDF or DOCX)"}
+                  {form.resume ? form.resume.name : "Upload resume (PDF, DOC, or DOCX)"}
                 </button>
               </div>
 
