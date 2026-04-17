@@ -152,10 +152,26 @@ export function AdminClientProvider({ children }: { children: ReactNode }) {
   );
 
   const selectedClient = useMemo(() => {
-    return clients.find((client) => client.id === selectedClientIdState) || clients[0] || FALLBACK_CLIENT;
-  }, [clients, selectedClientIdState]);
+    const activeClientId = String(selectedClientIdState || "").trim();
+    const matchedClient = clients.find((client) => client.id === activeClientId);
+    if (matchedClient) return matchedClient;
+    if (loading && activeClientId) {
+      return {
+        ...FALLBACK_CLIENT,
+        id: activeClientId,
+        name: activeClientId === FALLBACK_CLIENT.id ? FALLBACK_CLIENT.name : "Loading client...",
+      };
+    }
+    return clients[0] || FALLBACK_CLIENT;
+  }, [clients, selectedClientIdState, loading]);
 
-  const selectedClientId = selectedClient.id || FALLBACK_CLIENT.id;
+  const selectedClientId = useMemo(() => {
+    const activeClientId = String(selectedClientIdState || "").trim();
+    if (activeClientId && (loading || clients.some((client) => client.id === activeClientId))) {
+      return activeClientId;
+    }
+    return selectedClient.id || FALLBACK_CLIENT.id;
+  }, [selectedClientIdState, loading, clients, selectedClient.id]);
 
   const refreshClients = useCallback(async () => {
     if (!backendBase) {

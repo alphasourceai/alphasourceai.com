@@ -136,7 +136,7 @@ function writeStoredClientId(clientId: string): void {
 
 export function ClientProvider({ children }: { children: ReactNode }) {
   const [clients, setClients] = useState<Client[]>([]);
-  const [selectedClientIdState, setSelectedClientIdState] = useState<string>(() => readStoredClientId());
+  const [selectedClientIdState, setSelectedClientIdState] = useState<string>(() => readQueryClientId() || readStoredClientId());
   const queryClientIdRef = useRef<string>(readQueryClientId());
   const queryClientIdConsumedRef = useRef<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
@@ -159,11 +159,27 @@ export function ClientProvider({ children }: { children: ReactNode }) {
   );
 
   const selectedClient = useMemo(() => {
-    if (clients.length === 0) return FALLBACK_CLIENT;
-    return clients.find((client) => client.id === selectedClientIdState) || clients[0];
-  }, [clients, selectedClientIdState]);
+    const activeClientId = String(selectedClientIdState || "").trim();
+    const matchedClient = clients.find((client) => client.id === activeClientId);
+    if (matchedClient) return matchedClient;
+    if (loading && activeClientId) {
+      return {
+        ...FALLBACK_CLIENT,
+        id: activeClientId,
+        name: "Loading client...",
+      };
+    }
+    if (clients.length > 0) return clients[0];
+    return FALLBACK_CLIENT;
+  }, [clients, selectedClientIdState, loading]);
 
-  const selectedClientId = selectedClient.id || "";
+  const selectedClientId = useMemo(() => {
+    const activeClientId = String(selectedClientIdState || "").trim();
+    if (activeClientId && (loading || clients.some((client) => client.id === activeClientId))) {
+      return activeClientId;
+    }
+    return selectedClient.id || "";
+  }, [selectedClientIdState, loading, clients, selectedClient.id]);
 
   const fetchJson = useCallback(async (path: string, token: string): Promise<unknown> => {
     const headers: Record<string, string> = {};
