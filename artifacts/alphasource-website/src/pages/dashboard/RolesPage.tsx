@@ -40,6 +40,16 @@ interface Role {
   jobDescriptionUrl: string;
 }
 
+interface RoleCheckoutResponse {
+  url?: unknown;
+  checkout_client_secret?: unknown;
+}
+
+interface EmbeddedCheckoutState {
+  clientSecret: string;
+  fallbackUrl: string;
+}
+
 const env =
   typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
 
@@ -55,6 +65,14 @@ function firstBase(...values: unknown[]): string {
   return "";
 }
 
+function firstText(...values: unknown[]): string {
+  for (const value of values) {
+    const normalized = String(value || "").trim();
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
 const backendBase = firstBase(
   (env as Record<string, unknown>).VITE_BACKEND_URL,
   (env as Record<string, unknown>).VITE_API_URL,
@@ -62,6 +80,30 @@ const backendBase = firstBase(
   (env as Record<string, unknown>).PUBLIC_BACKEND_URL,
   (env as Record<string, unknown>).BACKEND_URL,
 );
+
+const stripePublishableKey = firstText(
+  (env as Record<string, unknown>).VITE_STRIPE_PUBLISHABLE_KEY,
+  (env as Record<string, unknown>).VITE_STRIPE_PUBLIC_KEY,
+  (env as Record<string, unknown>).STRIPE_PUBLISHABLE_KEY,
+);
+
+function openCheckoutUrl(checkoutUrl: string): void {
+  const url = String(checkoutUrl || "").trim();
+  if (!url) return;
+  if (window?.parent && window.parent !== window) {
+    try {
+      if (window.top) {
+        window.top.location.href = url;
+        return;
+      }
+    } catch {
+      // fallback below
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+  window.location.assign(url);
+}
 
 function mapInterviewType(value: unknown): InterviewType {
   const normalized = String(value || "").trim().toLowerCase();
@@ -283,8 +325,13 @@ export default function RolesPage() {
   const [rubricNotes, setRubricNotes] = useState("");
   const [rubricError, setRubricError] = useState("");
   const [rubricSending, setRubricSending] = useState(false);
+  const [embeddedCheckout, setEmbeddedCheckout] = useState<EmbeddedCheckoutState | null>(null);
+  const [embeddedCheckoutLoading, setEmbeddedCheckoutLoading] = useState(false);
+  const [embeddedCheckoutError, setEmbeddedCheckoutError] = useState("");
   const roleCheckoutReturnHandledRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const embeddedCheckoutContainerRef = useRef<HTMLDivElement>(null);
+  const embeddedCheckoutInstanceRef = useRef<{ unmount?: () => void; destroy?: () => void } | null>(null);
 
   useEffect(() => {
     setActionNotice(null);
@@ -296,6 +343,22 @@ export default function RolesPage() {
     setRubricNotes("");
     setRubricError("");
     setRubricSending(false);
+    if (embeddedCheckoutInstanceRef.current) {
+      try {
+        embeddedCheckoutInstanceRef.current.unmount?.();
+      } catch {
+        // no-op
+      }
+      try {
+        embeddedCheckoutInstanceRef.current.destroy?.();
+      } catch {
+        // no-op
+      }
+      embeddedCheckoutInstanceRef.current = null;
+    }
+    setEmbeddedCheckout(null);
+    setEmbeddedCheckoutLoading(false);
+    setEmbeddedCheckoutError("");
   }, [selectedClientId, clientLoading, clientError]);
 
   useEffect(() => {
@@ -328,6 +391,107 @@ export default function RolesPage() {
       text: roleCheckout === "success" ? "Role checkout completed." : "Role checkout canceled.",
     });
   }, [selectedClientId]);
+
+  const closeEmbeddedCheckout = () => {
+    if (embeddedCheckoutInstanceRef.current) {
+      try {
+        embeddedCheckoutInstanceRef.current.unmount?.();
+      } catch {
+        // no-op
+      }
+      try {
+        embeddedCheckoutInstanceRef.current.destroy?.();
+      } catch {
+        // no-op
+      }
+      embeddedCheckoutInstanceRef.current = null;
+    }
+    setEmbeddedCheckout(null);
+    setEmbeddedCheckoutLoading(false);
+    setEmbeddedCheckoutError("");
+  };
+
+  useEffect(() => {
+    const clientSecret = String(embeddedCheckout?.clientSecret || "").trim();
+    if (!clientSecret) return;
+    let alive = true;
+    let embeddedInstance: { unmount?: () => void; destroy?: () => void } | null = null;
+
+    const mountEmbeddedCheckout = async () => {
+      setEmbeddedCheckoutLoading(true);
+      setEmbeddedCheckoutError("");
+      try {
+        if (!stripePublishableKey) throw new Error("Missing Stripe publishable key.");
+        const { loadStripe } = await import("@stripe/stripe-js");
+        const stripe = await loadStripe(stripePublishableKey);
+        if (!stripe) throw new Error("Could not initialize Stripe checkout.");
+        if (!alive) return;
+
+        const checkout = await stripe.initEmbeddedCheckout({
+          clientSecret,
+          onComplete: () => {
+            setRolesReloadNonce((value) => value + 1);
+            setActionNotice({ tone: "success", text: "Role checkout completed." });
+            setEmbeddedCheckout(null);
+            setEmbeddedCheckoutError("");
+          },
+        });
+        if (!alive) {
+          try {
+            checkout.destroy?.();
+          } catch {
+            // no-op
+          }
+          return;
+        }
+        if (!embeddedCheckoutContainerRef.current) throw new Error("Checkout container unavailable.");
+        checkout.mount(embeddedCheckoutContainerRef.current);
+        embeddedInstance = checkout;
+        embeddedCheckoutInstanceRef.current = checkout;
+      } catch (error) {
+        if (!alive) return;
+        const message = error instanceof Error ? error.message : "Could not load embedded checkout.";
+        setEmbeddedCheckoutError(message);
+        const fallbackUrl = String(embeddedCheckout?.fallbackUrl || "").trim();
+        if (fallbackUrl) {
+          closeEmbeddedCheckout();
+          openCheckoutUrl(fallbackUrl);
+        }
+      } finally {
+        if (alive) setEmbeddedCheckoutLoading(false);
+      }
+    };
+
+    void mountEmbeddedCheckout();
+    return () => {
+      alive = false;
+      if (embeddedInstance) {
+        try {
+          embeddedInstance.unmount?.();
+        } catch {
+          // no-op
+        }
+        try {
+          embeddedInstance.destroy?.();
+        } catch {
+          // no-op
+        }
+      }
+      if (embeddedCheckoutInstanceRef.current) {
+        try {
+          embeddedCheckoutInstanceRef.current.unmount?.();
+        } catch {
+          // no-op
+        }
+        try {
+          embeddedCheckoutInstanceRef.current.destroy?.();
+        } catch {
+          // no-op
+        }
+        embeddedCheckoutInstanceRef.current = null;
+      }
+    };
+  }, [embeddedCheckout?.clientSecret, embeddedCheckout?.fallbackUrl]);
 
   const handleSort = (key: RoleSortKey) => {
     if (sortKey === key) {
@@ -414,6 +578,7 @@ export default function RolesPage() {
       formData.append("role_title", title);
       formData.append("interview_type", String(interviewType).toUpperCase());
       formData.append("tab", "roles");
+      formData.append("embedded", "true");
       formData.append("file", jdFile);
 
       const response = await fetch(`${backendBase}/clients/roles/checkout-session`, {
@@ -428,26 +593,22 @@ export default function RolesPage() {
       const text = await response.text();
       if (!response.ok) throw new Error(extractErrorMessage(text));
 
-      const data = parseJsonSafe(text) as { url?: unknown } | null;
+      const data = parseJsonSafe(text) as RoleCheckoutResponse | null;
       const checkoutUrl = typeof data?.url === "string" ? data.url.trim() : "";
-      if (!checkoutUrl) {
-        throw new Error("Missing checkout URL.");
-      }
+      const checkoutClientSecret =
+        typeof data?.checkout_client_secret === "string" ? data.checkout_client_secret.trim() : "";
 
-      setRolesReloadNonce((value) => value + 1);
-      if (window?.parent && window.parent !== window) {
-        try {
-          if (window.top) {
-            window.top.location.href = checkoutUrl;
-            return;
-          }
-        } catch {
-          // fallback below
-        }
-        window.open(checkoutUrl, "_blank", "noopener,noreferrer");
+      if (checkoutClientSecret && stripePublishableKey) {
+        setEmbeddedCheckout({
+          clientSecret: checkoutClientSecret,
+          fallbackUrl: checkoutUrl,
+        });
         return;
       }
-      window.location.assign(checkoutUrl);
+
+      if (!checkoutUrl) throw new Error("Missing checkout URL.");
+      setRolesReloadNonce((value) => value + 1);
+      openCheckoutUrl(checkoutUrl);
       return;
     } catch (error) {
       setActionNotice({
@@ -1082,6 +1243,67 @@ export default function RolesPage() {
                 >
                   {rubricSending ? "Sending…" : "Request changes"}
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {embeddedCheckout && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 sm:p-6">
+          <button
+            type="button"
+            onClick={closeEmbeddedCheckout}
+            className="absolute inset-0 bg-[#0A1547]/45"
+            aria-label="Close checkout"
+          />
+          <div
+            className="relative w-full max-w-5xl max-h-[92vh] bg-white rounded-2xl overflow-hidden"
+            style={{ border: "1px solid rgba(10,21,71,0.10)", boxShadow: "0 20px 44px rgba(10,21,71,0.24)" }}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">Checkout</p>
+                <h3 className="text-sm font-black text-[#0A1547] leading-snug">Complete role creation purchase</h3>
+              </div>
+              <button
+                type="button"
+                onClick={closeEmbeddedCheckout}
+                className="w-8 h-8 rounded-lg inline-flex items-center justify-center text-[#0A1547]/40 hover:text-[#0A1547] hover:bg-gray-100 transition-colors"
+                aria-label="Close checkout"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-5 py-4 overflow-y-auto max-h-[calc(92vh-72px)]">
+              {embeddedCheckoutLoading && (
+                <p className="mb-3 text-xs font-semibold text-[#0A1547]/45">Loading checkout…</p>
+              )}
+              {embeddedCheckoutError && (
+                <p className="mb-3 text-xs font-semibold text-red-500">{embeddedCheckoutError}</p>
+              )}
+              <div ref={embeddedCheckoutContainerRef} className="min-h-[520px]" />
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeEmbeddedCheckout}
+                  className="px-4 py-2 text-xs font-bold rounded-full border border-gray-200 text-[#0A1547]/70 hover:bg-gray-50 transition-colors"
+                >
+                  Close
+                </button>
+                {embeddedCheckout.fallbackUrl ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const fallbackUrl = embeddedCheckout.fallbackUrl;
+                      closeEmbeddedCheckout();
+                      openCheckoutUrl(fallbackUrl);
+                    }}
+                    className="px-4 py-2 text-xs font-bold text-white rounded-full transition-all hover:opacity-90"
+                    style={{ backgroundColor: "#A380F6" }}
+                  >
+                    Open hosted checkout
+                  </button>
+                ) : null}
               </div>
             </div>
           </div>
