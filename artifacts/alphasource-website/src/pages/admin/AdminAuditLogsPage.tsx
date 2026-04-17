@@ -26,6 +26,7 @@ interface BillingReconciliationRow {
   difference:    string;
   stripeStatus:  string;
   lastChecked:   string;
+  lastCheckedTs: number;
 }
 
 interface CancellationRun {
@@ -40,6 +41,7 @@ interface CancellationRun {
   stripeInvoice:string;
   note:         string;
   error:        string;
+  startedTs:    number;
 }
 
 const statusColors = {
@@ -145,10 +147,32 @@ function shortTail(value: unknown): string {
   return `...${raw.slice(-8)}`;
 }
 
+function toCsvCell(value: unknown): string {
+  const normalized = String(value ?? "").replace(/"/g, "\"\"");
+  return `"${normalized}"`;
+}
+
+function downloadCsv(filename: string, headers: string[], rows: Array<Array<unknown>>): void {
+  const csv = [headers.map(toCsvCell).join(","), ...rows.map((row) => row.map(toCsvCell).join(","))].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}
+
 export default function AdminAuditLogsPage() {
   const { selectedClientId } = useAdminClient();
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo,   setDateTo]   = useState("");
+  const [auditDateFrom, setAuditDateFrom] = useState("");
+  const [auditDateTo, setAuditDateTo] = useState("");
+  const [billingDateFrom, setBillingDateFrom] = useState("");
+  const [billingDateTo, setBillingDateTo] = useState("");
+  const [cancellationDateFrom, setCancellationDateFrom] = useState("");
+  const [cancellationDateTo, setCancellationDateTo] = useState("");
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [billingRows, setBillingRows] = useState<BillingReconciliationRow[]>([]);
   const [cancellationRuns, setCancellationRuns] = useState<CancellationRun[]>([]);
@@ -260,6 +284,7 @@ export default function AdminAuditLogsPage() {
             difference: reason,
             stripeStatus,
             lastChecked: formatDateTime(checkedAt),
+            lastCheckedTs: toTimestamp(checkedAt),
           };
         });
       setBillingRows(mapped);
@@ -297,6 +322,7 @@ export default function AdminAuditLogsPage() {
           stripeInvoice: String(item.stripe_invoice_id || "—"),
           note: String(item.note || "—"),
           error: String(item.error || "—"),
+          startedTs: toTimestamp(item.started_at),
         }));
       setCancellationRuns(mapped);
     } catch (error) {
@@ -313,21 +339,37 @@ export default function AdminAuditLogsPage() {
     void refreshCancellationRuns();
   }, []);
 
-  const startTs = parseBoundary(dateFrom, false);
-  const endTs = parseBoundary(dateTo, true);
+  const auditStartTs = parseBoundary(auditDateFrom, false);
+  const auditEndTs = parseBoundary(auditDateTo, true);
   const filteredAuditLogs = auditLogs.filter((log) => {
-    if (startTs != null && log.dateTs < startTs) return false;
-    if (endTs != null && log.dateTs > endTs) return false;
+    if (auditStartTs != null && log.dateTs < auditStartTs) return false;
+    if (auditEndTs != null && log.dateTs > auditEndTs) return false;
     return true;
   });
-  const filteredBillingRows =
+
+  const billingStartTs = parseBoundary(billingDateFrom, false);
+  const billingEndTs = parseBoundary(billingDateTo, true);
+  const scopedBillingRows =
     selectedClientId === "all"
       ? billingRows
       : billingRows.filter((row) => row.clientId === selectedClientId);
-  const filteredCancellationRuns =
+  const filteredBillingRows = scopedBillingRows.filter((row) => {
+    if (billingStartTs != null && row.lastCheckedTs < billingStartTs) return false;
+    if (billingEndTs != null && row.lastCheckedTs > billingEndTs) return false;
+    return true;
+  });
+
+  const cancellationStartTs = parseBoundary(cancellationDateFrom, false);
+  const cancellationEndTs = parseBoundary(cancellationDateTo, true);
+  const scopedCancellationRuns =
     selectedClientId === "all"
       ? cancellationRuns
       : cancellationRuns.filter((run) => run.clientId === selectedClientId);
+  const filteredCancellationRuns = scopedCancellationRuns.filter((run) => {
+    if (cancellationStartTs != null && run.startedTs < cancellationStartTs) return false;
+    if (cancellationEndTs != null && run.startedTs > cancellationEndTs) return false;
+    return true;
+  });
 
   const refreshBtn = (label: string, onClick: () => Promise<void>, loading = false) => (
     <button
@@ -358,20 +400,35 @@ export default function AdminAuditLogsPage() {
           <input
             type="text"
             className={inputCls}
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
+            value={auditDateFrom}
+            onChange={(e) => setAuditDateFrom(e.target.value)}
             placeholder="MM/DD/YYYY"
           />
           <input
             type="text"
             className={inputCls}
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
+            value={auditDateTo}
+            onChange={(e) => setAuditDateTo(e.target.value)}
             placeholder="MM/DD/YYYY"
           />
 
           {/* Export */}
           <button
+            onClick={() => {
+              downloadCsv(
+                "audit-logs.csv",
+                ["Date / Time", "Type", "Status", "Errors", "Log ID", "Event ID", "Note"],
+                filteredAuditLogs.map((log) => [
+                  log.date,
+                  log.type,
+                  log.status,
+                  log.errors,
+                  log.logId,
+                  log.eventId,
+                  log.note,
+                ]),
+              );
+            }}
             className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-all hover:opacity-90 flex-shrink-0"
             style={{ backgroundColor: "rgba(10,21,71,0.07)", color: "#0A1547" }}
           >
@@ -443,8 +500,43 @@ export default function AdminAuditLogsPage() {
 
       {/* ── Section 2: Billing Reconciliation ─────────────── */}
       <div className={card} style={cardStyle}>
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-          <p className="text-sm font-black text-[#0A1547]">Billing Reconciliation</p>
+        <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center gap-3">
+          <p className="text-sm font-black text-[#0A1547] mr-auto">Billing Reconciliation</p>
+          <input
+            type="text"
+            className={inputCls}
+            value={billingDateFrom}
+            onChange={(e) => setBillingDateFrom(e.target.value)}
+            placeholder="MM/DD/YYYY"
+          />
+          <input
+            type="text"
+            className={inputCls}
+            value={billingDateTo}
+            onChange={(e) => setBillingDateTo(e.target.value)}
+            placeholder="MM/DD/YYYY"
+          />
+          <button
+            onClick={() => {
+              downloadCsv(
+                "billing-reconciliation.csv",
+                ["Client", "Expected Amount", "Actual Billed", "Difference", "Stripe Status", "Last Checked"],
+                filteredBillingRows.map((row) => [
+                  row.client,
+                  row.expectedAmount,
+                  row.actualBilled,
+                  row.difference,
+                  row.stripeStatus,
+                  row.lastChecked,
+                ]),
+              );
+            }}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-all hover:opacity-90 flex-shrink-0"
+            style={{ backgroundColor: "rgba(10,21,71,0.07)", color: "#0A1547" }}
+          >
+            <Download className="w-3.5 h-3.5" />
+            Export CSV
+          </button>
           {refreshBtn("Refresh", refreshBillingReconciliation, billingLoading)}
         </div>
 
@@ -502,8 +594,46 @@ export default function AdminAuditLogsPage() {
 
       {/* ── Section 3: Contract Cancellation Runs ─────────── */}
       <div className={card} style={cardStyle}>
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-          <p className="text-sm font-black text-[#0A1547]">Contract Cancellation Runs</p>
+        <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center gap-3">
+          <p className="text-sm font-black text-[#0A1547] mr-auto">Contract Cancellation Runs</p>
+          <input
+            type="text"
+            className={inputCls}
+            value={cancellationDateFrom}
+            onChange={(e) => setCancellationDateFrom(e.target.value)}
+            placeholder="MM/DD/YYYY"
+          />
+          <input
+            type="text"
+            className={inputCls}
+            value={cancellationDateTo}
+            onChange={(e) => setCancellationDateTo(e.target.value)}
+            placeholder="MM/DD/YYYY"
+          />
+          <button
+            onClick={() => {
+              downloadCsv(
+                "contract-cancellation-runs.csv",
+                ["Client", "Status", "Triggered By", "Started", "Completed", "Final Invoice", "Stripe Invoice", "Note", "Error"],
+                filteredCancellationRuns.map((run) => [
+                  run.client,
+                  run.status,
+                  run.triggeredBy,
+                  run.started,
+                  run.completed,
+                  run.finalInvoice,
+                  run.stripeInvoice,
+                  run.note,
+                  run.error,
+                ]),
+              );
+            }}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-all hover:opacity-90 flex-shrink-0"
+            style={{ backgroundColor: "rgba(10,21,71,0.07)", color: "#0A1547" }}
+          >
+            <Download className="w-3.5 h-3.5" />
+            Export CSV
+          </button>
           {refreshBtn("Refresh", refreshCancellationRuns, cancellationLoading)}
         </div>
 
