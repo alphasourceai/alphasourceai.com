@@ -1184,7 +1184,7 @@ export default function AdminBillingPage() {
                 </div>
                 <div className="space-y-1">
                   <p className={fieldLabelCls}>
-                    Per-Role Fee ({enterpriseFeePeriod})<span className="text-red-500">{REQUIRED_MARK}</span>
+                    Per-Role Fee<span className="text-red-500">{REQUIRED_MARK}</span>
                   </p>
                   <input
                     className={inputCls}
