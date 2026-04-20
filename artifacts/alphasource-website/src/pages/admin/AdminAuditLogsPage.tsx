@@ -44,6 +44,20 @@ interface CancellationRun {
   startedTs:    number;
 }
 
+interface AgreementAuditRow {
+  id:          string;
+  eventType:   string;
+  eventAt:     string;
+  eventTs:     number;
+  agreementId: string;
+  clientId:    string;
+  client:      string;
+  sentBy:      string;
+  sentTo:      string;
+  signerIp:    string;
+  status:      string;
+}
+
 const statusColors = {
   success:   { bg: "rgba(2,217,157,0.10)",   text: "#00886A" },
   error:     { bg: "rgba(255,107,107,0.10)", text: "#C94040" },
@@ -173,15 +187,20 @@ export default function AdminAuditLogsPage() {
   const [billingDateTo, setBillingDateTo] = useState("");
   const [cancellationDateFrom, setCancellationDateFrom] = useState("");
   const [cancellationDateTo, setCancellationDateTo] = useState("");
+  const [agreementDateFrom, setAgreementDateFrom] = useState("");
+  const [agreementDateTo, setAgreementDateTo] = useState("");
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [billingRows, setBillingRows] = useState<BillingReconciliationRow[]>([]);
   const [cancellationRuns, setCancellationRuns] = useState<CancellationRun[]>([]);
+  const [agreementRows, setAgreementRows] = useState<AgreementAuditRow[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
   const [billingLoading, setBillingLoading] = useState(false);
   const [cancellationLoading, setCancellationLoading] = useState(false);
+  const [agreementLoading, setAgreementLoading] = useState(false);
   const [auditError, setAuditError] = useState("");
   const [billingError, setBillingError] = useState("");
   const [cancellationError, setCancellationError] = useState("");
+  const [agreementError, setAgreementError] = useState("");
 
   const inputCls =
     "px-3 py-2 rounded-xl text-xs text-[#0A1547] font-medium border border-[rgba(10,21,71,0.10)] " +
@@ -333,10 +352,47 @@ export default function AdminAuditLogsPage() {
     }
   };
 
+  const refreshAgreementRows = async () => {
+    setAgreementLoading(true);
+    setAgreementError("");
+    try {
+      const payload = await authedGet("/admin/audit/agreements", "Failed to load agreement audit logs.");
+      const items =
+        payload && typeof payload === "object" && Array.isArray((payload as { items?: unknown }).items)
+          ? ((payload as { items: unknown[] }).items || [])
+          : [];
+      const mapped: AgreementAuditRow[] = items
+        .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+        .map((item, index) => {
+          const eventAt = item.event_at || item.created_at || "";
+          return {
+            id: String(item.id || `agreement-audit-${index}`),
+            eventType: String(item.event_type || "—"),
+            eventAt: formatDateTime(eventAt),
+            eventTs: toTimestamp(eventAt),
+            agreementId: String(item.agreement_id || "—"),
+            clientId: String(item.client_id || ""),
+            client: String(item.client_name || "—"),
+            sentBy: String(item.sent_by_email || item.sent_by_user_id || "—"),
+            sentTo: String(item.sent_to_email || "—"),
+            signerIp: String(item.signer_ip || "—"),
+            status: String(item.status || "—"),
+          };
+        });
+      setAgreementRows(mapped);
+    } catch (error) {
+      setAgreementRows([]);
+      setAgreementError(error instanceof Error ? error.message : "Failed to load agreement audit logs.");
+    } finally {
+      setAgreementLoading(false);
+    }
+  };
+
   useEffect(() => {
     void refreshAuditLogs();
     void refreshBillingReconciliation();
     void refreshCancellationRuns();
+    void refreshAgreementRows();
   }, []);
 
   const auditStartTs = parseBoundary(auditDateFrom, false);
@@ -368,6 +424,18 @@ export default function AdminAuditLogsPage() {
   const filteredCancellationRuns = scopedCancellationRuns.filter((run) => {
     if (cancellationStartTs != null && run.startedTs < cancellationStartTs) return false;
     if (cancellationEndTs != null && run.startedTs > cancellationEndTs) return false;
+    return true;
+  });
+
+  const agreementStartTs = parseBoundary(agreementDateFrom, false);
+  const agreementEndTs = parseBoundary(agreementDateTo, true);
+  const scopedAgreementRows =
+    selectedClientId === "all"
+      ? agreementRows
+      : agreementRows.filter((row) => row.clientId === selectedClientId);
+  const filteredAgreementRows = scopedAgreementRows.filter((row) => {
+    if (agreementStartTs != null && row.eventTs < agreementStartTs) return false;
+    if (agreementEndTs != null && row.eventTs > agreementEndTs) return false;
     return true;
   });
 
@@ -498,7 +566,107 @@ export default function AdminAuditLogsPage() {
         </div>
       </div>
 
-      {/* ── Section 2: Billing Reconciliation ─────────────── */}
+      {/* ── Section 2: Agreements ──────────────────────────── */}
+      <div className={card} style={cardStyle}>
+        <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center gap-3">
+          <p className="text-sm font-black text-[#0A1547] mr-auto">Agreements</p>
+          <input
+            type="text"
+            className={inputCls}
+            value={agreementDateFrom}
+            onChange={(e) => setAgreementDateFrom(e.target.value)}
+            placeholder="MM/DD/YYYY"
+          />
+          <input
+            type="text"
+            className={inputCls}
+            value={agreementDateTo}
+            onChange={(e) => setAgreementDateTo(e.target.value)}
+            placeholder="MM/DD/YYYY"
+          />
+          <button
+            onClick={() => {
+              downloadCsv(
+                "agreement-audit-logs.csv",
+                ["Event Time", "Event Type", "Agreement ID", "Client", "Sent By", "Sent To", "Signer IP", "Status"],
+                filteredAgreementRows.map((row) => [
+                  row.eventAt,
+                  row.eventType,
+                  row.agreementId,
+                  row.client,
+                  row.sentBy,
+                  row.sentTo,
+                  row.signerIp,
+                  row.status,
+                ]),
+              );
+            }}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-all hover:opacity-90 flex-shrink-0"
+            style={{ backgroundColor: "rgba(10,21,71,0.07)", color: "#0A1547" }}
+          >
+            <Download className="w-3.5 h-3.5" />
+            Export CSV
+          </button>
+          {refreshBtn("Refresh", refreshAgreementRows, agreementLoading)}
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[980px]">
+            <thead>
+              <tr className="border-b border-gray-100">
+                <th className={thCls + " pl-5"}>Event Time</th>
+                <th className={thCls}>Event Type</th>
+                <th className={thCls}>Agreement ID</th>
+                <th className={thCls}>Client</th>
+                <th className={thCls}>Sent By</th>
+                <th className={thCls}>Sent To</th>
+                <th className={thCls}>Signer IP</th>
+                <th className={thCls + " pr-5"}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {agreementLoading ? (
+                <tr>
+                  <td colSpan={8} className="text-center py-10 text-sm text-[#0A1547]/30 font-semibold">
+                    Loading agreement audit logs...
+                  </td>
+                </tr>
+              ) : agreementError ? (
+                <tr>
+                  <td colSpan={8} className="text-center py-10 text-sm text-red-500 font-semibold">
+                    {agreementError}
+                  </td>
+                </tr>
+              ) : filteredAgreementRows.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="text-center py-10 text-sm text-[#0A1547]/30 font-semibold">
+                    No agreement audit events yet.
+                  </td>
+                </tr>
+              ) : (
+                filteredAgreementRows.map((row, idx) => (
+                  <tr
+                    key={row.id}
+                    className="border-b border-gray-50 hover:bg-gray-50/40 transition-colors"
+                    style={idx === filteredAgreementRows.length - 1 ? { borderBottom: "none" } : {}}
+                  >
+                    <td className={tdCls + " pl-5 whitespace-nowrap"}>{row.eventAt}</td>
+                    <td className={tdCls + " font-semibold text-[#0A1547]/70"}>{row.eventType}</td>
+                    <td className={tdCls + " font-mono text-[#0A1547]/45 text-[11px]"}>{row.agreementId}</td>
+                    <td className={tdCls}>{row.client}</td>
+                    <td className={tdCls + " text-[#0A1547]/45"}>{row.sentBy}</td>
+                    <td className={tdCls + " text-[#0A1547]/45"}>{row.sentTo}</td>
+                    <td className={tdCls + " text-[#0A1547]/35"}>{row.signerIp}</td>
+                    <td className={tdCls + " pr-5"}><StatusBadge status={row.status} /></td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── Section 3: Billing Reconciliation ─────────────── */}
       <div className={card} style={cardStyle}>
         <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center gap-3">
           <p className="text-sm font-black text-[#0A1547] mr-auto">Billing Reconciliation</p>
@@ -592,7 +760,7 @@ export default function AdminAuditLogsPage() {
         </div>
       </div>
 
-      {/* ── Section 3: Contract Cancellation Runs ─────────── */}
+      {/* ── Section 4: Contract Cancellation Runs ─────────── */}
       <div className={card} style={cardStyle}>
         <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center gap-3">
           <p className="text-sm font-black text-[#0A1547] mr-auto">Contract Cancellation Runs</p>
