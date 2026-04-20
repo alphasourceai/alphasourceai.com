@@ -473,7 +473,7 @@ export default function MembershipAgreementSignerPage({ params }: SignerPageProp
                     onPointerUp={stopDrawing}
                     onPointerLeave={stopDrawing}
                     onPointerCancel={stopDrawing}
-                    className="h-[190px] w-full rounded-xl border border-dashed border-[#A380F6]/45 bg-white"
+                    className="h-[190px] w-full rounded-xl border border-[rgba(10,21,71,0.14)] bg-[#FCFCFF]"
                     style={{ touchAction: "none" }}
                   />
                 </div>

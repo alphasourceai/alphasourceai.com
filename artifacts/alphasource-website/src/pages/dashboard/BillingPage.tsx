@@ -773,6 +773,31 @@ export default function BillingPage() {
     }
   };
 
+  const openLatestSignedAgreement = async () => {
+    if (!selectedClientId || selectedClientId === "all") return;
+    try {
+      if (!backendBase) throw new Error("Missing backend base URL configuration.");
+      setLatestAgreementError("");
+      const token = await getSessionToken();
+      const response = await fetch(
+        `${backendBase}/membership-agreements/latest-signed-url?client_id=${encodeURIComponent(selectedClientId)}`,
+        {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "omit",
+        },
+      );
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text));
+      const payload = parseJsonSafe(text) as { executed_pdf_url?: unknown } | null;
+      const url = typeof payload?.executed_pdf_url === "string" ? payload.executed_pdf_url.trim() : "";
+      if (!url) throw new Error("No signed agreement PDF is available.");
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setLatestAgreementError(error instanceof Error ? error.message : "Failed to open signed agreement.");
+    }
+  };
+
   const billing = useMemo(
     () => ({
       planTier: toDisplayText(billingSummary?.plan_tier),
@@ -908,8 +933,7 @@ export default function BillingPage() {
             <button
               type="button"
               onClick={() => {
-                if (!latestAgreement.executed_pdf_url) return;
-                window.open(latestAgreement.executed_pdf_url, "_blank", "noopener,noreferrer");
+                void openLatestSignedAgreement();
               }}
               disabled={!latestAgreement.executed_pdf_url}
               className="flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-bold text-white rounded-full transition-all hover:opacity-90 active:scale-[0.97] flex-shrink-0"

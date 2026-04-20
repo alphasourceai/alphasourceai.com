@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Trash2, Plus, ChevronDown, ExternalLink, RefreshCw, X } from "lucide-react";
 import AdminLayout from "@/components/AdminLayout";
 import { useAdminClient } from "@/context/AdminClientContext";
@@ -28,6 +28,7 @@ interface BillingCustomer {
   id: string;
   clientId: string;
   name: string;
+  primaryContactName: string;
   primaryContactEmail: string;
 }
 
@@ -46,6 +47,22 @@ interface AgreementFormValues {
 }
 
 type AgreementClientMode = "attach_existing_client" | "add_new_client";
+type AgreementFieldErrorKey =
+  | "attachedClientId"
+  | "clientLegalName"
+  | "primaryAdmin"
+  | "adminEmail"
+  | "candidateAssistanceContact"
+  | "initialTermStart"
+  | "initialRenewalDate";
+type AgreementFieldErrors = Partial<Record<AgreementFieldErrorKey, string>>;
+type DatePartKey = "month" | "day" | "year";
+
+interface DateParts {
+  month: string;
+  day: string;
+  year: string;
+}
 
 const env =
   typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
@@ -125,6 +142,13 @@ const inputCls =
   "focus:outline-none focus:border-[#A380F6] transition-colors";
 
 const selectCls = inputCls + " appearance-none cursor-pointer pr-8";
+const fieldLabelCls = "px-1 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40";
+const fieldErrorCls = "px-1 text-[11px] font-semibold text-red-500";
+const datePartCls =
+  "px-3 py-2.5 rounded-xl text-sm text-[#0A1547] font-semibold bg-white border border-[rgba(10,21,71,0.10)] " +
+  "placeholder:text-[#0A1547]/25 focus:outline-none focus:border-[#A380F6] transition-colors text-center";
+const REQUIRED_MARK = " *";
+const AGREEMENT_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const statusColors: Record<string, { bg: string; text: string }> = {
   open: { bg: "rgba(240,165,0,0.10)",   text: "#C07800"  },
@@ -148,6 +172,33 @@ function defaultAgreementFormValues(): AgreementFormValues {
     autoRenew: "yes",
     noticeDeadlineDays: "30",
   };
+}
+
+function buildIsoDateFromParts(parts: DateParts): string {
+  const month = String(parts.month || "").trim();
+  const day = String(parts.day || "").trim();
+  const year = String(parts.year || "").trim();
+  if (!month || !day || year.length !== 4) return "";
+
+  const mm = Number(month);
+  const dd = Number(day);
+  const yy = Number(year);
+  if (!Number.isInteger(mm) || mm < 1 || mm > 12) return "";
+  if (!Number.isInteger(dd) || dd < 1 || dd > 31) return "";
+  if (!Number.isInteger(yy) || yy < 1900 || yy > 9999) return "";
+
+  const parsed = new Date(Date.UTC(yy, mm - 1, dd));
+  if (
+    parsed.getUTCFullYear() !== yy ||
+    parsed.getUTCMonth() !== mm - 1 ||
+    parsed.getUTCDate() !== dd
+  ) {
+    return "";
+  }
+
+  const mmText = String(mm).padStart(2, "0");
+  const ddText = String(dd).padStart(2, "0");
+  return `${year}-${mmText}-${ddText}`;
 }
 
 /* ── Component ───────────────────────────────────────────────── */
@@ -184,12 +235,21 @@ export default function AdminBillingPage() {
   const [agreementClientMode, setAgreementClientMode] = useState<AgreementClientMode>("attach_existing_client");
   const [agreementAttachedClientId, setAgreementAttachedClientId] = useState("");
   const [agreementForm, setAgreementForm] = useState<AgreementFormValues>(defaultAgreementFormValues);
+  const [agreementFieldErrors, setAgreementFieldErrors] = useState<AgreementFieldErrors>({});
   const [agreementError, setAgreementError] = useState("");
   const [agreementSuccess, setAgreementSuccess] = useState("");
   const [agreementPreviewBusy, setAgreementPreviewBusy] = useState(false);
   const [agreementSendBusy, setAgreementSendBusy] = useState(false);
   const [agreementPreviewOpen, setAgreementPreviewOpen] = useState(false);
   const [agreementPreviewPdfUrl, setAgreementPreviewPdfUrl] = useState("");
+  const [initialTermStartParts, setInitialTermStartParts] = useState<DateParts>({ month: "", day: "", year: "" });
+  const [initialRenewalDateParts, setInitialRenewalDateParts] = useState<DateParts>({ month: "", day: "", year: "" });
+  const initialTermStartMonthRef = useRef<HTMLInputElement | null>(null);
+  const initialTermStartDayRef = useRef<HTMLInputElement | null>(null);
+  const initialTermStartYearRef = useRef<HTMLInputElement | null>(null);
+  const initialRenewalDateMonthRef = useRef<HTMLInputElement | null>(null);
+  const initialRenewalDateDayRef = useRef<HTMLInputElement | null>(null);
+  const initialRenewalDateYearRef = useRef<HTMLInputElement | null>(null);
 
   const agreementClientOptions = adminClients.filter((client) => client.id !== "all");
   const scopedAgreementClientId =
@@ -212,6 +272,65 @@ export default function AdminBillingPage() {
     value: AgreementFormValues[K],
   ) => {
     setAgreementForm((prev) => ({ ...prev, [key]: value }));
+    const errorKeyByField: Partial<Record<keyof AgreementFormValues, AgreementFieldErrorKey>> = {
+      clientLegalName: "clientLegalName",
+      primaryAdmin: "primaryAdmin",
+      adminEmail: "adminEmail",
+      candidateAssistanceContact: "candidateAssistanceContact",
+      initialTermStart: "initialTermStart",
+      initialRenewalDate: "initialRenewalDate",
+    };
+    const errorKey = errorKeyByField[key];
+    if (errorKey) {
+      setAgreementFieldErrors((prev) => {
+        if (!prev[errorKey]) return prev;
+        const next = { ...prev };
+        delete next[errorKey];
+        return next;
+      });
+    }
+  };
+
+  const updateAgreementDatePart = (
+    field: "initialTermStart" | "initialRenewalDate",
+    part: DatePartKey,
+    rawValue: string,
+  ) => {
+    const sanitized = String(rawValue || "")
+      .replace(/\D/g, "")
+      .slice(0, part === "year" ? 4 : 2);
+    const setParts = field === "initialTermStart" ? setInitialTermStartParts : setInitialRenewalDateParts;
+
+    setParts((previous) => {
+      const next = { ...previous, [part]: sanitized };
+      const iso = buildIsoDateFromParts(next);
+      updateAgreementField(field, iso);
+      return next;
+    });
+
+    if (part === "month" && sanitized.length === 2) {
+      if (field === "initialTermStart") initialTermStartDayRef.current?.focus();
+      else initialRenewalDateDayRef.current?.focus();
+    } else if (part === "day" && sanitized.length === 2) {
+      if (field === "initialTermStart") initialTermStartYearRef.current?.focus();
+      else initialRenewalDateYearRef.current?.focus();
+    }
+  };
+
+  const handleAgreementDateBackspace = (
+    field: "initialTermStart" | "initialRenewalDate",
+    part: "day" | "year",
+    event: ReactKeyboardEvent<HTMLInputElement>,
+  ) => {
+    if (event.key !== "Backspace" || event.currentTarget.value) return;
+    event.preventDefault();
+    if (part === "day") {
+      if (field === "initialTermStart") initialTermStartMonthRef.current?.focus();
+      else initialRenewalDateMonthRef.current?.focus();
+      return;
+    }
+    if (field === "initialTermStart") initialTermStartDayRef.current?.focus();
+    else initialRenewalDateDayRef.current?.focus();
   };
 
   useEffect(() => {
@@ -224,6 +343,40 @@ export default function AdminBillingPage() {
       return agreementClientOptions[0]?.id || "";
     });
   }, [selectedClientId, agreementClientOptions]);
+
+  useEffect(() => {
+    if (agreementClientMode !== "attach_existing_client") return;
+    const clientId = String(scopedAgreementClientId || "").trim();
+    if (!clientId) return;
+
+    const matchedOption = agreementClientOptions.find((client) => client.id === clientId);
+    const matchedCustomer = billingCustomers.find((customer) => customer.clientId === clientId);
+
+    setAgreementForm((previous) => ({
+      ...previous,
+      clientLegalName: String(matchedCustomer?.name || matchedOption?.name || previous.clientLegalName).trim(),
+      primaryAdmin: String(matchedCustomer?.primaryContactName || previous.primaryAdmin).trim(),
+      adminEmail: String(matchedCustomer?.primaryContactEmail || previous.adminEmail).trim(),
+    }));
+
+    setAgreementFieldErrors((prev) => {
+      const next = { ...prev };
+      delete next.attachedClientId;
+      if (matchedCustomer?.name || matchedOption?.name) delete next.clientLegalName;
+      if (matchedCustomer?.primaryContactName) delete next.primaryAdmin;
+      if (matchedCustomer?.primaryContactEmail) delete next.adminEmail;
+      return next;
+    });
+  }, [agreementClientMode, scopedAgreementClientId, agreementClientOptions, billingCustomers]);
+
+  useEffect(() => {
+    setAgreementFieldErrors((prev) => {
+      const next = { ...prev };
+      if (agreementClientMode === "attach_existing_client") delete next.candidateAssistanceContact;
+      if (agreementClientMode === "add_new_client") delete next.attachedClientId;
+      return next;
+    });
+  }, [agreementClientMode]);
 
   const buildAgreementPayload = () => ({
     client_mode: agreementClientMode,
@@ -245,21 +398,30 @@ export default function AdminBillingPage() {
     notice_deadline_days: Number.parseInt(agreementForm.noticeDeadlineDays, 10) || 30,
   });
 
-  const validateAgreementForm = (): string => {
-    const missing: string[] = [];
-    if (!agreementForm.clientLegalName.trim()) missing.push("Client Legal Name");
-    if (!agreementForm.primaryAdmin.trim()) missing.push("Primary Admin");
-    if (!agreementForm.adminEmail.trim()) missing.push("Admin Email");
-    if (!agreementForm.initialTermStart.trim()) missing.push("Initial Term Start");
-    if (!agreementForm.initialRenewalDate.trim()) missing.push("Initial Renewal Date");
-    if (agreementClientMode === "attach_existing_client" && !scopedAgreementClientId) {
-      missing.push("Attached Client");
+  const validateAgreementForm = (): boolean => {
+    const errors: AgreementFieldErrors = {};
+    const adminEmail = String(agreementForm.adminEmail || "").trim();
+
+    if (agreementClientMode === "attach_existing_client" && !String(scopedAgreementClientId || "").trim()) {
+      errors.attachedClientId = "Select an existing client.";
     }
+    if (!agreementForm.clientLegalName.trim()) errors.clientLegalName = "Client legal name is required.";
+    if (!agreementForm.primaryAdmin.trim()) errors.primaryAdmin = "Primary admin is required.";
+    if (!adminEmail) errors.adminEmail = "Admin email is required.";
+    else if (!AGREEMENT_EMAIL_RE.test(adminEmail)) errors.adminEmail = "Enter a valid admin email.";
+    if (!agreementForm.initialTermStart.trim()) errors.initialTermStart = "Initial term start is required.";
+    if (!agreementForm.initialRenewalDate.trim()) errors.initialRenewalDate = "Initial renewal date is required.";
     if (agreementClientMode === "add_new_client" && !agreementForm.candidateAssistanceContact.trim()) {
-      missing.push("Candidate Assistance Contact");
+      errors.candidateAssistanceContact = "Candidate assistance contact is required.";
     }
-    if (missing.length) return `Missing required fields: ${missing.join(", ")}`;
-    return "";
+
+    setAgreementFieldErrors(errors);
+    if (Object.keys(errors).length) {
+      setAgreementError("Please fix the highlighted agreement fields.");
+      return false;
+    }
+
+    return true;
   };
 
   const closeAgreementPreview = () => {
@@ -277,10 +439,8 @@ export default function AdminBillingPage() {
       return;
     }
 
-    const validationError = validateAgreementForm();
-    if (validationError) {
+    if (!validateAgreementForm()) {
       setAgreementSuccess("");
-      setAgreementError(validationError);
       return;
     }
 
@@ -329,10 +489,8 @@ export default function AdminBillingPage() {
       return;
     }
 
-    const validationError = validateAgreementForm();
-    if (validationError) {
+    if (!validateAgreementForm()) {
       setAgreementSuccess("");
-      setAgreementError(validationError);
       return;
     }
 
@@ -455,6 +613,7 @@ export default function AdminBillingPage() {
             id: String(item.id || "").trim(),
             clientId: String(item.client_id || "").trim(),
             name: String(item.name || "").trim() || "—",
+            primaryContactName: String(item.primary_contact_name || "").trim(),
             primaryContactEmail: String(item.primary_contact_email || "").trim(),
           }))
           .filter((item) => Boolean(item.id));
@@ -552,6 +711,9 @@ export default function AdminBillingPage() {
           {agreementSuccess ? (
             <p className="text-xs font-semibold text-emerald-600">{agreementSuccess}</p>
           ) : null}
+          <p className="text-[11px] font-semibold text-[#0A1547]/45 px-1">
+            Fields marked<span className="text-red-500">{REQUIRED_MARK}</span> are required.
+          </p>
           <div className="inline-flex rounded-full border border-[rgba(10,21,71,0.12)] bg-white p-1">
             <button
               type="button"
@@ -579,20 +741,36 @@ export default function AdminBillingPage() {
 
           {agreementClientMode === "attach_existing_client" ? (
             selectedClientId === "all" ? (
-              <div className="relative max-w-md">
-                <select
-                  className={selectCls}
-                  value={agreementAttachedClientId}
-                  onChange={(e) => setAgreementAttachedClientId(e.target.value)}
-                >
-                  <option value="">Select existing client…</option>
-                  {agreementClientOptions.map((client) => (
-                    <option key={client.id} value={client.id}>
-                      {client.name}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/30 pointer-events-none" />
+              <div className="max-w-md space-y-1">
+                <p className={fieldLabelCls}>
+                  Attached Client<span className="text-red-500">{REQUIRED_MARK}</span>
+                </p>
+                <div className="relative">
+                  <select
+                    className={selectCls}
+                    value={agreementAttachedClientId}
+                    onChange={(e) => {
+                      setAgreementAttachedClientId(e.target.value);
+                      setAgreementFieldErrors((prev) => {
+                        if (!prev.attachedClientId) return prev;
+                        const next = { ...prev };
+                        delete next.attachedClientId;
+                        return next;
+                      });
+                    }}
+                  >
+                    <option value="">Select existing client…</option>
+                    {agreementClientOptions.map((client) => (
+                      <option key={client.id} value={client.id}>
+                        {client.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/30 pointer-events-none" />
+                </div>
+                {agreementFieldErrors.attachedClientId ? (
+                  <p className={fieldErrorCls}>{agreementFieldErrors.attachedClientId}</p>
+                ) : null}
               </div>
             ) : (
               <p className="text-xs font-semibold text-[#0A1547]/55">
@@ -606,38 +784,73 @@ export default function AdminBillingPage() {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <input
-              className={inputCls}
-              placeholder="Client Legal Name"
-              value={agreementForm.clientLegalName}
-              onChange={(e) => updateAgreementField("clientLegalName", e.target.value)}
-            />
-            <input
-              className={inputCls}
-              placeholder="DBA / Trade Name"
-              value={agreementForm.dbaTradeName}
-              onChange={(e) => updateAgreementField("dbaTradeName", e.target.value)}
-            />
-            <input
-              className={inputCls}
-              placeholder="Primary Admin"
-              value={agreementForm.primaryAdmin}
-              onChange={(e) => updateAgreementField("primaryAdmin", e.target.value)}
-            />
-            <input
-              className={inputCls}
-              type="email"
-              placeholder="Admin Email"
-              value={agreementForm.adminEmail}
-              onChange={(e) => updateAgreementField("adminEmail", e.target.value)}
-            />
-            {agreementClientMode === "add_new_client" ? (
+            <div className="space-y-1">
+              <p className={fieldLabelCls}>
+                Client Legal Name<span className="text-red-500">{REQUIRED_MARK}</span>
+              </p>
               <input
                 className={inputCls}
-                placeholder="Candidate Assistance Contact"
-                value={agreementForm.candidateAssistanceContact}
-                onChange={(e) => updateAgreementField("candidateAssistanceContact", e.target.value)}
+                placeholder="Client Legal Name"
+                value={agreementForm.clientLegalName}
+                onChange={(e) => updateAgreementField("clientLegalName", e.target.value)}
               />
+              {agreementFieldErrors.clientLegalName ? (
+                <p className={fieldErrorCls}>{agreementFieldErrors.clientLegalName}</p>
+              ) : null}
+            </div>
+            <div className="space-y-1">
+              <p className={fieldLabelCls}>DBA / Trade Name</p>
+              <input
+                className={inputCls}
+                placeholder="DBA / Trade Name"
+                value={agreementForm.dbaTradeName}
+                onChange={(e) => updateAgreementField("dbaTradeName", e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <p className={fieldLabelCls}>
+                Primary Admin<span className="text-red-500">{REQUIRED_MARK}</span>
+              </p>
+              <input
+                className={inputCls}
+                placeholder="Primary Admin"
+                value={agreementForm.primaryAdmin}
+                onChange={(e) => updateAgreementField("primaryAdmin", e.target.value)}
+              />
+              {agreementFieldErrors.primaryAdmin ? (
+                <p className={fieldErrorCls}>{agreementFieldErrors.primaryAdmin}</p>
+              ) : null}
+            </div>
+            <div className="space-y-1">
+              <p className={fieldLabelCls}>
+                Admin Email<span className="text-red-500">{REQUIRED_MARK}</span>
+              </p>
+              <input
+                className={inputCls}
+                type="email"
+                placeholder="Admin Email"
+                value={agreementForm.adminEmail}
+                onChange={(e) => updateAgreementField("adminEmail", e.target.value)}
+              />
+              {agreementFieldErrors.adminEmail ? (
+                <p className={fieldErrorCls}>{agreementFieldErrors.adminEmail}</p>
+              ) : null}
+            </div>
+            {agreementClientMode === "add_new_client" ? (
+              <div className="space-y-1">
+                <p className={fieldLabelCls}>
+                  Candidate Assistance Contact<span className="text-red-500">{REQUIRED_MARK}</span>
+                </p>
+                <input
+                  className={inputCls}
+                  placeholder="Candidate Assistance Contact"
+                  value={agreementForm.candidateAssistanceContact}
+                  onChange={(e) => updateAgreementField("candidateAssistanceContact", e.target.value)}
+                />
+                {agreementFieldErrors.candidateAssistanceContact ? (
+                  <p className={fieldErrorCls}>{agreementFieldErrors.candidateAssistanceContact}</p>
+                ) : null}
+              </div>
             ) : (
               <div />
             )}
@@ -664,23 +877,83 @@ export default function AdminBillingPage() {
               </select>
               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/30 pointer-events-none" />
             </div>
-            <div>
-              <input
-                className={inputCls}
-                type="date"
-                value={agreementForm.initialTermStart}
-                onChange={(e) => updateAgreementField("initialTermStart", e.target.value)}
-              />
-              <p className="text-[10px] text-[#0A1547]/35 mt-1 px-1">Initial Term Start</p>
+            <div className="space-y-1">
+              <p className={fieldLabelCls}>
+                Initial Term Start<span className="text-red-500">{REQUIRED_MARK}</span>
+              </p>
+              <div className="flex items-center gap-1.5">
+                <input
+                  ref={initialTermStartMonthRef}
+                  className={datePartCls + " w-[72px]"}
+                  inputMode="numeric"
+                  placeholder="MM"
+                  value={initialTermStartParts.month}
+                  onChange={(e) => updateAgreementDatePart("initialTermStart", "month", e.target.value)}
+                />
+                <span className="text-[#0A1547]/35 font-bold">/</span>
+                <input
+                  ref={initialTermStartDayRef}
+                  className={datePartCls + " w-[72px]"}
+                  inputMode="numeric"
+                  placeholder="DD"
+                  value={initialTermStartParts.day}
+                  onChange={(e) => updateAgreementDatePart("initialTermStart", "day", e.target.value)}
+                  onKeyDown={(e) => handleAgreementDateBackspace("initialTermStart", "day", e)}
+                />
+                <span className="text-[#0A1547]/35 font-bold">/</span>
+                <input
+                  ref={initialTermStartYearRef}
+                  className={datePartCls + " w-[94px]"}
+                  inputMode="numeric"
+                  placeholder="YYYY"
+                  value={initialTermStartParts.year}
+                  onChange={(e) => updateAgreementDatePart("initialTermStart", "year", e.target.value)}
+                  onKeyDown={(e) => handleAgreementDateBackspace("initialTermStart", "year", e)}
+                />
+              </div>
+              <p className="text-[10px] text-[#0A1547]/35 px-1">MM / DD / YYYY</p>
+              {agreementFieldErrors.initialTermStart ? (
+                <p className={fieldErrorCls}>{agreementFieldErrors.initialTermStart}</p>
+              ) : null}
             </div>
-            <div>
-              <input
-                className={inputCls}
-                type="date"
-                value={agreementForm.initialRenewalDate}
-                onChange={(e) => updateAgreementField("initialRenewalDate", e.target.value)}
-              />
-              <p className="text-[10px] text-[#0A1547]/35 mt-1 px-1">Initial Renewal Date</p>
+            <div className="space-y-1">
+              <p className={fieldLabelCls}>
+                Initial Renewal Date<span className="text-red-500">{REQUIRED_MARK}</span>
+              </p>
+              <div className="flex items-center gap-1.5">
+                <input
+                  ref={initialRenewalDateMonthRef}
+                  className={datePartCls + " w-[72px]"}
+                  inputMode="numeric"
+                  placeholder="MM"
+                  value={initialRenewalDateParts.month}
+                  onChange={(e) => updateAgreementDatePart("initialRenewalDate", "month", e.target.value)}
+                />
+                <span className="text-[#0A1547]/35 font-bold">/</span>
+                <input
+                  ref={initialRenewalDateDayRef}
+                  className={datePartCls + " w-[72px]"}
+                  inputMode="numeric"
+                  placeholder="DD"
+                  value={initialRenewalDateParts.day}
+                  onChange={(e) => updateAgreementDatePart("initialRenewalDate", "day", e.target.value)}
+                  onKeyDown={(e) => handleAgreementDateBackspace("initialRenewalDate", "day", e)}
+                />
+                <span className="text-[#0A1547]/35 font-bold">/</span>
+                <input
+                  ref={initialRenewalDateYearRef}
+                  className={datePartCls + " w-[94px]"}
+                  inputMode="numeric"
+                  placeholder="YYYY"
+                  value={initialRenewalDateParts.year}
+                  onChange={(e) => updateAgreementDatePart("initialRenewalDate", "year", e.target.value)}
+                  onKeyDown={(e) => handleAgreementDateBackspace("initialRenewalDate", "year", e)}
+                />
+              </div>
+              <p className="text-[10px] text-[#0A1547]/35 px-1">MM / DD / YYYY</p>
+              {agreementFieldErrors.initialRenewalDate ? (
+                <p className={fieldErrorCls}>{agreementFieldErrors.initialRenewalDate}</p>
+              ) : null}
             </div>
             <div className="relative">
               <select
