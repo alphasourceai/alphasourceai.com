@@ -1363,11 +1363,9 @@ export default function AdminBillingPage() {
                   type="button"
                   onClick={() => { void handleSendAgreement(); }}
                   disabled={agreementSendBusy}
-                  className={`px-4 py-2 text-xs font-bold text-white rounded-full transition-opacity ${
-                    agreementSendBusy ? "opacity-70" : "hover:opacity-90"
-                  }`}
+                  className="px-4 py-2 text-xs font-bold text-white rounded-full transition-colors"
                   style={{
-                    backgroundColor: "#A380F6",
+                    backgroundColor: agreementSendBusy ? "#8F73D1" : "#A380F6",
                     cursor: agreementSendBusy ? "wait" : "pointer",
                   }}
                 >
