@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ShoppingCart, CreditCard, X } from "lucide-react";
+import { ChevronDown, ShoppingCart, CreditCard, ExternalLink, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useClient } from "@/context/ClientContext";
 import InfoTooltip from "@/components/InfoTooltip";
@@ -31,6 +31,15 @@ interface AdditionalInterviewsCheckoutResponse {
 interface EmbeddedCheckoutState {
   clientSecret: string;
   fallbackUrl: string;
+}
+
+interface LatestSignedAgreement {
+  id: string;
+  status: string;
+  signed_at: string;
+  signer_typed_name: string;
+  client_legal_name: string;
+  executed_pdf_url: string;
 }
 
 const env =
@@ -207,6 +216,9 @@ export default function BillingPage() {
   const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
   const [billingLoading, setBillingLoading] = useState(false);
   const [billingError, setBillingError] = useState("");
+  const [latestAgreement, setLatestAgreement] = useState<LatestSignedAgreement | null>(null);
+  const [latestAgreementLoading, setLatestAgreementLoading] = useState(false);
+  const [latestAgreementError, setLatestAgreementError] = useState("");
   const [roles, setRoles] = useState<BillingRole[]>([]);
   const [rolesLoading, setRolesLoading] = useState(false);
   const [portalBusy, setPortalBusy] = useState(false);
@@ -316,6 +328,96 @@ export default function BillingPage() {
     };
 
     void loadBillingSummary();
+    return () => {
+      alive = false;
+    };
+  }, [selectedClientId, clientLoading, clientError, billingReloadNonce]);
+
+  useEffect(() => {
+    let alive = true;
+
+    const loadLatestSignedAgreement = async () => {
+      if (clientLoading) return;
+      if (clientError) {
+        if (!alive) return;
+        setLatestAgreement(null);
+        setLatestAgreementError(clientError);
+        setLatestAgreementLoading(false);
+        return;
+      }
+      if (!selectedClientId || selectedClientId === "all") {
+        if (!alive) return;
+        setLatestAgreement(null);
+        setLatestAgreementError("");
+        setLatestAgreementLoading(false);
+        return;
+      }
+      if (!backendBase) {
+        if (!alive) return;
+        setLatestAgreement(null);
+        setLatestAgreementError("Missing backend base URL configuration.");
+        setLatestAgreementLoading(false);
+        return;
+      }
+
+      if (!alive) return;
+      setLatestAgreementLoading(true);
+      setLatestAgreementError("");
+
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const token = String(session?.access_token || "").trim();
+        if (!token) throw new Error("Missing session token.");
+
+        const response = await fetch(
+          `${backendBase}/membership-agreements/latest-signed?client_id=${encodeURIComponent(selectedClientId)}`,
+          {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            credentials: "omit",
+          },
+        );
+
+        const text = await response.text();
+        if (!response.ok) {
+          throw new Error(extractErrorMessage(text));
+        }
+
+        const payload = parseJsonSafe(text);
+        const agreementPayload =
+          payload &&
+          typeof payload === "object" &&
+          (payload as { agreement?: unknown }).agreement &&
+          typeof (payload as { agreement?: unknown }).agreement === "object"
+            ? ((payload as { agreement: Record<string, unknown> }).agreement || null)
+            : null;
+
+        if (!alive) return;
+        if (!agreementPayload) {
+          setLatestAgreement(null);
+          return;
+        }
+
+        setLatestAgreement({
+          id: String(agreementPayload.id || "").trim(),
+          status: String(agreementPayload.status || "").trim(),
+          signed_at: String(agreementPayload.signed_at || "").trim(),
+          signer_typed_name: String(agreementPayload.signer_typed_name || "").trim(),
+          client_legal_name: String(agreementPayload.client_legal_name || "").trim(),
+          executed_pdf_url: String(agreementPayload.executed_pdf_url || "").trim(),
+        });
+      } catch (error) {
+        if (!alive) return;
+        setLatestAgreement(null);
+        setLatestAgreementError(error instanceof Error ? error.message : "Failed to load latest signed agreement.");
+      } finally {
+        if (alive) setLatestAgreementLoading(false);
+      }
+    };
+
+    void loadLatestSignedAgreement();
     return () => {
       alive = false;
     };
@@ -771,7 +873,56 @@ export default function BillingPage() {
         )}
       </div>
 
-      {/* ── Section 2: Purchase Additional Interviews ── */}
+      {/* ── Section 2: Latest Signed Agreement ───────── */}
+      <div
+        className="bg-white rounded-2xl p-6 mb-6"
+        style={{ border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 2px 12px rgba(10,21,71,0.05)" }}
+      >
+        <h2 className="text-base font-black text-[#0A1547] mb-4">Latest Signed Agreement</h2>
+        {clientLoading || latestAgreementLoading ? (
+          <p className="text-sm text-[#0A1547]/45 font-semibold">Loading latest agreement...</p>
+        ) : latestAgreementError ? (
+          <p className="text-sm text-red-500 font-semibold">{latestAgreementError}</p>
+        ) : !latestAgreement ? (
+          <p className="text-sm text-[#0A1547]/35 font-semibold">No signed agreement is available for this client yet.</p>
+        ) : (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1">
+              <InfoCard
+                label="Status"
+                value={toDisplayText(latestAgreement.status)}
+                accent="#02D99D"
+                badge
+              />
+              <InfoCard
+                label="Signed Date"
+                value={formatDate(latestAgreement.signed_at)}
+                accent="#A380F6"
+              />
+              <InfoCard
+                label="Signer"
+                value={latestAgreement.signer_typed_name || "—"}
+                accent="#02ABE0"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (!latestAgreement.executed_pdf_url) return;
+                window.open(latestAgreement.executed_pdf_url, "_blank", "noopener,noreferrer");
+              }}
+              disabled={!latestAgreement.executed_pdf_url}
+              className="flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-bold text-white rounded-full transition-all hover:opacity-90 active:scale-[0.97] flex-shrink-0"
+              style={{ backgroundColor: "#A380F6" }}
+            >
+              <ExternalLink className="w-4 h-4" />
+              View / Export Agreement
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ── Section 3: Purchase Additional Interviews ── */}
       <div
         className="bg-white rounded-2xl p-6 mb-6"
         style={{ border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 2px 12px rgba(10,21,71,0.05)" }}
@@ -852,7 +1003,7 @@ export default function BillingPage() {
         </div>
       </div>
 
-      {/* ── Section 3: Purchased Interviews Table ────── */}
+      {/* ── Section 4: Purchased Interviews Table ────── */}
       <div
         className="bg-white rounded-2xl overflow-hidden mb-6"
         style={{ border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 2px 12px rgba(10,21,71,0.05)" }}
@@ -919,7 +1070,7 @@ export default function BillingPage() {
         </div>
       </div>
 
-      {/* ── Section 4: Manage Billing ─────────────────── */}
+      {/* ── Section 5: Manage Billing ─────────────────── */}
       <div
         className="bg-white rounded-2xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
         style={{ border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 2px 12px rgba(10,21,71,0.05)" }}

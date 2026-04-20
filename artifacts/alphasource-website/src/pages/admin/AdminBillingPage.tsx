@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Trash2, Plus, ChevronDown, ExternalLink, RefreshCw } from "lucide-react";
+import { Trash2, Plus, ChevronDown, ExternalLink, RefreshCw, X } from "lucide-react";
 import AdminLayout from "@/components/AdminLayout";
 import { useAdminClient } from "@/context/AdminClientContext";
 import { supabase } from "@/lib/supabaseClient";
@@ -30,6 +30,22 @@ interface BillingCustomer {
   name: string;
   primaryContactEmail: string;
 }
+
+interface AgreementFormValues {
+  clientLegalName: string;
+  dbaTradeName: string;
+  primaryAdmin: string;
+  adminEmail: string;
+  candidateAssistanceContact: string;
+  membershipTier: "basic" | "pro" | "enterprise";
+  initialTermStart: string;
+  initialRenewalDate: string;
+  billingOption: "monthly" | "annual";
+  autoRenew: "yes" | "no";
+  noticeDeadlineDays: string;
+}
+
+type AgreementClientMode = "attach_existing_client" | "add_new_client";
 
 const env =
   typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
@@ -118,9 +134,26 @@ const statusColors: Record<string, { bg: string; text: string }> = {
 
 let _lineId = 10;
 
+function defaultAgreementFormValues(): AgreementFormValues {
+  return {
+    clientLegalName: "",
+    dbaTradeName: "",
+    primaryAdmin: "",
+    adminEmail: "",
+    candidateAssistanceContact: "",
+    membershipTier: "basic",
+    initialTermStart: "",
+    initialRenewalDate: "",
+    billingOption: "monthly",
+    autoRenew: "yes",
+    noticeDeadlineDays: "30",
+  };
+}
+
 /* ── Component ───────────────────────────────────────────────── */
 export default function AdminBillingPage() {
   const {
+    clients: adminClients,
     selectedClient,
     selectedClientId,
     loading: adminClientsLoading,
@@ -147,6 +180,21 @@ export default function AdminBillingPage() {
     { id: 1, description: "", qty: 1, unit: "" },
   ]);
 
+  /* Agreement generator */
+  const [agreementClientMode, setAgreementClientMode] = useState<AgreementClientMode>("attach_existing_client");
+  const [agreementAttachedClientId, setAgreementAttachedClientId] = useState("");
+  const [agreementForm, setAgreementForm] = useState<AgreementFormValues>(defaultAgreementFormValues);
+  const [agreementError, setAgreementError] = useState("");
+  const [agreementSuccess, setAgreementSuccess] = useState("");
+  const [agreementPreviewBusy, setAgreementPreviewBusy] = useState(false);
+  const [agreementSendBusy, setAgreementSendBusy] = useState(false);
+  const [agreementPreviewOpen, setAgreementPreviewOpen] = useState(false);
+  const [agreementPreviewPdfUrl, setAgreementPreviewPdfUrl] = useState("");
+
+  const agreementClientOptions = adminClients.filter((client) => client.id !== "all");
+  const scopedAgreementClientId =
+    selectedClientId === "all" ? agreementAttachedClientId : selectedClientId;
+
   const addLineItem = () =>
     setLineItems((prev) => [...prev, { id: _lineId++, description: "", qty: 1, unit: "" }]);
 
@@ -158,6 +206,179 @@ export default function AdminBillingPage() {
 
   const filledItems   = lineItems.filter((li) => li.description.trim() && li.unit.trim());
   const canSendInvoice = invCustomer && invTitle.trim() && filledItems.length > 0;
+
+  const updateAgreementField = <K extends keyof AgreementFormValues>(
+    key: K,
+    value: AgreementFormValues[K],
+  ) => {
+    setAgreementForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  useEffect(() => {
+    if (selectedClientId !== "all") {
+      setAgreementAttachedClientId(selectedClientId);
+      return;
+    }
+    setAgreementAttachedClientId((previous) => {
+      if (previous && agreementClientOptions.some((client) => client.id === previous)) return previous;
+      return agreementClientOptions[0]?.id || "";
+    });
+  }, [selectedClientId, agreementClientOptions]);
+
+  const buildAgreementPayload = () => ({
+    client_mode: agreementClientMode,
+    attached_client_id: agreementClientMode === "attach_existing_client" ? scopedAgreementClientId || null : null,
+    client_id: agreementClientMode === "attach_existing_client" ? scopedAgreementClientId || null : null,
+    client_legal_name: agreementForm.clientLegalName.trim(),
+    dba_trade_name: agreementForm.dbaTradeName.trim(),
+    primary_admin_name: agreementForm.primaryAdmin.trim(),
+    admin_email: agreementForm.adminEmail.trim(),
+    candidate_assistance_contact:
+      agreementClientMode === "add_new_client"
+        ? agreementForm.candidateAssistanceContact.trim()
+        : null,
+    membership_tier: agreementForm.membershipTier,
+    initial_term_start: agreementForm.initialTermStart.trim(),
+    initial_renewal_date: agreementForm.initialRenewalDate.trim(),
+    billing_option: agreementForm.billingOption,
+    auto_renew: agreementForm.autoRenew === "yes",
+    notice_deadline_days: Number.parseInt(agreementForm.noticeDeadlineDays, 10) || 30,
+  });
+
+  const validateAgreementForm = (): string => {
+    const missing: string[] = [];
+    if (!agreementForm.clientLegalName.trim()) missing.push("Client Legal Name");
+    if (!agreementForm.primaryAdmin.trim()) missing.push("Primary Admin");
+    if (!agreementForm.adminEmail.trim()) missing.push("Admin Email");
+    if (!agreementForm.initialTermStart.trim()) missing.push("Initial Term Start");
+    if (!agreementForm.initialRenewalDate.trim()) missing.push("Initial Renewal Date");
+    if (agreementClientMode === "attach_existing_client" && !scopedAgreementClientId) {
+      missing.push("Attached Client");
+    }
+    if (agreementClientMode === "add_new_client" && !agreementForm.candidateAssistanceContact.trim()) {
+      missing.push("Candidate Assistance Contact");
+    }
+    if (missing.length) return `Missing required fields: ${missing.join(", ")}`;
+    return "";
+  };
+
+  const closeAgreementPreview = () => {
+    setAgreementPreviewOpen(false);
+    if (agreementPreviewPdfUrl) {
+      URL.revokeObjectURL(agreementPreviewPdfUrl);
+      setAgreementPreviewPdfUrl("");
+    }
+  };
+
+  const handleGenerateAgreementPreview = async () => {
+    if (!backendBase) {
+      setAgreementSuccess("");
+      setAgreementError("Missing backend base URL configuration.");
+      return;
+    }
+
+    const validationError = validateAgreementForm();
+    if (validationError) {
+      setAgreementSuccess("");
+      setAgreementError(validationError);
+      return;
+    }
+
+    setAgreementError("");
+    setAgreementSuccess("");
+    setAgreementPreviewBusy(true);
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = String(session?.access_token || "").trim();
+      if (!token) throw new Error("Missing session token.");
+
+      const response = await fetch(`${backendBase}/admin/billing/agreements/preview-pdf`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(buildAgreementPayload()),
+        credentials: "omit",
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(extractErrorMessage(text));
+      }
+
+      const blob = await response.blob();
+      const nextUrl = URL.createObjectURL(blob);
+      if (agreementPreviewPdfUrl) URL.revokeObjectURL(agreementPreviewPdfUrl);
+      setAgreementPreviewPdfUrl(nextUrl);
+      setAgreementPreviewOpen(true);
+    } catch (error) {
+      setAgreementError(error instanceof Error ? error.message : "Could not generate agreement preview.");
+    } finally {
+      setAgreementPreviewBusy(false);
+    }
+  };
+
+  const handleSendAgreement = async () => {
+    if (!backendBase) {
+      setAgreementSuccess("");
+      setAgreementError("Missing backend base URL configuration.");
+      return;
+    }
+
+    const validationError = validateAgreementForm();
+    if (validationError) {
+      setAgreementSuccess("");
+      setAgreementError(validationError);
+      return;
+    }
+
+    setAgreementSendBusy(true);
+    setAgreementError("");
+    setAgreementSuccess("");
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = String(session?.access_token || "").trim();
+      if (!token) throw new Error("Missing session token.");
+
+      const response = await fetch(`${backendBase}/admin/billing/agreements/send`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(buildAgreementPayload()),
+        credentials: "omit",
+      });
+
+      const text = await response.text();
+      if (!response.ok) {
+        throw new Error(extractErrorMessage(text));
+      }
+
+      const parsed = parseJsonSafe(text);
+      const agreementId =
+        parsed && typeof parsed === "object"
+          ? String((parsed as { agreement?: { id?: unknown } }).agreement?.id || "").trim()
+          : "";
+      setAgreementSuccess(
+        agreementId
+          ? `Agreement sent successfully (ID: ${agreementId}).`
+          : "Agreement sent successfully.",
+      );
+      closeAgreementPreview();
+    } catch (error) {
+      setAgreementError(error instanceof Error ? error.message : "Could not send agreement.");
+    } finally {
+      setAgreementSendBusy(false);
+    }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -298,6 +519,12 @@ export default function AdminBillingPage() {
     setInvCustomer("");
   }, [invCustomer, clientOptions]);
 
+  useEffect(() => {
+    return () => {
+      if (agreementPreviewPdfUrl) URL.revokeObjectURL(agreementPreviewPdfUrl);
+    };
+  }, [agreementPreviewPdfUrl]);
+
   const card = "bg-white rounded-2xl mb-5 overflow-hidden";
   const cardStyle = { border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 2px 12px rgba(10,21,71,0.04)" };
 
@@ -308,6 +535,189 @@ export default function AdminBillingPage() {
         <span className="text-xs text-[#0A1547]/35 font-medium italic">
           {selectedClientId === "all" ? "Global — not scoped to selected client" : `Scoped to ${selectedClient.name}`}
         </span>
+      </div>
+
+      {/* ── Agreement Generator ───────────────────────────── */}
+      <div className={card} style={cardStyle}>
+        <div className="px-5 py-4 border-b border-gray-100">
+          <p className="text-sm font-black text-[#0A1547]">Agreement Generator</p>
+          <p className="text-[11px] text-[#0A1547]/45 mt-1">
+            Generate a membership agreement draft PDF and send a tokenized signing link.
+          </p>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          {agreementError ? (
+            <p className="text-xs font-semibold text-red-500">{agreementError}</p>
+          ) : null}
+          {agreementSuccess ? (
+            <p className="text-xs font-semibold text-emerald-600">{agreementSuccess}</p>
+          ) : null}
+          <div className="inline-flex rounded-full border border-[rgba(10,21,71,0.12)] bg-white p-1">
+            <button
+              type="button"
+              onClick={() => setAgreementClientMode("attach_existing_client")}
+              className="px-3 py-1.5 text-xs font-bold rounded-full transition-colors"
+              style={{
+                backgroundColor: agreementClientMode === "attach_existing_client" ? "#A380F6" : "transparent",
+                color: agreementClientMode === "attach_existing_client" ? "white" : "rgba(10,21,71,0.65)",
+              }}
+            >
+              Attach Existing Client
+            </button>
+            <button
+              type="button"
+              onClick={() => setAgreementClientMode("add_new_client")}
+              className="px-3 py-1.5 text-xs font-bold rounded-full transition-colors"
+              style={{
+                backgroundColor: agreementClientMode === "add_new_client" ? "#A380F6" : "transparent",
+                color: agreementClientMode === "add_new_client" ? "white" : "rgba(10,21,71,0.65)",
+              }}
+            >
+              Add New Client
+            </button>
+          </div>
+
+          {agreementClientMode === "attach_existing_client" ? (
+            selectedClientId === "all" ? (
+              <div className="relative max-w-md">
+                <select
+                  className={selectCls}
+                  value={agreementAttachedClientId}
+                  onChange={(e) => setAgreementAttachedClientId(e.target.value)}
+                >
+                  <option value="">Select existing client…</option>
+                  {agreementClientOptions.map((client) => (
+                    <option key={client.id} value={client.id}>
+                      {client.name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/30 pointer-events-none" />
+              </div>
+            ) : (
+              <p className="text-xs font-semibold text-[#0A1547]/55">
+                Attached client: <span className="font-black text-[#0A1547]">{selectedClient.name}</span>
+              </p>
+            )
+          ) : (
+            <p className="text-xs font-semibold text-[#0A1547]/55">
+              A new client will be created from this form before the agreement is sent.
+            </p>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <input
+              className={inputCls}
+              placeholder="Client Legal Name"
+              value={agreementForm.clientLegalName}
+              onChange={(e) => updateAgreementField("clientLegalName", e.target.value)}
+            />
+            <input
+              className={inputCls}
+              placeholder="DBA / Trade Name"
+              value={agreementForm.dbaTradeName}
+              onChange={(e) => updateAgreementField("dbaTradeName", e.target.value)}
+            />
+            <input
+              className={inputCls}
+              placeholder="Primary Admin"
+              value={agreementForm.primaryAdmin}
+              onChange={(e) => updateAgreementField("primaryAdmin", e.target.value)}
+            />
+            <input
+              className={inputCls}
+              type="email"
+              placeholder="Admin Email"
+              value={agreementForm.adminEmail}
+              onChange={(e) => updateAgreementField("adminEmail", e.target.value)}
+            />
+            {agreementClientMode === "add_new_client" ? (
+              <input
+                className={inputCls}
+                placeholder="Candidate Assistance Contact"
+                value={agreementForm.candidateAssistanceContact}
+                onChange={(e) => updateAgreementField("candidateAssistanceContact", e.target.value)}
+              />
+            ) : (
+              <div />
+            )}
+            <div className="relative">
+              <select
+                className={selectCls}
+                value={agreementForm.membershipTier}
+                onChange={(e) => updateAgreementField("membershipTier", e.target.value as AgreementFormValues["membershipTier"])}
+              >
+                <option value="basic">basic</option>
+                <option value="pro">pro</option>
+                <option value="enterprise">enterprise</option>
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/30 pointer-events-none" />
+            </div>
+            <div className="relative">
+              <select
+                className={selectCls}
+                value={agreementForm.billingOption}
+                onChange={(e) => updateAgreementField("billingOption", e.target.value as AgreementFormValues["billingOption"])}
+              >
+                <option value="monthly">monthly</option>
+                <option value="annual">annual</option>
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/30 pointer-events-none" />
+            </div>
+            <div>
+              <input
+                className={inputCls}
+                type="date"
+                value={agreementForm.initialTermStart}
+                onChange={(e) => updateAgreementField("initialTermStart", e.target.value)}
+              />
+              <p className="text-[10px] text-[#0A1547]/35 mt-1 px-1">Initial Term Start</p>
+            </div>
+            <div>
+              <input
+                className={inputCls}
+                type="date"
+                value={agreementForm.initialRenewalDate}
+                onChange={(e) => updateAgreementField("initialRenewalDate", e.target.value)}
+              />
+              <p className="text-[10px] text-[#0A1547]/35 mt-1 px-1">Initial Renewal Date</p>
+            </div>
+            <div className="relative">
+              <select
+                className={selectCls}
+                value={agreementForm.autoRenew}
+                onChange={(e) => updateAgreementField("autoRenew", e.target.value as AgreementFormValues["autoRenew"])}
+              >
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/30 pointer-events-none" />
+            </div>
+            <input
+              className={inputCls}
+              type="number"
+              min="1"
+              placeholder="Notice Deadline (days)"
+              value={agreementForm.noticeDeadlineDays}
+              onChange={(e) => updateAgreementField("noticeDeadlineDays", e.target.value)}
+            />
+          </div>
+
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => { void handleGenerateAgreementPreview(); }}
+              disabled={agreementPreviewBusy}
+              className="px-6 py-2.5 rounded-full text-sm font-bold text-white transition-all"
+              style={{
+                backgroundColor: agreementPreviewBusy ? "rgba(10,21,71,0.2)" : "#A380F6",
+                cursor: agreementPreviewBusy ? "not-allowed" : "pointer",
+              }}
+            >
+              {agreementPreviewBusy ? "Generating..." : "Generate Agreement"}
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* ── Create Billing Customer ─────────────────────────── */}
@@ -559,6 +969,68 @@ export default function AdminBillingPage() {
           </table>
         </div>
       </div>
+
+      {agreementPreviewOpen ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 sm:p-6">
+          <button
+            type="button"
+            onClick={closeAgreementPreview}
+            className="absolute inset-0 bg-[#0A1547]/45"
+            aria-label="Close agreement preview"
+          />
+          <div
+            className="relative w-full max-w-6xl max-h-[92vh] bg-white rounded-2xl overflow-hidden"
+            style={{ border: "1px solid rgba(10,21,71,0.10)", boxShadow: "0 20px 44px rgba(10,21,71,0.24)" }}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">Agreement Preview</p>
+                <h3 className="text-sm font-black text-[#0A1547] leading-snug">alphaScreen Membership Agreement (Draft)</h3>
+              </div>
+              <button
+                type="button"
+                onClick={closeAgreementPreview}
+                className="w-8 h-8 rounded-lg inline-flex items-center justify-center text-[#0A1547]/40 hover:text-[#0A1547] hover:bg-gray-100 transition-colors"
+                aria-label="Close agreement preview"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-5 py-4 overflow-y-auto max-h-[calc(92vh-72px)] space-y-4">
+              {!agreementPreviewPdfUrl ? (
+                <p className="text-xs font-semibold text-[#0A1547]/45">Preparing agreement preview…</p>
+              ) : (
+                <iframe
+                  title="Agreement Preview PDF"
+                  src={agreementPreviewPdfUrl}
+                  className="w-full min-h-[72vh] rounded-xl border border-gray-200"
+                />
+              )}
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeAgreementPreview}
+                  className="px-4 py-2 text-xs font-bold rounded-full border border-gray-200 text-[#0A1547]/70 hover:bg-gray-50 transition-colors"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { void handleSendAgreement(); }}
+                  disabled={agreementSendBusy}
+                  className="px-4 py-2 text-xs font-bold text-white rounded-full transition-all hover:opacity-90"
+                  style={{
+                    backgroundColor: agreementSendBusy ? "rgba(10,21,71,0.2)" : "#A380F6",
+                    cursor: agreementSendBusy ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {agreementSendBusy ? "Sending..." : "Send Agreement"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </AdminLayout>
   );
 }

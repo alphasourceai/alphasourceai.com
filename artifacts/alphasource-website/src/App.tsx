@@ -19,6 +19,7 @@ import InterviewCviPage from "@/pages/InterviewCviPage";
 import AccommodationRequestPage from "@/pages/AccommodationRequestPage";
 import TextInterviewPage from "@/pages/TextInterviewPage";
 import PwResetPage from "@/pages/PwResetPage";
+import MembershipAgreementSignerPage from "@/pages/MembershipAgreementSignerPage";
 
 /* Client dashboard */
 import OverviewPage from "@/pages/dashboard/OverviewPage";
@@ -166,6 +167,7 @@ function Router() {
     location.startsWith("/interview-access/") ||
     location.startsWith("/interview-host/") ||
     location.startsWith("/text-interview/") ||
+    location.startsWith("/membership-agreement/sign/") ||
     location === "/pwreset" ||
     location === "/accommodation-request" ||
     location.startsWith("/accommodation-request/") ||
@@ -181,6 +183,7 @@ function Router() {
       <Route path="/interview-access/:role_token" component={InterviewTokenAlias} />
       <Route path="/interview-host/:role_token" component={InterviewTokenAlias} />
       <Route path="/text-interview/:token" component={TextInterviewPage} />
+      <Route path="/membership-agreement/sign/:token" component={MembershipAgreementSignerPage} />
       <Route path="/pwreset" component={PwResetPage} />
       <Route path="/interview-access" component={InterviewPage} />
       <Route path="/interview-cvi" component={InterviewCviPage} />
