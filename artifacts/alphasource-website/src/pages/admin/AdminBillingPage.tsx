@@ -380,13 +380,13 @@ export default function AdminBillingPage() {
     setAgreementForm((previous) => ({
       ...previous,
       clientLegalName: String(
-        matchedStoredClient?.name || matchedCustomer?.name || matchedOption?.name || previous.clientLegalName,
+        matchedStoredClient?.name || matchedCustomer?.name || matchedOption?.name || "",
       ).trim(),
       primaryAdmin: String(
-        matchedStoredClient?.clientAdminName || matchedCustomer?.primaryContactName || previous.primaryAdmin,
+        matchedStoredClient?.clientAdminName || matchedCustomer?.primaryContactName || "",
       ).trim(),
       adminEmail: String(
-        matchedStoredClient?.email || matchedCustomer?.primaryContactEmail || previous.adminEmail,
+        matchedStoredClient?.email || matchedCustomer?.primaryContactEmail || "",
       ).trim(),
     }));
 
@@ -814,6 +814,43 @@ export default function AdminBillingPage() {
 
   const card = "bg-white rounded-2xl mb-5 overflow-hidden";
   const cardStyle = { border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 2px 12px rgba(10,21,71,0.04)" };
+  const enterpriseFeePeriod = agreementForm.billingOption === "annual" ? "per year" : "per month";
+
+  const handleClearAgreementTextFields = () => {
+    setAgreementForm((prev) => ({
+      ...prev,
+      clientLegalName: "",
+      dbaTradeName: "",
+      primaryAdmin: "",
+      adminEmail: "",
+      candidateAssistanceContact: "",
+      platformFee: "",
+      perRoleFee: "",
+      additionalInterviewFee: "",
+      includedInterviewsPerRole: "",
+      initialTermStart: "",
+      initialRenewalDate: "",
+      noticeDeadlineDays: "",
+    }));
+    setInitialTermStartParts({ month: "", day: "", year: "" });
+    setInitialRenewalDateParts({ month: "", day: "", year: "" });
+    setAgreementError("");
+    setAgreementSuccess("");
+    setAgreementFieldErrors((prev) => {
+      const next = { ...prev };
+      delete next.clientLegalName;
+      delete next.primaryAdmin;
+      delete next.adminEmail;
+      delete next.candidateAssistanceContact;
+      delete next.platformFee;
+      delete next.perRoleFee;
+      delete next.additionalInterviewFee;
+      delete next.includedInterviewsPerRole;
+      delete next.initialTermStart;
+      delete next.initialRenewalDate;
+      return next;
+    });
+  };
 
   return (
     <AdminLayout title="Billing">
@@ -842,28 +879,37 @@ export default function AdminBillingPage() {
           <p className="text-[11px] font-semibold text-[#0A1547]/45 px-1">
             Fields marked<span className="text-red-500">{REQUIRED_MARK}</span> are required.
           </p>
-          <div className="inline-flex rounded-full border border-[rgba(10,21,71,0.12)] bg-white p-1">
+          <div className="flex items-center justify-between gap-3">
+            <div className="inline-flex rounded-full border border-[rgba(10,21,71,0.12)] bg-white p-1">
+              <button
+                type="button"
+                onClick={() => setAgreementClientMode("attach_existing_client")}
+                className="px-3 py-1.5 text-xs font-bold rounded-full transition-colors"
+                style={{
+                  backgroundColor: agreementClientMode === "attach_existing_client" ? "#A380F6" : "transparent",
+                  color: agreementClientMode === "attach_existing_client" ? "white" : "rgba(10,21,71,0.65)",
+                }}
+              >
+                Attach Existing Client
+              </button>
+              <button
+                type="button"
+                onClick={() => setAgreementClientMode("add_new_client")}
+                className="px-3 py-1.5 text-xs font-bold rounded-full transition-colors"
+                style={{
+                  backgroundColor: agreementClientMode === "add_new_client" ? "#A380F6" : "transparent",
+                  color: agreementClientMode === "add_new_client" ? "white" : "rgba(10,21,71,0.65)",
+                }}
+              >
+                Add New Client
+              </button>
+            </div>
             <button
               type="button"
-              onClick={() => setAgreementClientMode("attach_existing_client")}
-              className="px-3 py-1.5 text-xs font-bold rounded-full transition-colors"
-              style={{
-                backgroundColor: agreementClientMode === "attach_existing_client" ? "#A380F6" : "transparent",
-                color: agreementClientMode === "attach_existing_client" ? "white" : "rgba(10,21,71,0.65)",
-              }}
+              onClick={handleClearAgreementTextFields}
+              className="px-3 py-1.5 text-xs font-bold rounded-full border border-[rgba(10,21,71,0.14)] text-[#0A1547]/70 hover:bg-gray-50 transition-colors"
             >
-              Attach Existing Client
-            </button>
-            <button
-              type="button"
-              onClick={() => setAgreementClientMode("add_new_client")}
-              className="px-3 py-1.5 text-xs font-bold rounded-full transition-colors"
-              style={{
-                backgroundColor: agreementClientMode === "add_new_client" ? "#A380F6" : "transparent",
-                color: agreementClientMode === "add_new_client" ? "white" : "rgba(10,21,71,0.65)",
-              }}
-            >
-              Add New Client
+              Clear All
             </button>
           </div>
 
@@ -1121,7 +1167,7 @@ export default function AdminBillingPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <p className={fieldLabelCls}>
-                    Membership Fee ($)<span className="text-red-500">{REQUIRED_MARK}</span>
+                    Membership Fee ({enterpriseFeePeriod})<span className="text-red-500">{REQUIRED_MARK}</span>
                   </p>
                   <input
                     className={inputCls}
@@ -1138,7 +1184,7 @@ export default function AdminBillingPage() {
                 </div>
                 <div className="space-y-1">
                   <p className={fieldLabelCls}>
-                    Per-Role Fee ($)<span className="text-red-500">{REQUIRED_MARK}</span>
+                    Per-Role Fee ({enterpriseFeePeriod})<span className="text-red-500">{REQUIRED_MARK}</span>
                   </p>
                   <input
                     className={inputCls}
@@ -1155,7 +1201,7 @@ export default function AdminBillingPage() {
                 </div>
                 <div className="space-y-1">
                   <p className={fieldLabelCls}>
-                    Included Interviews<span className="text-red-500">{REQUIRED_MARK}</span>
+                    Included Interviews (Per Role)<span className="text-red-500">{REQUIRED_MARK}</span>
                   </p>
                   <input
                     className={inputCls}
