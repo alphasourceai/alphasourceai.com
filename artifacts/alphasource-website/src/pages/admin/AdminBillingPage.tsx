@@ -46,6 +46,10 @@ interface AgreementFormValues {
   adminEmail: string;
   candidateAssistanceContact: string;
   membershipTier: "basic" | "pro" | "enterprise";
+  platformFee: string;
+  perRoleFee: string;
+  additionalInterviewFee: string;
+  includedInterviewsPerRole: string;
   initialTermStart: string;
   initialRenewalDate: string;
   billingOption: "monthly" | "annual";
@@ -60,6 +64,10 @@ type AgreementFieldErrorKey =
   | "primaryAdmin"
   | "adminEmail"
   | "candidateAssistanceContact"
+  | "platformFee"
+  | "perRoleFee"
+  | "additionalInterviewFee"
+  | "includedInterviewsPerRole"
   | "initialTermStart"
   | "initialRenewalDate";
 type AgreementFieldErrors = Partial<Record<AgreementFieldErrorKey, string>>;
@@ -173,6 +181,10 @@ function defaultAgreementFormValues(): AgreementFormValues {
     adminEmail: "",
     candidateAssistanceContact: "",
     membershipTier: "basic",
+    platformFee: "",
+    perRoleFee: "",
+    additionalInterviewFee: "",
+    includedInterviewsPerRole: "",
     initialTermStart: "",
     initialRenewalDate: "",
     billingOption: "monthly",
@@ -285,6 +297,10 @@ export default function AdminBillingPage() {
       primaryAdmin: "primaryAdmin",
       adminEmail: "adminEmail",
       candidateAssistanceContact: "candidateAssistanceContact",
+      platformFee: "platformFee",
+      perRoleFee: "perRoleFee",
+      additionalInterviewFee: "additionalInterviewFee",
+      includedInterviewsPerRole: "includedInterviewsPerRole",
       initialTermStart: "initialTermStart",
       initialRenewalDate: "initialRenewalDate",
     };
@@ -416,6 +432,22 @@ export default function AdminBillingPage() {
         ? agreementForm.candidateAssistanceContact.trim()
         : null,
     membership_tier: agreementForm.membershipTier,
+    platform_fee:
+      agreementForm.membershipTier === "enterprise"
+        ? agreementForm.platformFee.trim()
+        : null,
+    per_role_fee:
+      agreementForm.membershipTier === "enterprise"
+        ? agreementForm.perRoleFee.trim()
+        : null,
+    additional_interview_fee:
+      agreementForm.membershipTier === "enterprise"
+        ? agreementForm.additionalInterviewFee.trim()
+        : null,
+    included_interviews_per_role:
+      agreementForm.membershipTier === "enterprise"
+        ? agreementForm.includedInterviewsPerRole.trim()
+        : null,
     initial_term_start: agreementForm.initialTermStart.trim(),
     initial_renewal_date: agreementForm.initialRenewalDate.trim(),
     billing_option: agreementForm.billingOption,
@@ -452,6 +484,30 @@ export default function AdminBillingPage() {
     }
     if (agreementClientMode === "add_new_client" && !agreementForm.candidateAssistanceContact.trim()) {
       errors.candidateAssistanceContact = "Candidate assistance contact is required.";
+    }
+    if (agreementForm.membershipTier === "enterprise") {
+      const platformFee = String(agreementForm.platformFee || "").trim();
+      const perRoleFee = String(agreementForm.perRoleFee || "").trim();
+      const additionalInterviewFee = String(agreementForm.additionalInterviewFee || "").trim();
+      const includedInterviews = String(agreementForm.includedInterviewsPerRole || "").trim();
+      if (!platformFee) errors.platformFee = "Membership fee is required for enterprise tier.";
+      else if (!Number.isFinite(Number(platformFee)) || Number(platformFee) < 0) {
+        errors.platformFee = "Enter a valid membership fee.";
+      }
+      if (!perRoleFee) errors.perRoleFee = "Per-role fee is required for enterprise tier.";
+      else if (!Number.isFinite(Number(perRoleFee)) || Number(perRoleFee) < 0) {
+        errors.perRoleFee = "Enter a valid per-role fee.";
+      }
+      if (!additionalInterviewFee) {
+        errors.additionalInterviewFee = "Additional interview fee is required for enterprise tier.";
+      } else if (!Number.isFinite(Number(additionalInterviewFee)) || Number(additionalInterviewFee) < 0) {
+        errors.additionalInterviewFee = "Enter a valid additional interview fee.";
+      }
+      if (!includedInterviews) {
+        errors.includedInterviewsPerRole = "Included interviews is required for enterprise tier.";
+      } else if (!Number.isInteger(Number(includedInterviews)) || Number(includedInterviews) < 1) {
+        errors.includedInterviewsPerRole = "Enter a whole number of included interviews.";
+      }
     }
 
     setAgreementFieldErrors(errors);
@@ -923,31 +979,35 @@ export default function AdminBillingPage() {
                   <p className={fieldErrorCls}>{agreementFieldErrors.candidateAssistanceContact}</p>
                 ) : null}
               </div>
-            ) : (
-              <div />
-            )}
-            <div className="relative">
-              <select
-                className={selectCls}
-                value={agreementForm.membershipTier}
-                onChange={(e) => updateAgreementField("membershipTier", e.target.value as AgreementFormValues["membershipTier"])}
-              >
-                <option value="basic">basic</option>
-                <option value="pro">pro</option>
-                <option value="enterprise">enterprise</option>
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/30 pointer-events-none" />
+            ) : null}
+            <div className="space-y-1">
+              <p className={fieldLabelCls}>Membership Tier</p>
+              <div className="relative">
+                <select
+                  className={selectCls}
+                  value={agreementForm.membershipTier}
+                  onChange={(e) => updateAgreementField("membershipTier", e.target.value as AgreementFormValues["membershipTier"])}
+                >
+                  <option value="basic">basic</option>
+                  <option value="pro">pro</option>
+                  <option value="enterprise">enterprise</option>
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/30 pointer-events-none" />
+              </div>
             </div>
-            <div className="relative">
-              <select
-                className={selectCls}
-                value={agreementForm.billingOption}
-                onChange={(e) => updateAgreementField("billingOption", e.target.value as AgreementFormValues["billingOption"])}
-              >
-                <option value="monthly">monthly</option>
-                <option value="annual">annual</option>
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/30 pointer-events-none" />
+            <div className="space-y-1">
+              <p className={fieldLabelCls}>Billing Option</p>
+              <div className="relative">
+                <select
+                  className={selectCls}
+                  value={agreementForm.billingOption}
+                  onChange={(e) => updateAgreementField("billingOption", e.target.value as AgreementFormValues["billingOption"])}
+                >
+                  <option value="monthly">monthly</option>
+                  <option value="annual">annual</option>
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/30 pointer-events-none" />
+              </div>
             </div>
             <div className="space-y-1">
               <p className={fieldLabelCls}>
@@ -1027,26 +1087,109 @@ export default function AdminBillingPage() {
                 <p className={fieldErrorCls}>{agreementFieldErrors.initialRenewalDate}</p>
               ) : null}
             </div>
-            <div className="relative">
-              <select
-                className={selectCls}
-                value={agreementForm.autoRenew}
-                onChange={(e) => updateAgreementField("autoRenew", e.target.value as AgreementFormValues["autoRenew"])}
-              >
-                <option value="yes">Yes</option>
-                <option value="no">No</option>
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/30 pointer-events-none" />
+            <div className="space-y-1">
+              <p className={fieldLabelCls}>Auto-Renew</p>
+              <div className="relative">
+                <select
+                  className={selectCls}
+                  value={agreementForm.autoRenew}
+                  onChange={(e) => updateAgreementField("autoRenew", e.target.value as AgreementFormValues["autoRenew"])}
+                >
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/30 pointer-events-none" />
+              </div>
             </div>
-            <input
-              className={inputCls}
-              type="number"
-              min="1"
-              placeholder="Notice Deadline (days)"
-              value={agreementForm.noticeDeadlineDays}
-              onChange={(e) => updateAgreementField("noticeDeadlineDays", e.target.value)}
-            />
+            <div className="space-y-1">
+              <p className={fieldLabelCls}>Notice Deadline (Days)</p>
+              <input
+                className={inputCls}
+                type="number"
+                min="1"
+                placeholder="Notice Deadline (days)"
+                value={agreementForm.noticeDeadlineDays}
+                onChange={(e) => updateAgreementField("noticeDeadlineDays", e.target.value)}
+              />
+            </div>
           </div>
+          {agreementForm.membershipTier === "enterprise" ? (
+            <div className="space-y-3 pt-1">
+              <p className="px-1 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/45">
+                Enterprise Pricing Configuration
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <p className={fieldLabelCls}>
+                    Membership Fee ($)<span className="text-red-500">{REQUIRED_MARK}</span>
+                  </p>
+                  <input
+                    className={inputCls}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={agreementForm.platformFee}
+                    onChange={(e) => updateAgreementField("platformFee", e.target.value)}
+                  />
+                  {agreementFieldErrors.platformFee ? (
+                    <p className={fieldErrorCls}>{agreementFieldErrors.platformFee}</p>
+                  ) : null}
+                </div>
+                <div className="space-y-1">
+                  <p className={fieldLabelCls}>
+                    Per-Role Fee ($)<span className="text-red-500">{REQUIRED_MARK}</span>
+                  </p>
+                  <input
+                    className={inputCls}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={agreementForm.perRoleFee}
+                    onChange={(e) => updateAgreementField("perRoleFee", e.target.value)}
+                  />
+                  {agreementFieldErrors.perRoleFee ? (
+                    <p className={fieldErrorCls}>{agreementFieldErrors.perRoleFee}</p>
+                  ) : null}
+                </div>
+                <div className="space-y-1">
+                  <p className={fieldLabelCls}>
+                    Included Interviews<span className="text-red-500">{REQUIRED_MARK}</span>
+                  </p>
+                  <input
+                    className={inputCls}
+                    type="number"
+                    min="1"
+                    step="1"
+                    placeholder="0"
+                    value={agreementForm.includedInterviewsPerRole}
+                    onChange={(e) => updateAgreementField("includedInterviewsPerRole", e.target.value)}
+                  />
+                  {agreementFieldErrors.includedInterviewsPerRole ? (
+                    <p className={fieldErrorCls}>{agreementFieldErrors.includedInterviewsPerRole}</p>
+                  ) : null}
+                </div>
+                <div className="space-y-1">
+                  <p className={fieldLabelCls}>
+                    Additional Interview Fee ($)<span className="text-red-500">{REQUIRED_MARK}</span>
+                  </p>
+                  <input
+                    className={inputCls}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={agreementForm.additionalInterviewFee}
+                    onChange={(e) => updateAgreementField("additionalInterviewFee", e.target.value)}
+                  />
+                  {agreementFieldErrors.additionalInterviewFee ? (
+                    <p className={fieldErrorCls}>{agreementFieldErrors.additionalInterviewFee}</p>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <div className="flex justify-end">
             <button
