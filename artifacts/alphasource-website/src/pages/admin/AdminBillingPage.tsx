@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Trash2, Plus, ChevronDown, ExternalLink, RefreshCw, X } from "lucide-react";
 import AdminLayout from "@/components/AdminLayout";
 import { useAdminClient } from "@/context/AdminClientContext";
@@ -37,6 +37,14 @@ interface StoredClientRow {
   name: string;
   email: string;
   clientAdminName: string;
+}
+
+interface ExistingAgreementSummary {
+  id: string;
+  membership_tier: string;
+  initial_term_start: string;
+  initial_renewal_date: string;
+  signed_at: string;
 }
 
 interface AgreementFormValues {
@@ -122,6 +130,28 @@ function extractErrorMessage(text: string): string {
       : null;
   if (typeof detail === "string" && detail.trim()) return detail;
   return text;
+}
+
+function parseAgreementReplacementResponse(
+  text: string,
+): { required: true; agreement: ExistingAgreementSummary | null } | { required: false } {
+  const parsed = parseJsonSafe(text);
+  if (!parsed || typeof parsed !== "object") return { required: false };
+  const code = String((parsed as { code?: unknown }).code || "").trim();
+  if (code !== "agreement_replacement_confirmation_required") return { required: false };
+  const existingRaw = (parsed as { existing_agreement?: unknown }).existing_agreement;
+  if (!existingRaw || typeof existingRaw !== "object") return { required: true, agreement: null };
+  const existing = existingRaw as Record<string, unknown>;
+  return {
+    required: true,
+    agreement: {
+      id: String(existing.id || "").trim(),
+      membership_tier: String(existing.membership_tier || "").trim(),
+      initial_term_start: String(existing.initial_term_start || "").trim(),
+      initial_renewal_date: String(existing.initial_renewal_date || "").trim(),
+      signed_at: String(existing.signed_at || "").trim(),
+    },
+  };
 }
 
 function normalizeInvoiceStatus(value: unknown): "open" | "paid" | "void" {
@@ -262,6 +292,9 @@ export default function AdminBillingPage() {
   const [agreementSendBusy, setAgreementSendBusy] = useState(false);
   const [agreementPreviewOpen, setAgreementPreviewOpen] = useState(false);
   const [agreementPreviewPdfUrl, setAgreementPreviewPdfUrl] = useState("");
+  const [agreementReplacementModalOpen, setAgreementReplacementModalOpen] = useState(false);
+  const [agreementReplacementDetails, setAgreementReplacementDetails] = useState<ExistingAgreementSummary | null>(null);
+  const [agreementReplacementPendingAction, setAgreementReplacementPendingAction] = useState<"preview" | "send" | null>(null);
   const [initialTermStartParts, setInitialTermStartParts] = useState<DateParts>({ month: "", day: "", year: "" });
   const [initialRenewalDateParts, setInitialRenewalDateParts] = useState<DateParts>({ month: "", day: "", year: "" });
   const initialTermStartMonthRef = useRef<HTMLInputElement | null>(null);
@@ -271,7 +304,10 @@ export default function AdminBillingPage() {
   const initialRenewalDateDayRef = useRef<HTMLInputElement | null>(null);
   const initialRenewalDateYearRef = useRef<HTMLInputElement | null>(null);
 
-  const agreementClientOptions = adminClients.filter((client) => client.id !== "all");
+  const agreementClientOptions = useMemo(
+    () => adminClients.filter((client) => client.id !== "all"),
+    [adminClients],
+  );
   const scopedAgreementClientId =
     selectedClientId === "all" ? agreementAttachedClientId : selectedClientId;
 
@@ -363,8 +399,9 @@ export default function AdminBillingPage() {
       return;
     }
     setAgreementAttachedClientId((previous) => {
-      if (previous && agreementClientOptions.some((client) => client.id === previous)) return previous;
-      return agreementClientOptions[0]?.id || "";
+      if (!previous) return "";
+      if (agreementClientOptions.some((client) => client.id === previous)) return previous;
+      return "";
     });
   }, [selectedClientId, agreementClientOptions]);
 
@@ -419,10 +456,12 @@ export default function AdminBillingPage() {
     });
   }, [agreementClientMode]);
 
-  const buildAgreementPayload = () => ({
+  const buildAgreementPayload = (confirmReplaceExisting = false) => ({
     client_mode: agreementClientMode,
     attached_client_id: agreementClientMode === "attach_existing_client" ? scopedAgreementClientId || null : null,
     client_id: agreementClientMode === "attach_existing_client" ? scopedAgreementClientId || null : null,
+    confirm_replace_existing:
+      agreementClientMode === "attach_existing_client" ? confirmReplaceExisting : false,
     client_legal_name: agreementForm.clientLegalName.trim(),
     dba_trade_name: agreementForm.dbaTradeName.trim() || agreementForm.clientLegalName.trim(),
     primary_admin_name: agreementForm.primaryAdmin.trim(),
@@ -527,7 +566,7 @@ export default function AdminBillingPage() {
     }
   };
 
-  const handleGenerateAgreementPreview = async () => {
+  const handleGenerateAgreementPreview = async (confirmReplaceExisting = false) => {
     if (!backendBase) {
       setAgreementSuccess("");
       setAgreementError("Missing backend base URL configuration.");
@@ -556,12 +595,19 @@ export default function AdminBillingPage() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(buildAgreementPayload()),
+        body: JSON.stringify(buildAgreementPayload(confirmReplaceExisting)),
         credentials: "omit",
       });
 
       if (!response.ok) {
         const text = await response.text();
+        const replacement = parseAgreementReplacementResponse(text);
+        if (replacement.required) {
+          setAgreementReplacementDetails(replacement.agreement);
+          setAgreementReplacementPendingAction("preview");
+          setAgreementReplacementModalOpen(true);
+          return;
+        }
         throw new Error(extractErrorMessage(text));
       }
 
@@ -577,7 +623,7 @@ export default function AdminBillingPage() {
     }
   };
 
-  const handleSendAgreement = async () => {
+  const handleSendAgreement = async (confirmReplaceExisting = false) => {
     if (!backendBase) {
       setAgreementSuccess("");
       setAgreementError("Missing backend base URL configuration.");
@@ -606,12 +652,19 @@ export default function AdminBillingPage() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(buildAgreementPayload()),
+        body: JSON.stringify(buildAgreementPayload(confirmReplaceExisting)),
         credentials: "omit",
       });
 
       const text = await response.text();
       if (!response.ok) {
+        const replacement = parseAgreementReplacementResponse(text);
+        if (replacement.required) {
+          setAgreementReplacementDetails(replacement.agreement);
+          setAgreementReplacementPendingAction("send");
+          setAgreementReplacementModalOpen(true);
+          return;
+        }
         throw new Error(extractErrorMessage(text));
       }
 
@@ -812,11 +865,20 @@ export default function AdminBillingPage() {
     };
   }, [agreementPreviewPdfUrl]);
 
+  useEffect(() => {
+    setAgreementReplacementModalOpen(false);
+    setAgreementReplacementPendingAction(null);
+    setAgreementReplacementDetails(null);
+  }, [agreementClientMode, scopedAgreementClientId]);
+
   const card = "bg-white rounded-2xl mb-5 overflow-hidden";
   const cardStyle = { border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 2px 12px rgba(10,21,71,0.04)" };
   const enterpriseFeePeriod = agreementForm.billingOption === "annual" ? "per year" : "per month";
 
   const handleClearAgreementTextFields = () => {
+    if (agreementClientMode === "attach_existing_client") {
+      setAgreementAttachedClientId("");
+    }
     setAgreementForm((prev) => ({
       ...prev,
       clientLegalName: "",
@@ -836,20 +898,7 @@ export default function AdminBillingPage() {
     setInitialRenewalDateParts({ month: "", day: "", year: "" });
     setAgreementError("");
     setAgreementSuccess("");
-    setAgreementFieldErrors((prev) => {
-      const next = { ...prev };
-      delete next.clientLegalName;
-      delete next.primaryAdmin;
-      delete next.adminEmail;
-      delete next.candidateAssistanceContact;
-      delete next.platformFee;
-      delete next.perRoleFee;
-      delete next.additionalInterviewFee;
-      delete next.includedInterviewsPerRole;
-      delete next.initialTermStart;
-      delete next.initialRenewalDate;
-      return next;
-    });
+    setAgreementFieldErrors({});
   };
 
   return (
@@ -1561,6 +1610,86 @@ export default function AdminBillingPage() {
                   {agreementSendBusy ? "Sending..." : "Send Agreement"}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {agreementReplacementModalOpen ? (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center p-4 sm:p-6">
+          <button
+            type="button"
+            onClick={() => {
+              setAgreementReplacementModalOpen(false);
+              setAgreementReplacementPendingAction(null);
+              setAgreementReplacementDetails(null);
+            }}
+            className="absolute inset-0 bg-[#0A1547]/45"
+            aria-label="Close replacement confirmation"
+          />
+          <div
+            className="relative w-full max-w-xl bg-white rounded-2xl overflow-hidden"
+            style={{ border: "1px solid rgba(10,21,71,0.10)", boxShadow: "0 20px 44px rgba(10,21,71,0.24)" }}
+          >
+            <div className="px-5 py-4 border-b border-gray-100">
+              <p className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">Confirm Replacement</p>
+              <h3 className="text-sm font-black text-[#0A1547] leading-snug mt-1">Existing Agreement Found</h3>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <p className="text-sm text-[#0A1547]/75">
+                This client already has an active signed agreement. Sending and signing a new agreement will replace the current agreement, and only one agreement can be current at a time.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                <p className="text-[#0A1547]/70">
+                  <span className="font-black text-[#0A1547]">Current Tier:</span>{" "}
+                  {agreementReplacementDetails?.membership_tier || "—"}
+                </p>
+                <p className="text-[#0A1547]/70">
+                  <span className="font-black text-[#0A1547]">Initial Term Start:</span>{" "}
+                  {agreementReplacementDetails?.initial_term_start || "—"}
+                </p>
+                <p className="text-[#0A1547]/70">
+                  <span className="font-black text-[#0A1547]">Renewal Date:</span>{" "}
+                  {agreementReplacementDetails?.initial_renewal_date || "—"}
+                </p>
+                <p className="text-[#0A1547]/70">
+                  <span className="font-black text-[#0A1547]">Signed Date:</span>{" "}
+                  {agreementReplacementDetails?.signed_at ? formatDateTime(agreementReplacementDetails.signed_at) : "—"}
+                </p>
+              </div>
+            </div>
+            <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setAgreementReplacementModalOpen(false);
+                  setAgreementReplacementPendingAction(null);
+                  setAgreementReplacementDetails(null);
+                }}
+                className="px-4 py-2 text-xs font-bold rounded-full border border-gray-200 text-[#0A1547]/70 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const pendingAction = agreementReplacementPendingAction;
+                  setAgreementReplacementModalOpen(false);
+                  setAgreementReplacementPendingAction(null);
+                  setAgreementReplacementDetails(null);
+                  if (pendingAction === "preview") {
+                    void handleGenerateAgreementPreview(true);
+                    return;
+                  }
+                  if (pendingAction === "send") {
+                    void handleSendAgreement(true);
+                  }
+                }}
+                className="px-4 py-2 text-xs font-bold text-white rounded-full transition-colors"
+                style={{ backgroundColor: "#A380F6" }}
+              >
+                Continue and Replace
+              </button>
             </div>
           </div>
         </div>
