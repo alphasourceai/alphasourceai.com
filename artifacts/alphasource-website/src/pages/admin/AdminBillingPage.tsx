@@ -32,6 +32,13 @@ interface BillingCustomer {
   primaryContactEmail: string;
 }
 
+interface StoredClientRow {
+  id: string;
+  name: string;
+  email: string;
+  clientAdminName: string;
+}
+
 interface AgreementFormValues {
   clientLegalName: string;
   dbaTradeName: string;
@@ -211,6 +218,7 @@ export default function AdminBillingPage() {
     error: adminClientsError,
   } = useAdminClient();
   const [billingCustomers, setBillingCustomers] = useState<BillingCustomer[]>([]);
+  const [storedClientsById, setStoredClientsById] = useState<Record<string, StoredClientRow>>({});
   const [invoiceHistory, setInvoiceHistory] = useState<Invoice[]>([]);
   const [billingLoading, setBillingLoading] = useState<boolean>(false);
   const [billingError, setBillingError] = useState<string>("");
@@ -349,27 +357,44 @@ export default function AdminBillingPage() {
     const clientId = String(scopedAgreementClientId || "").trim();
     if (!clientId) return;
 
+    const matchedStoredClient = storedClientsById[clientId] || null;
     const matchedOption = agreementClientOptions.find((client) => client.id === clientId);
     const matchedCustomer = billingCustomers.find((customer) => customer.clientId === clientId);
 
     setAgreementForm((previous) => ({
       ...previous,
-      clientLegalName: String(matchedCustomer?.name || matchedOption?.name || previous.clientLegalName).trim(),
-      primaryAdmin: String(matchedCustomer?.primaryContactName || previous.primaryAdmin).trim(),
-      adminEmail: String(matchedCustomer?.primaryContactEmail || previous.adminEmail).trim(),
+      clientLegalName: String(
+        matchedStoredClient?.name || matchedCustomer?.name || matchedOption?.name || previous.clientLegalName,
+      ).trim(),
+      primaryAdmin: String(
+        matchedStoredClient?.clientAdminName || matchedCustomer?.primaryContactName || previous.primaryAdmin,
+      ).trim(),
+      adminEmail: String(
+        matchedStoredClient?.email || matchedCustomer?.primaryContactEmail || previous.adminEmail,
+      ).trim(),
     }));
 
     setAgreementFieldErrors((prev) => {
       const next = { ...prev };
       delete next.attachedClientId;
-      if (matchedCustomer?.name || matchedOption?.name) delete next.clientLegalName;
-      if (matchedCustomer?.primaryContactName) delete next.primaryAdmin;
-      if (matchedCustomer?.primaryContactEmail) delete next.adminEmail;
+      if (matchedStoredClient?.name || matchedCustomer?.name || matchedOption?.name) delete next.clientLegalName;
+      if (matchedStoredClient?.clientAdminName || matchedCustomer?.primaryContactName) delete next.primaryAdmin;
+      if (matchedStoredClient?.email || matchedCustomer?.primaryContactEmail) delete next.adminEmail;
       return next;
     });
-  }, [agreementClientMode, scopedAgreementClientId, agreementClientOptions, billingCustomers]);
+  }, [agreementClientMode, scopedAgreementClientId, agreementClientOptions, billingCustomers, storedClientsById]);
 
   useEffect(() => {
+    if (agreementClientMode === "add_new_client") {
+      setAgreementAttachedClientId("");
+      setAgreementForm((prev) => ({
+        ...prev,
+        clientLegalName: "",
+        dbaTradeName: "",
+        primaryAdmin: "",
+        adminEmail: "",
+      }));
+    }
     setAgreementFieldErrors((prev) => {
       const next = { ...prev };
       if (agreementClientMode === "attach_existing_client") delete next.candidateAssistanceContact;
@@ -383,7 +408,7 @@ export default function AdminBillingPage() {
     attached_client_id: agreementClientMode === "attach_existing_client" ? scopedAgreementClientId || null : null,
     client_id: agreementClientMode === "attach_existing_client" ? scopedAgreementClientId || null : null,
     client_legal_name: agreementForm.clientLegalName.trim(),
-    dba_trade_name: agreementForm.dbaTradeName.trim(),
+    dba_trade_name: agreementForm.dbaTradeName.trim() || agreementForm.clientLegalName.trim(),
     primary_admin_name: agreementForm.primaryAdmin.trim(),
     admin_email: agreementForm.adminEmail.trim(),
     candidate_assistance_contact:
@@ -401,6 +426,12 @@ export default function AdminBillingPage() {
   const validateAgreementForm = (): boolean => {
     const errors: AgreementFieldErrors = {};
     const adminEmail = String(agreementForm.adminEmail || "").trim();
+    const hasInitialTermParts = Boolean(
+      initialTermStartParts.month || initialTermStartParts.day || initialTermStartParts.year,
+    );
+    const hasInitialRenewalParts = Boolean(
+      initialRenewalDateParts.month || initialRenewalDateParts.day || initialRenewalDateParts.year,
+    );
 
     if (agreementClientMode === "attach_existing_client" && !String(scopedAgreementClientId || "").trim()) {
       errors.attachedClientId = "Select an existing client.";
@@ -409,8 +440,16 @@ export default function AdminBillingPage() {
     if (!agreementForm.primaryAdmin.trim()) errors.primaryAdmin = "Primary admin is required.";
     if (!adminEmail) errors.adminEmail = "Admin email is required.";
     else if (!AGREEMENT_EMAIL_RE.test(adminEmail)) errors.adminEmail = "Enter a valid admin email.";
-    if (!agreementForm.initialTermStart.trim()) errors.initialTermStart = "Initial term start is required.";
-    if (!agreementForm.initialRenewalDate.trim()) errors.initialRenewalDate = "Initial renewal date is required.";
+    if (!agreementForm.initialTermStart.trim()) {
+      errors.initialTermStart = hasInitialTermParts
+        ? "Enter a real date in MM / DD / YYYY."
+        : "Initial term start is required.";
+    }
+    if (!agreementForm.initialRenewalDate.trim()) {
+      errors.initialRenewalDate = hasInitialRenewalParts
+        ? "Enter a real date in MM / DD / YYYY."
+        : "Initial renewal date is required.";
+    }
     if (agreementClientMode === "add_new_client" && !agreementForm.candidateAssistanceContact.trim()) {
       errors.candidateAssistanceContact = "Candidate assistance contact is required.";
     }
@@ -546,6 +585,7 @@ export default function AdminBillingPage() {
       if (adminClientsError) {
         if (!alive) return;
         setBillingCustomers([]);
+        setStoredClientsById({});
         setInvoiceHistory([]);
         setBillingError(adminClientsError);
         setBillingLoading(false);
@@ -554,6 +594,7 @@ export default function AdminBillingPage() {
       if (!backendBase) {
         if (!alive) return;
         setBillingCustomers([]);
+        setStoredClientsById({});
         setInvoiceHistory([]);
         setBillingError("Missing backend base URL configuration.");
         setBillingLoading(false);
@@ -571,7 +612,7 @@ export default function AdminBillingPage() {
         const token = String(session?.access_token || "").trim();
         if (!token) throw new Error("Missing session token.");
 
-        const [customersResponse, invoicesResponse] = await Promise.all([
+        const [customersResponse, invoicesResponse, clientsResponse] = await Promise.all([
           fetch(`${backendBase}/admin/billing/customers`, {
             method: "GET",
             headers: { Authorization: `Bearer ${token}` },
@@ -582,18 +623,26 @@ export default function AdminBillingPage() {
             headers: { Authorization: `Bearer ${token}` },
             credentials: "omit",
           }),
+          fetch(`${backendBase}/admin/clients`, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            credentials: "omit",
+          }),
         ]);
 
-        const [customersText, invoicesText] = await Promise.all([
+        const [customersText, invoicesText, clientsText] = await Promise.all([
           customersResponse.text(),
           invoicesResponse.text(),
+          clientsResponse.text(),
         ]);
 
         if (!customersResponse.ok) throw new Error(extractErrorMessage(customersText));
         if (!invoicesResponse.ok) throw new Error(extractErrorMessage(invoicesText));
+        if (!clientsResponse.ok) throw new Error(extractErrorMessage(clientsText));
 
         const customersPayload = parseJsonSafe(customersText);
         const invoicesPayload = parseJsonSafe(invoicesText);
+        const clientsPayload = parseJsonSafe(clientsText);
         const customerItems =
           customersPayload &&
           typeof customersPayload === "object" &&
@@ -605,6 +654,12 @@ export default function AdminBillingPage() {
           typeof invoicesPayload === "object" &&
           Array.isArray((invoicesPayload as { items?: unknown }).items)
             ? ((invoicesPayload as { items: unknown[] }).items || [])
+            : [];
+        const clientItems =
+          clientsPayload &&
+          typeof clientsPayload === "object" &&
+          Array.isArray((clientsPayload as { items?: unknown }).items)
+            ? ((clientsPayload as { items: unknown[] }).items || [])
             : [];
 
         const mappedCustomers = customerItems
@@ -619,6 +674,21 @@ export default function AdminBillingPage() {
           .filter((item) => Boolean(item.id));
 
         const customerById = Object.fromEntries(mappedCustomers.map((customer) => [customer.id, customer]));
+        const storedClients = Object.fromEntries(
+          clientItems
+            .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+            .map((item) => {
+              const id = String(item.id || "").trim();
+              const row: StoredClientRow = {
+                id,
+                name: String(item.name || "").trim(),
+                email: String(item.email || "").trim(),
+                clientAdminName: String(item.client_admin_name || "").trim(),
+              };
+              return [id, row] as const;
+            })
+            .filter(([id]) => Boolean(id)),
+        );
 
         const mappedInvoices = invoiceItems
           .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
@@ -644,10 +714,12 @@ export default function AdminBillingPage() {
 
         if (!alive) return;
         setBillingCustomers(mappedCustomers);
+        setStoredClientsById(storedClients);
         setInvoiceHistory(mappedInvoices);
       } catch (error) {
         if (!alive) return;
         setBillingCustomers([]);
+        setStoredClientsById({});
         setInvoiceHistory([]);
         setBillingError(error instanceof Error ? error.message : "Failed to load billing data.");
       } finally {
@@ -1291,10 +1363,12 @@ export default function AdminBillingPage() {
                   type="button"
                   onClick={() => { void handleSendAgreement(); }}
                   disabled={agreementSendBusy}
-                  className="px-4 py-2 text-xs font-bold text-white rounded-full transition-all hover:opacity-90"
+                  className={`px-4 py-2 text-xs font-bold text-white rounded-full transition-opacity ${
+                    agreementSendBusy ? "opacity-70" : "hover:opacity-90"
+                  }`}
                   style={{
-                    backgroundColor: agreementSendBusy ? "rgba(10,21,71,0.2)" : "#A380F6",
-                    cursor: agreementSendBusy ? "not-allowed" : "pointer",
+                    backgroundColor: "#A380F6",
+                    cursor: agreementSendBusy ? "wait" : "pointer",
                   }}
                 >
                   {agreementSendBusy ? "Sending..." : "Send Agreement"}
