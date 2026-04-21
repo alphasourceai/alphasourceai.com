@@ -266,17 +266,14 @@ export default function AdminBillingPage() {
   const [billingError, setBillingError] = useState<string>("");
   const [refreshNonce, setRefreshNonce] = useState(0);
 
-  /* Create billing customer */
-  const [cbcCompany, setCbcCompany]   = useState("");
-  const [cbcContact, setCbcContact]   = useState("");
-  const [cbcEmail, setCbcEmail]       = useState("");
-  const [cbcNotes, setCbcNotes]       = useState("");
-
   /* Send invoice */
   const [invCustomer, setInvCustomer]       = useState("");
   const [invTitle, setInvTitle]             = useState("");
   const [invDesc, setInvDesc]               = useState("");
   const [invDays, setInvDays]               = useState("7");
+  const [invoiceSendBusy, setInvoiceSendBusy] = useState(false);
+  const [invoiceSendError, setInvoiceSendError] = useState("");
+  const [invoiceSendSuccess, setInvoiceSendSuccess] = useState("");
   const [lineItems, setLineItems]           = useState<LineItem[]>([
     { id: 1, description: "", qty: 1, unit: "" },
   ]);
@@ -686,6 +683,72 @@ export default function AdminBillingPage() {
     }
   };
 
+  const handleSendInvoice = async () => {
+    if (!backendBase) {
+      setInvoiceSendSuccess("");
+      setInvoiceSendError("Missing backend base URL configuration.");
+      return;
+    }
+
+    const invoiceTitle = String(invTitle || "").trim();
+    const selectedClientId = String(invCustomer || "").trim();
+    const invoiceItems = lineItems
+      .map((li) => ({
+        description: String(li.description || "").trim(),
+        quantity: Number.isFinite(Number(li.qty)) && Number(li.qty) > 0 ? Number(li.qty) : 1,
+        unit_amount: Number(li.unit),
+      }))
+      .filter((li) => li.description && Number.isFinite(li.unit_amount) && li.unit_amount > 0);
+
+    if (!selectedClientId || !invoiceTitle || !invoiceItems.length) {
+      setInvoiceSendSuccess("");
+      setInvoiceSendError("Select a client, add an invoice title, and include at least one valid line item.");
+      return;
+    }
+
+    setInvoiceSendBusy(true);
+    setInvoiceSendError("");
+    setInvoiceSendSuccess("");
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = String(session?.access_token || "").trim();
+      if (!token) throw new Error("Missing session token.");
+
+      const response = await fetch(`${backendBase}/admin/billing/invoices/send`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          client_id: selectedClientId,
+          invoice_title: invoiceTitle,
+          invoice_description: String(invDesc || "").trim() || null,
+          days_until_due: Number.isFinite(parseInt(invDays, 10)) ? parseInt(invDays, 10) : 7,
+          line_items: invoiceItems,
+        }),
+        credentials: "omit",
+      });
+
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text));
+
+      setInvoiceSendSuccess("Invoice sent successfully.");
+      setInvTitle("");
+      setInvDesc("");
+      setInvDays("7");
+      setLineItems([{ id: _lineId++, description: "", qty: 1, unit: "" }]);
+      setRefreshNonce((value) => value + 1);
+    } catch (error) {
+      setInvoiceSendError(error instanceof Error ? error.message : "Could not send invoice.");
+    } finally {
+      setInvoiceSendBusy(false);
+    }
+  };
+
   useEffect(() => {
     let alive = true;
 
@@ -851,13 +914,20 @@ export default function AdminBillingPage() {
     selectedClientId === "all"
       ? invoiceHistory
       : invoiceHistory.filter((invoice) => scopedCustomerIdSet.has(invoice.customerId));
-  const clientOptions = scopedCustomers;
+  const invoiceClientOptions =
+    selectedClientId === "all"
+      ? adminClients.filter((client) => client.id !== "all")
+      : adminClients.filter((client) => client.id === selectedClientId);
 
   useEffect(() => {
+    if (selectedClientId !== "all") {
+      setInvCustomer(selectedClientId);
+      return;
+    }
     if (!invCustomer) return;
-    if (clientOptions.some((customer) => customer.id === invCustomer)) return;
+    if (invoiceClientOptions.some((client) => client.id === invCustomer)) return;
     setInvCustomer("");
-  }, [invCustomer, clientOptions]);
+  }, [selectedClientId, invCustomer, invoiceClientOptions]);
 
   useEffect(() => {
     return () => {
@@ -1303,35 +1373,18 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* ── Create Billing Customer ─────────────────────────── */}
-      <div className={card} style={cardStyle}>
-        <div className="px-5 py-4 border-b border-gray-100">
-          <p className="text-sm font-black text-[#0A1547]">Create Billing Customer</p>
-        </div>
-        <div className="px-5 py-4 space-y-3">
-          <div className="grid grid-cols-3 gap-3">
-            <input className={inputCls} placeholder="Company name"          value={cbcCompany}  onChange={(e) => setCbcCompany(e.target.value)}  />
-            <input className={inputCls} placeholder="Primary contact name"  value={cbcContact}  onChange={(e) => setCbcContact(e.target.value)}  />
-            <input className={inputCls} placeholder="Primary contact email" type="email" value={cbcEmail} onChange={(e) => setCbcEmail(e.target.value)} />
-          </div>
-          <div className="flex gap-3 items-start">
-            <input className={inputCls + " flex-1"} placeholder="Notes (optional)" value={cbcNotes} onChange={(e) => setCbcNotes(e.target.value)} />
-            <button
-              className="flex-shrink-0 px-5 py-2.5 rounded-full text-sm font-bold text-white transition-opacity hover:opacity-90"
-              style={{ backgroundColor: "#A380F6" }}
-            >
-              Create billing customer
-            </button>
-          </div>
-        </div>
-      </div>
-
       {/* ── Send Invoice ────────────────────────────────────── */}
       <div className={card} style={cardStyle}>
         <div className="px-5 py-4 border-b border-gray-100">
           <p className="text-sm font-black text-[#0A1547]">Send Invoice</p>
         </div>
         <div className="px-5 py-4 space-y-4">
+          {invoiceSendError ? (
+            <p className="text-xs font-semibold text-red-500">{invoiceSendError}</p>
+          ) : null}
+          {invoiceSendSuccess ? (
+            <p className="text-xs font-semibold text-emerald-600">{invoiceSendSuccess}</p>
+          ) : null}
           {/* Row 1 */}
           <div className="grid grid-cols-2 gap-3">
             <div className="relative">
@@ -1339,9 +1392,10 @@ export default function AdminBillingPage() {
                 className={selectCls}
                 value={invCustomer}
                 onChange={(e) => setInvCustomer(e.target.value)}
+                disabled={selectedClientId !== "all"}
               >
-                <option value="">Select billing customer…</option>
-                {clientOptions.map((c) => (
+                <option value="">{selectedClientId === "all" ? "Select client…" : "Selected client"}</option>
+                {invoiceClientOptions.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
@@ -1434,15 +1488,16 @@ export default function AdminBillingPage() {
             </button>
 
             <button
-              disabled={!canSendInvoice}
+              disabled={!canSendInvoice || invoiceSendBusy}
+              onClick={() => { void handleSendInvoice(); }}
               className="px-6 py-2.5 rounded-full text-sm font-bold text-white transition-all"
               style={{
-                backgroundColor: canSendInvoice ? "#A380F6" : "rgba(10,21,71,0.08)",
-                color:           canSendInvoice ? "white"   : "rgba(10,21,71,0.25)",
-                cursor:          canSendInvoice ? "pointer" : "not-allowed",
+                backgroundColor: canSendInvoice && !invoiceSendBusy ? "#A380F6" : "rgba(10,21,71,0.08)",
+                color:           canSendInvoice && !invoiceSendBusy ? "white"   : "rgba(10,21,71,0.25)",
+                cursor:          canSendInvoice && !invoiceSendBusy ? "pointer" : "not-allowed",
               }}
             >
-              Send Invoice
+              {invoiceSendBusy ? "Sending..." : "Send Invoice"}
             </button>
           </div>
         </div>
