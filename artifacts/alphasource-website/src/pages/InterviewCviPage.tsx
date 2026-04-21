@@ -541,7 +541,7 @@ export default function InterviewCviPage() {
             <p className="mt-3 text-center text-xs font-semibold text-red-500">{error}</p>
           )}
         </div>
-      </div>
+      </main>
     </div>
   );
 }
