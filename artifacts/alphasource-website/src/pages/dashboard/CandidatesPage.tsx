@@ -50,6 +50,11 @@ interface Candidate {
   createdSort?: number;
 }
 
+interface ClientRoleOption {
+  id: string;
+  title: string;
+}
+
 type SortKey = "name" | "email" | "role" | "resume" | "interview" | "overall" | "created";
 type SortDir = "asc" | "desc";
 
@@ -750,6 +755,8 @@ export default function CandidatesPage() {
   const [minScore, setMinScore]         = useState("");
   const [sortKey, setSortKey]           = useState<SortKey | null>(null);
   const [sortDir, setSortDir]           = useState<SortDir>("asc");
+  const [clientRoles, setClientRoles] = useState<ClientRoleOption[]>([]);
+  const [selectedRoleId, setSelectedRoleId] = useState("all");
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidatesError, setCandidatesError] = useState("");
@@ -1010,6 +1017,73 @@ export default function CandidatesPage() {
   }, [loadCandidates]);
 
   useEffect(() => {
+    let alive = true;
+
+    const loadRoles = async () => {
+      if (clientLoading) return;
+      if (clientError || !selectedClientId || !backendBase) {
+        if (!alive) return;
+        setClientRoles([]);
+        return;
+      }
+
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const token = String(session?.access_token || "").trim();
+        if (!token) throw new Error("Missing session token.");
+
+        const response = await fetch(
+          `${backendBase}/roles?client_id=${encodeURIComponent(selectedClientId)}`,
+          {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            credentials: "omit",
+          },
+        );
+        const text = await response.text();
+        if (!response.ok) throw new Error(extractErrorMessage(text));
+
+        const payload = parseJsonSafe(text);
+        const items = payload && typeof payload === "object" && Array.isArray((payload as { items?: unknown }).items)
+          ? (payload as { items: unknown[] }).items
+          : [];
+
+        const mapped = items
+          .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+          .map((item) => ({
+            id: String(item.id || "").trim(),
+            title: String(item.title || "").trim() || "Untitled Role",
+          }))
+          .filter((item) => Boolean(item.id));
+
+        if (!alive) return;
+        setClientRoles(mapped);
+      } catch {
+        if (!alive) return;
+        setClientRoles([]);
+      }
+    };
+
+    void loadRoles();
+    return () => {
+      alive = false;
+    };
+  }, [selectedClientId, clientLoading, clientError]);
+
+  useEffect(() => {
+    setSelectedRoleId("all");
+  }, [selectedClientId]);
+
+  useEffect(() => {
+    if (selectedRoleId === "all") return;
+    if (!clientRoles.some((role) => role.id === selectedRoleId)) {
+      setSelectedRoleId("all");
+    }
+  }, [clientRoles, selectedRoleId]);
+
+  useEffect(() => {
     if (expandedId === null) return;
     const hasExpanded = candidates.some((candidate) => candidate.id === expandedId);
     if (!hasExpanded) setExpandedId(null);
@@ -1021,6 +1095,9 @@ export default function CandidatesPage() {
 
   /* Filter */
   const filtered = candidates.filter((c) => {
+    if (selectedRoleId !== "all" && c.roleId !== selectedRoleId) {
+      return false;
+    }
     if (minScoreNum !== null && !isNaN(minScoreNum)) {
       if (c.overall === null || c.overall < minScoreNum) return false;
     }
@@ -1092,10 +1169,15 @@ export default function CandidatesPage() {
           <div className="relative">
             <select
               className="appearance-none w-36 px-4 py-2 rounded-full bg-gray-50 border border-gray-200 text-[#0A1547] text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all cursor-pointer pr-9"
-              value="all"
-              onChange={() => {}}
+              value={selectedRoleId}
+              onChange={(event) => setSelectedRoleId(event.target.value)}
             >
-              <option value="all">All roles</option>
+              <option value="all">All Roles</option>
+              {clientRoles.map((role) => (
+                <option key={role.id} value={role.id}>
+                  {role.title}
+                </option>
+              ))}
             </select>
             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/40 pointer-events-none" />
           </div>
