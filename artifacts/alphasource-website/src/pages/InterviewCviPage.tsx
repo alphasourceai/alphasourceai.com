@@ -464,71 +464,83 @@ export default function InterviewCviPage() {
   if (!session) return null;
 
   return (
-    <div
-      className="fixed inset-0 bg-[#0A1547] flex flex-col items-center justify-center z-50"
-      style={{ fontFamily: "'Raleway', sans-serif" }}
-    >
-      <div className="w-full max-w-6xl px-4">
-        <div
-          className="relative w-full rounded-2xl border border-white/10 bg-black overflow-hidden"
-          style={{ aspectRatio: "16 / 9" }}
-        >
-          <video
-            ref={remoteVideoRef}
-            autoPlay
-            playsInline
-            className="absolute inset-0 w-full h-full object-cover bg-black"
-          />
-          <audio ref={remoteAudioRef} autoPlay />
+    <div className="min-h-screen bg-[#F8F9FD] flex flex-col" style={{ fontFamily: "'Raleway', sans-serif" }}>
+      <header
+        className="bg-white flex-shrink-0 flex items-center px-6 h-14"
+        style={{ borderBottom: "1px solid rgba(10,21,71,0.07)" }}
+      >
+        <img src="/logo-dark-text.png" alt="AlphaSource AI" className="h-8 w-auto" />
+      </header>
 
+      <main className="flex-1 flex flex-col items-center justify-center px-4 py-8 sm:py-12">
+        <div
+          className="w-full max-w-6xl bg-white rounded-2xl p-4 sm:p-5"
+          style={{
+            border: "1px solid rgba(10,21,71,0.07)",
+            boxShadow: "0 4px 24px rgba(10,21,71,0.08)",
+          }}
+        >
           <div
-            className={`absolute bottom-4 right-4 w-40 h-28 rounded-lg overflow-hidden border border-white/20 bg-[#0A1547] ${
-              hasLocalVideo ? "opacity-100" : "opacity-0 pointer-events-none"
-            }`}
+            className="relative w-full rounded-2xl border border-[rgba(10,21,71,0.10)] bg-black overflow-hidden"
+            style={{ aspectRatio: "16 / 9" }}
           >
             <video
-              ref={localVideoRef}
+              ref={remoteVideoRef}
               autoPlay
               playsInline
-              muted
-              className="w-full h-full object-cover"
+              className="absolute inset-0 w-full h-full object-cover bg-black"
             />
+            <audio ref={remoteAudioRef} autoPlay />
+
+            <div
+              className={`absolute bottom-4 right-4 w-40 h-28 rounded-lg overflow-hidden border border-white/20 bg-[#0A1547] ${
+                hasLocalVideo ? "opacity-100" : "opacity-0 pointer-events-none"
+              }`}
+            >
+              <video
+                ref={localVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+              />
+            </div>
+
+            {(!hasRemoteVideo || loading) && (
+              <div className="absolute inset-0 flex items-center justify-center text-white/70 text-sm font-semibold">
+                Connecting interview…
+              </div>
+            )}
+
+            {!loading && error && (
+              <div className="absolute inset-0 flex items-center justify-center text-center px-6 bg-black/35">
+                <p className="text-red-200 text-sm font-semibold">{error}</p>
+              </div>
+            )}
+
+            {timerLabel && (
+              <div className="absolute top-3 right-3 px-3 py-1 rounded-full bg-black/60 border border-white/20 text-[11px] font-bold tracking-wide text-white">
+                {timerLabel}
+              </div>
+            )}
           </div>
 
-          {(!hasRemoteVideo || loading) && (
-            <div className="absolute inset-0 flex items-center justify-center text-white/70 text-sm font-semibold">
-              Connecting interview…
-            </div>
-          )}
+          <div className="mt-3 flex items-center justify-end">
+            <button
+              type="button"
+              onClick={finishInterview}
+              disabled={finishBusy}
+              className="flex items-center gap-2.5 px-6 py-2.5 rounded-full text-sm font-bold text-white transition-all hover:opacity-90 active:scale-[0.97]"
+              style={{ backgroundColor: "#A380F6" }}
+            >
+              {finishBusy ? "Finishing..." : "Finish Interview"}
+            </button>
+          </div>
 
           {!loading && error && (
-            <div className="absolute inset-0 flex items-center justify-center text-center px-6 bg-black/35">
-              <p className="text-red-200 text-sm font-semibold">{error}</p>
-            </div>
-          )}
-
-          {timerLabel && (
-            <div className="absolute top-3 right-3 px-3 py-1 rounded-full bg-black/60 border border-white/20 text-[11px] font-bold tracking-wide text-white">
-              {timerLabel}
-            </div>
+            <p className="mt-3 text-center text-xs font-semibold text-red-500">{error}</p>
           )}
         </div>
-
-        <div className="mt-3 flex items-center justify-end">
-          <button
-            type="button"
-            onClick={finishInterview}
-            disabled={finishBusy}
-            className="flex items-center gap-2.5 px-6 py-2.5 rounded-full text-sm font-bold text-white transition-all hover:opacity-90 active:scale-[0.97]"
-            style={{ backgroundColor: "#A380F6" }}
-          >
-            {finishBusy ? "Finishing..." : "Finish Interview"}
-          </button>
-        </div>
-
-        {!loading && error && (
-          <p className="mt-3 text-center text-xs font-semibold text-red-200">{error}</p>
-        )}
       </div>
     </div>
   );
