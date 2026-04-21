@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { Trash2, Plus, ChevronDown, ExternalLink, RefreshCw, X } from "lucide-react";
+import { Trash2, Plus, ChevronDown, RefreshCw, X } from "lucide-react";
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import AdminLayout from "@/components/AdminLayout";
 import { useAdminClient } from "@/context/AdminClientContext";
 import { supabase } from "@/lib/supabaseClient";
@@ -15,11 +16,13 @@ interface LineItem {
 interface Invoice {
   id:        string;
   customerId: string;
+  createdAt: string;
   created:   string;
   customer:  string;
   email:     string;
   title:     string;
   amount:    string;
+  amountCents: number;
   status:    "open" | "paid" | "void";
   hostedInvoiceUrl: string;
 }
@@ -66,6 +69,7 @@ interface AgreementFormValues {
 }
 
 type AgreementClientMode = "attach_existing_client" | "add_new_client";
+type InvoiceTrendSeriesKey = "total" | "paid" | "open" | "void";
 type AgreementFieldErrorKey =
   | "attachedClientId"
   | "clientLegalName"
@@ -85,6 +89,16 @@ interface DateParts {
   month: string;
   day: string;
   year: string;
+}
+
+interface InvoiceTrendPoint {
+  monthKey: string;
+  monthLabel: string;
+  total: number;
+  paid: number;
+  open: number;
+  void: number;
+  invoices: number;
 }
 
 const env =
@@ -195,12 +209,6 @@ const datePartCls =
 const REQUIRED_MARK = " *";
 const AGREEMENT_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const statusColors: Record<string, { bg: string; text: string }> = {
-  open: { bg: "rgba(240,165,0,0.10)",   text: "#C07800"  },
-  paid: { bg: "rgba(2,217,157,0.10)",   text: "#00886A"  },
-  void: { bg: "rgba(10,21,71,0.07)",    text: "rgba(10,21,71,0.35)" },
-};
-
 let _lineId = 10;
 
 function defaultAgreementFormValues(): AgreementFormValues {
@@ -274,6 +282,12 @@ export default function AdminBillingPage() {
   const [invoiceSendBusy, setInvoiceSendBusy] = useState(false);
   const [invoiceSendError, setInvoiceSendError] = useState("");
   const [invoiceSendSuccess, setInvoiceSendSuccess] = useState("");
+  const [invoiceTrendVisible, setInvoiceTrendVisible] = useState<Record<InvoiceTrendSeriesKey, boolean>>({
+    total: true,
+    paid: true,
+    open: true,
+    void: false,
+  });
   const [lineItems, setLineItems]           = useState<LineItem[]>([
     { id: 1, description: "", qty: 1, unit: "" },
   ]);
@@ -870,14 +884,19 @@ export default function AdminBillingPage() {
             const customerName = String(item.customer_name || "").trim() || customer?.name || customerId || "—";
             const customerEmail =
               String(item.customer_email || "").trim() || customer?.primaryContactEmail || "";
+            const createdAt = String(item.created_at || "").trim();
+            const amountCentsRaw = Number(item.amount_total_cents);
+            const amountCents = Number.isFinite(amountCentsRaw) ? amountCentsRaw : 0;
             return {
               id: String(item.id || `invoice-${index}`),
               customerId,
-              created: formatDateTime(item.created_at),
+              createdAt,
+              created: formatDateTime(createdAt),
               customer: customerName,
               email: customerEmail,
               title: String(item.title || item.invoice_title || "").trim() || "—",
-              amount: formatAmountFromCents(item.amount_total_cents, item.currency),
+              amount: formatAmountFromCents(amountCents, item.currency),
+              amountCents,
               status: normalizeInvoiceStatus(item.status),
               hostedInvoiceUrl: String(item.hosted_invoice_url || "").trim(),
             };
@@ -914,6 +933,47 @@ export default function AdminBillingPage() {
     selectedClientId === "all"
       ? invoiceHistory
       : invoiceHistory.filter((invoice) => scopedCustomerIdSet.has(invoice.customerId));
+  const invoiceTrendSummary = useMemo(() => {
+    return filteredInvoices.reduce(
+      (acc, invoice) => {
+        const cents = Number.isFinite(invoice.amountCents) ? invoice.amountCents : 0;
+        acc.totalCents += cents;
+        acc.count += 1;
+        if (invoice.status === "paid") acc.paidCents += cents;
+        if (invoice.status === "open") acc.openCents += cents;
+        if (invoice.status === "void") acc.voidCents += cents;
+        return acc;
+      },
+      { totalCents: 0, paidCents: 0, openCents: 0, voidCents: 0, count: 0 },
+    );
+  }, [filteredInvoices]);
+  const invoiceTrendData = useMemo<InvoiceTrendPoint[]>(() => {
+    const byMonth = new Map<string, InvoiceTrendPoint>();
+    filteredInvoices.forEach((invoice) => {
+      const parsedDate = new Date(invoice.createdAt || invoice.created);
+      if (Number.isNaN(parsedDate.getTime())) return;
+      const monthIndex = parsedDate.getMonth();
+      const monthKey = `${parsedDate.getFullYear()}-${String(monthIndex + 1).padStart(2, "0")}`;
+      const monthLabel = parsedDate.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+      const existing = byMonth.get(monthKey) || {
+        monthKey,
+        monthLabel,
+        total: 0,
+        paid: 0,
+        open: 0,
+        void: 0,
+        invoices: 0,
+      };
+      const dollars = (Number.isFinite(invoice.amountCents) ? invoice.amountCents : 0) / 100;
+      existing.total += dollars;
+      existing.invoices += 1;
+      if (invoice.status === "paid") existing.paid += dollars;
+      else if (invoice.status === "open") existing.open += dollars;
+      else if (invoice.status === "void") existing.void += dollars;
+      byMonth.set(monthKey, existing);
+    });
+    return Array.from(byMonth.values()).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+  }, [filteredInvoices]);
   const invoiceClientOptions =
     selectedClientId === "all"
       ? adminClients.filter((client) => client.id !== "all")
@@ -1503,10 +1563,13 @@ export default function AdminBillingPage() {
         </div>
       </div>
 
-      {/* ── Invoice History ─────────────────────────────────── */}
+      {/* ── Billed Revenue Trend ───────────────────────────── */}
       <div className={card} style={cardStyle}>
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-          <p className="text-sm font-black text-[#0A1547]">Invoice History</p>
+          <div>
+            <p className="text-sm font-black text-[#0A1547]">Billed Revenue Trend</p>
+            <p className="text-[11px] text-[#0A1547]/45 mt-1">Invoice-based billed revenue trend (not MRR / ARR).</p>
+          </div>
           <button
             onClick={() => setRefreshNonce((value) => value + 1)}
             disabled={billingLoading}
@@ -1517,94 +1580,171 @@ export default function AdminBillingPage() {
             Refresh
           </button>
         </div>
+        <div className="px-5 py-4 space-y-4">
+          {billingLoading ? (
+            <p className="text-sm text-[#0A1547]/35 font-semibold">Loading billing trend...</p>
+          ) : billingError ? (
+            <p className="text-sm text-red-500 font-semibold">{billingError}</p>
+          ) : filteredInvoices.length === 0 ? (
+            <p className="text-sm text-[#0A1547]/35 font-semibold">No invoice data is available yet.</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="rounded-xl border border-[rgba(10,21,71,0.08)] bg-white px-3 py-2.5">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">Total Billed</p>
+                  <p className="text-base font-black text-[#0A1547] mt-1">{formatAmountFromCents(invoiceTrendSummary.totalCents, "usd")}</p>
+                </div>
+                <div className="rounded-xl border border-[rgba(10,21,71,0.08)] bg-white px-3 py-2.5">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">Paid Billed</p>
+                  <p className="text-base font-black text-[#00886A] mt-1">{formatAmountFromCents(invoiceTrendSummary.paidCents, "usd")}</p>
+                </div>
+                <div className="rounded-xl border border-[rgba(10,21,71,0.08)] bg-white px-3 py-2.5">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">Open Billed</p>
+                  <p className="text-base font-black text-[#C07800] mt-1">{formatAmountFromCents(invoiceTrendSummary.openCents, "usd")}</p>
+                </div>
+                <div className="rounded-xl border border-[rgba(10,21,71,0.08)] bg-white px-3 py-2.5">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">Invoices</p>
+                  <p className="text-base font-black text-[#0A1547] mt-1">{invoiceTrendSummary.count}</p>
+                </div>
+              </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[700px]">
-            <thead>
-              <tr className="border-b border-gray-100">
-                {[
-                  ["Created",  "pl-5"],
-                  ["Customer", ""],
-                  ["Title",    ""],
-                  ["Amount",   ""],
-                  ["Status",   ""],
-                  ["Link",     "pr-5 text-center"],
-                ].map(([label, cls]) => (
-                  <th key={label} className={`px-4 py-3.5 text-left text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 ${cls}`}>
-                    {label}
-                  </th>
+              <div className="flex flex-wrap gap-2">
+                {([
+                  { key: "total", label: "Total Billed", color: "#0A1547" },
+                  { key: "paid", label: "Paid", color: "#02B289" },
+                  { key: "open", label: "Open", color: "#F0A500" },
+                  { key: "void", label: "Void", color: "#7B819B" },
+                ] as const).map((series) => (
+                  <button
+                    key={series.key}
+                    type="button"
+                    onClick={() => {
+                      setInvoiceTrendVisible((prev) => ({
+                        ...prev,
+                        [series.key]: !prev[series.key],
+                      }));
+                    }}
+                    className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-full text-xs font-bold border transition-colors"
+                    style={{
+                      borderColor: invoiceTrendVisible[series.key] ? "rgba(10,21,71,0.2)" : "rgba(10,21,71,0.08)",
+                      color: invoiceTrendVisible[series.key] ? "#0A1547" : "rgba(10,21,71,0.45)",
+                      backgroundColor: invoiceTrendVisible[series.key] ? "rgba(10,21,71,0.04)" : "white",
+                    }}
+                  >
+                    <span
+                      className="w-2.5 h-2.5 rounded-sm"
+                      style={{ backgroundColor: series.color, opacity: invoiceTrendVisible[series.key] ? 1 : 0.35 }}
+                    />
+                    {series.label}
+                  </button>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {billingLoading ? (
-                <tr>
-                  <td colSpan={6} className="text-center py-14 text-sm text-[#0A1547]/30 font-semibold">
-                    Loading billing data...
-                  </td>
-                </tr>
-              ) : billingError ? (
-                <tr>
-                  <td colSpan={6} className="text-center py-14 text-sm text-red-500 font-semibold">
-                    {billingError}
-                  </td>
-                </tr>
-              ) : filteredInvoices.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="text-center py-14 text-sm text-[#0A1547]/30 font-semibold">
-                    No invoices yet.
-                  </td>
-                </tr>
-              ) : (
-                filteredInvoices.map((inv, idx) => {
-                  const sc = statusColors[inv.status];
-                  return (
-                    <tr
-                      key={inv.id}
-                      className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors"
-                      style={idx === filteredInvoices.length - 1 ? { borderBottom: "none" } : {}}
-                    >
-                      <td className="px-4 py-4 pl-5">
-                        <p className="text-xs font-semibold text-[#0A1547]/60">{inv.created}</p>
-                      </td>
-                      <td className="px-4 py-4">
-                        <p className="text-sm font-bold text-[#0A1547]">{inv.customer}</p>
-                        <p className="text-[11px] text-[#0A1547]/40">{inv.email || "—"}</p>
-                      </td>
-                      <td className="px-4 py-4">
-                        <p className="text-sm text-[#0A1547]/70 font-medium">{inv.title}</p>
-                      </td>
-                      <td className="px-4 py-4">
-                        <p className="text-sm font-black text-[#0A1547]">{inv.amount}</p>
-                      </td>
-                      <td className="px-4 py-4">
-                        <span
-                          className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold"
-                          style={{ backgroundColor: sc.bg, color: sc.text }}
-                        >
-                          {inv.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4 pr-5 text-center">
-                        {inv.hostedInvoiceUrl ? (
-                          <button
-                            onClick={() => window.open(inv.hostedInvoiceUrl, "_blank", "noopener,noreferrer")}
-                            className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold text-white transition-opacity hover:opacity-90 mx-auto"
-                            style={{ backgroundColor: "#A380F6" }}
-                          >
-                            <ExternalLink className="w-3 h-3" />
-                            Open
-                          </button>
-                        ) : (
-                          <span className="text-xs text-[#0A1547]/30 font-semibold">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+              </div>
+
+              <div className="w-full h-[320px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={invoiceTrendData} margin={{ top: 8, right: 12, left: 8, bottom: 6 }}>
+                    <defs>
+                      <linearGradient id="invoice-total-fill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#0A1547" stopOpacity={0.24} />
+                        <stop offset="100%" stopColor="#0A1547" stopOpacity={0.02} />
+                      </linearGradient>
+                      <linearGradient id="invoice-paid-fill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#02B289" stopOpacity={0.22} />
+                        <stop offset="100%" stopColor="#02B289" stopOpacity={0.02} />
+                      </linearGradient>
+                      <linearGradient id="invoice-open-fill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#F0A500" stopOpacity={0.2} />
+                        <stop offset="100%" stopColor="#F0A500" stopOpacity={0.02} />
+                      </linearGradient>
+                      <linearGradient id="invoice-void-fill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#7B819B" stopOpacity={0.18} />
+                        <stop offset="100%" stopColor="#7B819B" stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(10,21,71,0.10)" />
+                    <XAxis
+                      dataKey="monthLabel"
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fill: "rgba(10,21,71,0.55)", fontSize: 11, fontWeight: 600 }}
+                    />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fill: "rgba(10,21,71,0.45)", fontSize: 11, fontWeight: 600 }}
+                      tickFormatter={(value: number) => `$${Math.round(Number(value || 0)).toLocaleString()}`}
+                      width={68}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        border: "1px solid rgba(10,21,71,0.12)",
+                        borderRadius: 12,
+                        boxShadow: "0 12px 24px rgba(10,21,71,0.16)",
+                      }}
+                      formatter={(value: number, name: string) => {
+                        const numeric = Number.isFinite(Number(value)) ? Number(value) : 0;
+                        const labelMap: Record<string, string> = {
+                          total: "Total Billed",
+                          paid: "Paid",
+                          open: "Open",
+                          void: "Void",
+                        };
+                        return [formatAmountFromCents(Math.round(numeric * 100), "usd"), labelMap[name] || name];
+                      }}
+                    />
+                    {invoiceTrendVisible.total ? (
+                      <Area
+                        type="monotone"
+                        dataKey="total"
+                        name="total"
+                        stroke="#0A1547"
+                        fill="url(#invoice-total-fill)"
+                        strokeWidth={2.4}
+                        activeDot={{ r: 5, strokeWidth: 0, fill: "#0A1547" }}
+                        animationDuration={320}
+                      />
+                    ) : null}
+                    {invoiceTrendVisible.paid ? (
+                      <Area
+                        type="monotone"
+                        dataKey="paid"
+                        name="paid"
+                        stroke="#02B289"
+                        fill="url(#invoice-paid-fill)"
+                        strokeWidth={2}
+                        activeDot={{ r: 4, strokeWidth: 0, fill: "#02B289" }}
+                        animationDuration={320}
+                      />
+                    ) : null}
+                    {invoiceTrendVisible.open ? (
+                      <Area
+                        type="monotone"
+                        dataKey="open"
+                        name="open"
+                        stroke="#F0A500"
+                        fill="url(#invoice-open-fill)"
+                        strokeWidth={1.8}
+                        activeDot={{ r: 4, strokeWidth: 0, fill: "#F0A500" }}
+                        animationDuration={320}
+                      />
+                    ) : null}
+                    {invoiceTrendVisible.void ? (
+                      <Area
+                        type="monotone"
+                        dataKey="void"
+                        name="void"
+                        stroke="#7B819B"
+                        fill="url(#invoice-void-fill)"
+                        strokeWidth={1.8}
+                        activeDot={{ r: 4, strokeWidth: 0, fill: "#7B819B" }}
+                        animationDuration={320}
+                      />
+                    ) : null}
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
