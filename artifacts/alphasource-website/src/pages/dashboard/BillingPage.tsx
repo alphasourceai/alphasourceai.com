@@ -211,7 +211,15 @@ function InfoCard({
 }
 
 export default function BillingPage() {
-  const { selectedClient, selectedClientId, loading: clientLoading, error: clientError } = useClient();
+  const { selectedClient, selectedClientId, loading: clientLoading, error: clientError, memberships, isGlobalAdmin } = useClient();
+  const selectedMembershipRole = String(
+    memberships.find((membership) => membership.client_id === selectedClientId)?.role ||
+      selectedClient.role ||
+      "",
+  )
+    .trim()
+    .toLowerCase();
+  const canManageBilling = isGlobalAdmin || selectedMembershipRole === "manager" || selectedMembershipRole === "admin";
   const clientName = selectedClient.id === "all" ? "All Clients" : selectedClient.name;
   const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
   const [billingLoading, setBillingLoading] = useState(false);
@@ -235,7 +243,7 @@ export default function BillingPage() {
   const [selectedRole, setSelectedRole] = useState("");
   const [quantity, setQuantity]         = useState(1);
 
-  const canPurchase = selectedRole !== "" && Number.isInteger(quantity) && quantity >= 1 && !rolesLoading && !purchaseBusy;
+  const canPurchase = canManageBilling && selectedRole !== "" && Number.isInteger(quantity) && quantity >= 1 && !rolesLoading && !purchaseBusy;
 
   useEffect(() => {
     let alive = true;
@@ -677,7 +685,7 @@ export default function BillingPage() {
   };
 
   const openBillingPortal = async () => {
-    if (!selectedClientId || portalBusy) return;
+    if (!canManageBilling || !selectedClientId || portalBusy) return;
     setActionNotice(null);
     setPortalBusy(true);
     try {
@@ -725,7 +733,7 @@ export default function BillingPage() {
   };
 
   const startAdditionalInterviewsCheckout = async () => {
-    if (!selectedClientId || !selectedRole || !Number.isInteger(quantity) || quantity <= 0 || purchaseBusy) return;
+    if (!canManageBilling || !selectedClientId || !selectedRole || !Number.isInteger(quantity) || quantity <= 0 || purchaseBusy) return;
     setActionNotice(null);
     setPurchaseBusy(true);
     try {
@@ -946,86 +954,87 @@ export default function BillingPage() {
         )}
       </div>
 
-      {/* ── Section 3: Purchase Additional Interviews ── */}
-      <div
-        className="bg-white rounded-2xl p-6 mb-6"
-        style={{ border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 2px 12px rgba(10,21,71,0.05)" }}
-      >
-        <div className="flex items-center gap-1.5 mb-5">
-          <h2 className="text-base font-black text-[#0A1547]">Purchase Additional Interviews</h2>
-          <InfoTooltip content="Select a role and quantity, then click Purchase to add interview credits. Processed via Stripe." side="bottom" />
-        </div>
-        {actionNotice && (
-          <div
-            className={`mb-4 rounded-xl px-3.5 py-2 text-xs font-semibold ${
-              actionNotice.tone === "success"
-                ? "text-[#009E73] bg-[#02D99D]/10 border border-[#02D99D]/25"
-                : "text-red-500 bg-red-50 border border-red-200"
-            }`}
-            role="status"
-            aria-live="polite"
-          >
-            {actionNotice.text}
+      {canManageBilling && (
+        <div
+          className="bg-white rounded-2xl p-6 mb-6"
+          style={{ border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 2px 12px rgba(10,21,71,0.05)" }}
+        >
+          <div className="flex items-center gap-1.5 mb-5">
+            <h2 className="text-base font-black text-[#0A1547]">Purchase Additional Interviews</h2>
+            <InfoTooltip content="Select a role and quantity, then click Purchase to add interview credits. Processed via Stripe." side="bottom" />
           </div>
-        )}
-
-        <div className="flex flex-wrap gap-3 items-end">
-          {/* Role select */}
-          <div className="flex-1 min-w-[220px]">
-            <label className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 block mb-1.5">
-              Role
-            </label>
-            <div className="relative">
-              <select
-                value={selectedRole}
-                onChange={(e) => setSelectedRole(e.target.value)}
-                className="w-full appearance-none px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all cursor-pointer pr-9"
-                disabled={rolesLoading}
-              >
-                <option value="">
-                  {rolesLoading ? "Loading roles…" : "Select a role…"}
-                </option>
-                {roles.map((role) => (
-                  <option key={role.id} value={role.id}>
-                    {role.title}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/40 pointer-events-none" />
+          {actionNotice && (
+            <div
+              className={`mb-4 rounded-xl px-3.5 py-2 text-xs font-semibold ${
+                actionNotice.tone === "success"
+                  ? "text-[#009E73] bg-[#02D99D]/10 border border-[#02D99D]/25"
+                  : "text-red-500 bg-red-50 border border-red-200"
+              }`}
+              role="status"
+              aria-live="polite"
+            >
+              {actionNotice.text}
             </div>
-          </div>
+          )}
 
-          {/* Quantity */}
-          <div className="w-32">
-            <label className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 block mb-1.5">
-              Quantity
-            </label>
-            <input
-              type="number"
-              min={1}
-              max={500}
-              value={quantity}
-              onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-              className="w-full px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all text-center"
-            />
-          </div>
+          <div className="flex flex-wrap gap-3 items-end">
+            {/* Role select */}
+            <div className="flex-1 min-w-[220px]">
+              <label className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 block mb-1.5">
+                Role
+              </label>
+              <div className="relative">
+                <select
+                  value={selectedRole}
+                  onChange={(e) => setSelectedRole(e.target.value)}
+                  className="w-full appearance-none px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all cursor-pointer pr-9"
+                  disabled={rolesLoading}
+                >
+                  <option value="">
+                    {rolesLoading ? "Loading roles…" : "Select a role…"}
+                  </option>
+                  {roles.map((role) => (
+                    <option key={role.id} value={role.id}>
+                      {role.title}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/40 pointer-events-none" />
+              </div>
+            </div>
 
-          {/* Purchase button */}
-          <button
-            type="button"
-            onClick={() => { void startAdditionalInterviewsCheckout(); }}
-            disabled={!canPurchase}
-            className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white rounded-full transition-all flex-shrink-0"
-            style={{
-              backgroundColor: canPurchase ? "#A380F6" : "rgba(163,128,246,0.35)",
-              cursor: canPurchase ? "pointer" : "not-allowed",
-            }}
-          >
-            <ShoppingCart className="w-4 h-4" />
-            {purchaseBusy ? "Redirecting..." : "Purchase Additional Interviews"}
-          </button>
+            {/* Quantity */}
+            <div className="w-32">
+              <label className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 block mb-1.5">
+                Quantity
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={500}
+                value={quantity}
+                onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-full px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all text-center"
+              />
+            </div>
+
+            {/* Purchase button */}
+            <button
+              type="button"
+              onClick={() => { void startAdditionalInterviewsCheckout(); }}
+              disabled={!canPurchase}
+              className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white rounded-full transition-all flex-shrink-0"
+              style={{
+                backgroundColor: canPurchase ? "#A380F6" : "rgba(163,128,246,0.35)",
+                cursor: canPurchase ? "pointer" : "not-allowed",
+              }}
+            >
+              <ShoppingCart className="w-4 h-4" />
+              {purchaseBusy ? "Redirecting..." : "Purchase Additional Interviews"}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ── Section 4: Purchased Interviews Table ────── */}
       <div
@@ -1105,16 +1114,18 @@ export default function BillingPage() {
             Access your full billing dashboard to update payment methods, view invoices, and manage your subscription.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => { void openBillingPortal(); }}
-          disabled={!selectedClientId || portalBusy || billingSummary?.has_stripe_customer === false}
-          className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white rounded-full transition-all hover:opacity-90 active:scale-[0.97] flex-shrink-0"
-          style={{ backgroundColor: "#A380F6" }}
-        >
-          <CreditCard className="w-4 h-4" />
-          {portalBusy ? "Opening..." : "Manage Billing"}
-        </button>
+        {canManageBilling && (
+          <button
+            type="button"
+            onClick={() => { void openBillingPortal(); }}
+            disabled={!selectedClientId || portalBusy || billingSummary?.has_stripe_customer === false}
+            className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white rounded-full transition-all hover:opacity-90 active:scale-[0.97] flex-shrink-0"
+            style={{ backgroundColor: "#A380F6" }}
+          >
+            <CreditCard className="w-4 h-4" />
+            {portalBusy ? "Opening..." : "Manage Billing"}
+          </button>
+        )}
       </div>
       {embeddedCheckout && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 sm:p-6">

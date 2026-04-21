@@ -305,7 +305,15 @@ function DocButton({
 }
 
 export default function RolesPage() {
-  const { selectedClientId, loading: clientLoading, error: clientError, isGlobalAdmin } = useClient();
+  const { selectedClient, selectedClientId, loading: clientLoading, error: clientError, isGlobalAdmin, memberships } = useClient();
+  const selectedMembershipRole = String(
+    memberships.find((membership) => membership.client_id === selectedClientId)?.role ||
+      selectedClient.role ||
+      "",
+  )
+    .trim()
+    .toLowerCase();
+  const canManageRoles = isGlobalAdmin || selectedMembershipRole === "manager" || selectedMembershipRole === "admin";
   const [roleTitle, setRoleTitle] = useState("");
   const [interviewType, setInterviewType] = useState<InterviewType>("Basic");
   const [jdFile, setJdFile] = useState<File | null>(null);
@@ -545,6 +553,10 @@ export default function RolesPage() {
     e.preventDefault();
     if (createBusy) return;
     setActionNotice(null);
+    if (!canManageRoles) {
+      setActionNotice({ tone: "error", text: "You have read-only access for this client." });
+      return;
+    }
 
     if (!selectedClientId) {
       setActionNotice({ tone: "error", text: "Select a client before creating a role." });
@@ -834,7 +846,7 @@ export default function RolesPage() {
 
   const deleteRole = async (role: Role) => {
     if (!role.id || !selectedClientId) return;
-    if (!isGlobalAdmin) {
+    if (!canManageRoles) {
       setActionNotice({
         tone: "error",
         text: "Role deletion is not available in this dashboard.",
@@ -889,115 +901,118 @@ export default function RolesPage() {
     }
   };
 
+  const roleTableColumnCount = canManageRoles ? 7 : 6;
+
   return (
     <DashboardLayout title="Roles">
-      {/* Create Role panel */}
-      <div
-        className="bg-white rounded-2xl p-6 mb-6"
-        style={{ border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 2px 12px rgba(10,21,71,0.05)" }}
-      >
-        <h2 className="text-base font-black text-[#0A1547] mb-4">Create Role</h2>
+      {canManageRoles && (
+        <div
+          className="bg-white rounded-2xl p-6 mb-6"
+          style={{ border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 2px 12px rgba(10,21,71,0.05)" }}
+        >
+          <h2 className="text-base font-black text-[#0A1547] mb-4">Create Role</h2>
 
-        <form onSubmit={handleCreate}>
-          <div className="flex flex-wrap gap-3 items-end">
-            {/* Role Title */}
-            <div className="flex-1 min-w-[200px]">
-              <label className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 block mb-1.5">
-                Role Title
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Dental Hygienist"
-                value={roleTitle}
-                onChange={(e) => setRoleTitle(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all"
-              />
-            </div>
-
-            {/* Interview Type */}
-            <div className="w-44">
-              <label className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 flex items-center gap-1 mb-1.5">
-                Interview Type
-                <InfoTooltip
-                  content="Basic: quick screening questions. Detailed: in-depth competency questions. Technical: role-specific skills and domain knowledge."
-                  side="bottom"
+          <form onSubmit={handleCreate}>
+            <div className="flex flex-wrap gap-3 items-end">
+              {/* Role Title */}
+              <div className="flex-1 min-w-[200px]">
+                <label className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 block mb-1.5">
+                  Role Title
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Dental Hygienist"
+                  value={roleTitle}
+                  onChange={(e) => setRoleTitle(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all"
                 />
-              </label>
-              <div className="relative">
-                <select
-                  value={interviewType}
-                  onChange={(e) => setInterviewType(e.target.value as InterviewType)}
-                  className="w-full appearance-none px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all cursor-pointer pr-9"
-                >
-                  <option value="Basic">Basic</option>
-                  <option value="Detailed">Detailed</option>
-                  <option value="Technical">Technical</option>
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/40 pointer-events-none" />
               </div>
-            </div>
 
-            {/* JD File Drop zone */}
-            <div className="flex-1 min-w-[200px]">
-              <label className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 block mb-1.5">
-                Job Description
-              </label>
-              <div className="flex items-center gap-2">
-                <div
-                  className={`flex-1 flex items-center gap-2.5 px-3 py-2.5 rounded-xl border-2 border-dashed cursor-pointer transition-all text-sm ${
-                    dragging
-                      ? "border-[#A380F6] bg-[#A380F6]/05"
-                      : "border-gray-200 hover:border-[#A380F6]/50 hover:bg-gray-50"
-                  }`}
-                  onClick={() => fileInputRef.current?.click()}
-                  onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-                  onDragLeave={() => setDragging(false)}
-                  onDrop={handleDrop}
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".pdf,.docx"
-                    className="hidden"
-                    onChange={(e) => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }}
+              {/* Interview Type */}
+              <div className="w-44">
+                <label className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 flex items-center gap-1 mb-1.5">
+                  Interview Type
+                  <InfoTooltip
+                    content="Basic: quick screening questions. Detailed: in-depth competency questions. Technical: role-specific skills and domain knowledge."
+                    side="bottom"
                   />
-                  {jdFile ? (
-                    <>
-                      <FileText className="w-4 h-4 flex-shrink-0" style={{ color: "#A380F6" }} />
-                      <span className="text-xs font-semibold text-[#0A1547] truncate">{jdFile.name}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="w-4 h-4 flex-shrink-0 text-gray-400" />
-                      <span className="text-xs text-gray-400">PDF or DOCX — drag here or click to browse</span>
-                    </>
+                </label>
+                <div className="relative">
+                  <select
+                    value={interviewType}
+                    onChange={(e) => setInterviewType(e.target.value as InterviewType)}
+                    className="w-full appearance-none px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all cursor-pointer pr-9"
+                  >
+                    <option value="Basic">Basic</option>
+                    <option value="Detailed">Detailed</option>
+                    <option value="Technical">Technical</option>
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/40 pointer-events-none" />
+                </div>
+              </div>
+
+              {/* JD File Drop zone */}
+              <div className="flex-1 min-w-[200px]">
+                <label className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 block mb-1.5">
+                  Job Description
+                </label>
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`flex-1 flex items-center gap-2.5 px-3 py-2.5 rounded-xl border-2 border-dashed cursor-pointer transition-all text-sm ${
+                      dragging
+                        ? "border-[#A380F6] bg-[#A380F6]/05"
+                        : "border-gray-200 hover:border-[#A380F6]/50 hover:bg-gray-50"
+                    }`}
+                    onClick={() => fileInputRef.current?.click()}
+                    onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                    onDragLeave={() => setDragging(false)}
+                    onDrop={handleDrop}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".pdf,.docx"
+                      className="hidden"
+                      onChange={(e) => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }}
+                    />
+                    {jdFile ? (
+                      <>
+                        <FileText className="w-4 h-4 flex-shrink-0" style={{ color: "#A380F6" }} />
+                        <span className="text-xs font-semibold text-[#0A1547] truncate">{jdFile.name}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-4 h-4 flex-shrink-0 text-gray-400" />
+                        <span className="text-xs text-gray-400">PDF or DOCX — drag here or click to browse</span>
+                      </>
+                    )}
+                  </div>
+                  {jdFile && (
+                    <button
+                      type="button"
+                      onClick={() => setJdFile(null)}
+                      className="p-2 rounded-lg text-[#0A1547]/30 hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0"
+                      aria-label="Remove file"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   )}
                 </div>
-                {jdFile && (
-                  <button
-                    type="button"
-                    onClick={() => setJdFile(null)}
-                    className="p-2 rounded-lg text-[#0A1547]/30 hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0"
-                    aria-label="Remove file"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
               </div>
-            </div>
 
-            {/* Create button */}
-            <button
-              type="submit"
-              disabled={createBusy}
-              className="px-6 py-2.5 text-sm font-bold text-white rounded-full transition-all hover:opacity-90 active:scale-[0.98] flex-shrink-0"
-              style={{ backgroundColor: "#A380F6" }}
-            >
-              {createBusy ? "Creating..." : "Create"}
-            </button>
-          </div>
-        </form>
-      </div>
+              {/* Create button */}
+              <button
+                type="submit"
+                disabled={createBusy}
+                className="px-6 py-2.5 text-sm font-bold text-white rounded-full transition-all hover:opacity-90 active:scale-[0.98] flex-shrink-0"
+                style={{ backgroundColor: "#A380F6" }}
+              >
+                {createBusy ? "Creating..." : "Create"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Roles table */}
       <div
@@ -1076,29 +1091,31 @@ export default function RolesPage() {
                   </span>
                 </th>
                 {/* Delete */}
-                <th className="text-center px-4 py-3.5 pr-6 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 whitespace-nowrap">
-                  Delete
-                </th>
+                {canManageRoles && (
+                  <th className="text-center px-4 py-3.5 pr-6 text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 whitespace-nowrap">
+                    Delete
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
               {rolesLoading && (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-sm text-[#0A1547]/35 font-semibold">
+                  <td colSpan={roleTableColumnCount} className="px-6 py-12 text-center text-sm text-[#0A1547]/35 font-semibold">
                     Loading roles...
                   </td>
                 </tr>
               )}
               {!rolesLoading && rolesError && (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-sm text-red-500 font-semibold">
+                  <td colSpan={roleTableColumnCount} className="px-6 py-12 text-center text-sm text-red-500 font-semibold">
                     {rolesError}
                   </td>
                 </tr>
               )}
               {!rolesLoading && !rolesError && sortedRoles.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-sm text-[#0A1547]/35 font-semibold">
+                  <td colSpan={roleTableColumnCount} className="px-6 py-12 text-center text-sm text-[#0A1547]/35 font-semibold">
                     No roles yet.
                   </td>
                 </tr>
@@ -1159,17 +1176,19 @@ export default function RolesPage() {
                   </td>
 
                   {/* Delete */}
-                  <td className="px-4 py-4 pr-6 text-center">
-                    <button
-                      type="button"
-                      onClick={() => { void deleteRole(role); }}
-                      disabled={Boolean(deletingRoles[role.id])}
-                      className="p-2 rounded-lg text-[#0A1547]/25 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                      aria-label="Delete role"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </td>
+                  {canManageRoles && (
+                    <td className="px-4 py-4 pr-6 text-center">
+                      <button
+                        type="button"
+                        onClick={() => { void deleteRole(role); }}
+                        disabled={Boolean(deletingRoles[role.id])}
+                        className="p-2 rounded-lg text-[#0A1547]/25 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                        aria-label="Delete role"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

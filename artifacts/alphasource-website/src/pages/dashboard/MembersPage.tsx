@@ -3,7 +3,6 @@ import { Trash2, UserPlus, ChevronDown, ChevronUp, ChevronsUpDown, Key } from "l
 import DashboardLayout from "@/components/DashboardLayout";
 import { useClient } from "@/context/ClientContext";
 import { supabase } from "@/lib/supabaseClient";
-import { buildPwResetUrl } from "@/lib/urlConfig";
 
 type MemberRole = "Manager" | "Member";
 type SortKey = "name" | "email" | "role";
@@ -106,6 +105,7 @@ export default function MembersPage() {
     loading: clientLoading,
     error: clientError,
     memberships,
+    isGlobalAdmin,
   } = useClient();
   const clientName = selectedClient.id === "all" ? "All Clients" : selectedClient.name;
   const selectedMembershipRole = String(
@@ -115,7 +115,8 @@ export default function MembersPage() {
   )
     .trim()
     .toLowerCase();
-  const canResetPassword = selectedMembershipRole === "manager" || selectedMembershipRole === "admin";
+  const canManageMembers = isGlobalAdmin || selectedMembershipRole === "manager" || selectedMembershipRole === "admin";
+  const canResetPassword = canManageMembers;
 
   const [members, setMembers]   = useState<Member[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
@@ -256,6 +257,7 @@ export default function MembersPage() {
   };
 
   const handleAdd = async () => {
+    if (!canManageMembers) return;
     setSubmitted(true);
     if (!name.trim() || !isValidEmail(email)) return;
     if (!selectedClientId) return;
@@ -345,6 +347,7 @@ export default function MembersPage() {
   };
 
   const handleRemove = async (id: string | number) => {
+    if (!canManageMembers) return;
     if (!selectedClientId) return;
     if (!backendBase) {
       setActionNotice({ tone: "error", text: "Missing backend base URL configuration." });
@@ -391,6 +394,11 @@ export default function MembersPage() {
 
   const handleResetPassword = async (id: string | number, emailValue: string) => {
     if (!canResetPassword) return;
+    if (!selectedClientId) return;
+    if (!backendBase) {
+      setActionNotice({ tone: "error", text: "Missing backend base URL configuration." });
+      return;
+    }
 
     const memberId = String(id || "").trim();
     const email = String(emailValue || "").trim();
@@ -403,11 +411,23 @@ export default function MembersPage() {
     setResettingPasswords((prev) => ({ ...prev, [memberId]: true }));
 
     try {
-      const redirectTo = buildPwResetUrl({ origin: "client" });
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo,
+      const token = await getSessionToken();
+      const response = await fetch(`${backendBase}/client-members/send-password-reset`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "omit",
+        body: JSON.stringify({
+          client_id: selectedClientId,
+          email,
+        }),
       });
-      if (error) throw error;
+      const text = await response.text();
+      if (!response.ok) {
+        throw new Error(extractErrorMessage(text) || "Could not send password reset.");
+      }
       setActionNotice({ tone: "success", text: "Password reset email sent." });
     } catch (error) {
       setActionNotice({
@@ -449,7 +469,7 @@ export default function MembersPage() {
     </th>
   );
 
-  const columnCount = canResetPassword ? 5 : 4;
+  const columnCount = canManageMembers ? 5 : 3;
 
   return (
     <DashboardLayout title="Members">
@@ -481,69 +501,70 @@ export default function MembersPage() {
             </div>
           )}
 
-          {/* Add Member form */}
-          <div className="flex flex-wrap gap-3 items-start">
-            {/* Name */}
-            <div className="flex-1 min-w-[160px]">
-              <input
-                type="text"
-                placeholder="Member name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") void handleAdd(); }}
-                disabled={addingMember}
-                className={`w-full px-4 py-2.5 rounded-xl text-sm bg-gray-50 border placeholder-gray-400 text-[#0A1547] focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all ${
-                  nameErr ? "border-red-300 bg-red-50/40" : "border-gray-200"
-                }`}
-              />
-              {nameErr && (
-                <p className="mt-1 text-[10px] text-red-500 font-semibold px-1">Name is required</p>
-              )}
-            </div>
+          {canManageMembers && (
+            <div className="flex flex-wrap gap-3 items-start">
+              {/* Name */}
+              <div className="flex-1 min-w-[160px]">
+                <input
+                  type="text"
+                  placeholder="Member name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") void handleAdd(); }}
+                  disabled={addingMember}
+                  className={`w-full px-4 py-2.5 rounded-xl text-sm bg-gray-50 border placeholder-gray-400 text-[#0A1547] focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all ${
+                    nameErr ? "border-red-300 bg-red-50/40" : "border-gray-200"
+                  }`}
+                />
+                {nameErr && (
+                  <p className="mt-1 text-[10px] text-red-500 font-semibold px-1">Name is required</p>
+                )}
+              </div>
 
-            {/* Email */}
-            <div className="flex-1 min-w-[200px]">
-              <input
-                type="email"
-                placeholder="Member email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") void handleAdd(); }}
-                disabled={addingMember}
-                className={`w-full px-4 py-2.5 rounded-xl text-sm bg-gray-50 border placeholder-gray-400 text-[#0A1547] focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all ${
-                  emailErr ? "border-red-300 bg-red-50/40" : "border-gray-200"
-                }`}
-              />
-              {emailErr && (
-                <p className="mt-1 text-[10px] text-red-500 font-semibold px-1">Valid email required</p>
-              )}
-            </div>
+              {/* Email */}
+              <div className="flex-1 min-w-[200px]">
+                <input
+                  type="email"
+                  placeholder="Member email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") void handleAdd(); }}
+                  disabled={addingMember}
+                  className={`w-full px-4 py-2.5 rounded-xl text-sm bg-gray-50 border placeholder-gray-400 text-[#0A1547] focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all ${
+                    emailErr ? "border-red-300 bg-red-50/40" : "border-gray-200"
+                  }`}
+                />
+                {emailErr && (
+                  <p className="mt-1 text-[10px] text-red-500 font-semibold px-1">Valid email required</p>
+                )}
+              </div>
 
-            {/* Role */}
-            <div className="w-40 relative">
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value as MemberRole)}
+              {/* Role */}
+              <div className="w-40 relative">
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as MemberRole)}
+                  disabled={addingMember}
+                  className="w-full appearance-none px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all cursor-pointer pr-9"
+                >
+                  <option value="Member">Member</option>
+                  <option value="Manager">Manager</option>
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/40 pointer-events-none" />
+              </div>
+
+              {/* Add button */}
+              <button
+                onClick={() => { void handleAdd(); }}
                 disabled={addingMember}
-                className="w-full appearance-none px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all cursor-pointer pr-9"
+                className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white rounded-full transition-all hover:opacity-90 active:scale-[0.97] flex-shrink-0"
+                style={{ backgroundColor: "#A380F6" }}
               >
-                <option value="Member">Member</option>
-                <option value="Manager">Manager</option>
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/40 pointer-events-none" />
+                <UserPlus className="w-4 h-4" />
+                {addingMember ? "Adding..." : "Add"}
+              </button>
             </div>
-
-            {/* Add button */}
-            <button
-              onClick={() => { void handleAdd(); }}
-              disabled={addingMember}
-              className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white rounded-full transition-all hover:opacity-90 active:scale-[0.97] flex-shrink-0"
-              style={{ backgroundColor: "#A380F6" }}
-            >
-              <UserPlus className="w-4 h-4" />
-              {addingMember ? "Adding..." : "Add"}
-            </button>
-          </div>
+          )}
         </div>
 
         {/* Members table */}
@@ -554,14 +575,16 @@ export default function MembersPage() {
                 <ThSort col="name"  label="Name"   className="pl-6" />
                 <ThSort col="email" label="Email"  />
                 <ThSort col="role"  label="Role"   />
-                {canResetPassword && (
+                {canManageMembers && (
                   <th className="px-4 py-3.5 text-center text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 whitespace-nowrap">
                     Reset Password
                   </th>
                 )}
-                <th className="px-4 py-3.5 pr-6 text-center text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 whitespace-nowrap">
-                  Remove
-                </th>
+                {canManageMembers && (
+                  <th className="px-4 py-3.5 pr-6 text-center text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 whitespace-nowrap">
+                    Remove
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -606,7 +629,7 @@ export default function MembersPage() {
                       <RoleBadge role={m.role} />
                     </td>
 
-                    {canResetPassword && (
+                    {canManageMembers && (
                       <td className="px-4 py-4 text-center">
                         <button
                           onClick={() => { void handleResetPassword(m.id, m.email); }}
@@ -621,16 +644,18 @@ export default function MembersPage() {
                     )}
 
                     {/* Remove */}
-                    <td className="px-4 py-4 pr-6 text-center">
-                      <button
-                        onClick={() => { void handleRemove(m.id); }}
-                        disabled={Boolean(removingMembers[String(m.id)])}
-                        className="p-2 rounded-lg text-[#0A1547]/25 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                        aria-label={`Remove ${m.name}`}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
+                    {canManageMembers && (
+                      <td className="px-4 py-4 pr-6 text-center">
+                        <button
+                          onClick={() => { void handleRemove(m.id); }}
+                          disabled={Boolean(removingMembers[String(m.id)])}
+                          className="p-2 rounded-lg text-[#0A1547]/25 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                          aria-label={`Remove ${m.name}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}
