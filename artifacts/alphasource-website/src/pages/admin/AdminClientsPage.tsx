@@ -263,6 +263,7 @@ export default function AdminClientsPage() {
   const [enterprisePerRoleFees, setEnterprisePerRoleFees] = useState<Record<string, string>>({});
   const [enterpriseIncludedInterviews, setEnterpriseIncludedInterviews] = useState<Record<string, string>>({});
   const [enterpriseAdditionalFees, setEnterpriseAdditionalFees] = useState<Record<string, string>>({});
+  const [legacyCheckoutConfirmClientId, setLegacyCheckoutConfirmClientId] = useState<string | null>(null);
 
   /* form state */
   const [form, setForm] = useState({
@@ -529,6 +530,19 @@ export default function AdminClientsPage() {
       });
     } finally {
       setSubscriptionCheckoutBusy((prev) => ({ ...prev, [clientId]: false }));
+    }
+  };
+
+  const closeLegacyCheckoutConfirm = () => {
+    setLegacyCheckoutConfirmClientId(null);
+  };
+
+  const continueLegacyCheckout = () => {
+    if (!legacyCheckoutConfirmClientId) return;
+    const targetClient = clients.find((item) => item.id === legacyCheckoutConfirmClientId) || null;
+    setLegacyCheckoutConfirmClientId(null);
+    if (targetClient) {
+      void sendCheckoutLink(targetClient);
     }
   };
 
@@ -1142,7 +1156,7 @@ export default function AdminClientsPage() {
                               style={{ backgroundColor: "#A380F6" }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                void sendCheckoutLink(client);
+                                setLegacyCheckoutConfirmClientId(client.id);
                               }}
                             >
                               {subscriptionCheckoutBusy[client.id] === true ? "Sending..." : "Send Checkout Link"}
@@ -1158,6 +1172,42 @@ export default function AdminClientsPage() {
           })}
         </div>
       </div>
+      {legacyCheckoutConfirmClientId && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center px-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-[#0A1547]/35"
+            aria-label="Close legacy checkout confirmation"
+            onClick={closeLegacyCheckoutConfirm}
+          />
+          <div
+            className="relative w-full max-w-md rounded-2xl bg-white p-5"
+            style={{ border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 12px 30px rgba(10,21,71,0.18)" }}
+          >
+            <h3 className="text-base font-black text-[#0A1547]">Use legacy checkout?</h3>
+            <p className="mt-2 text-sm text-[#0A1547]/70 font-medium">
+              This is not the primary checkout flow. Are you sure you do not need to send an agreement first?
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                className="px-4 py-2 rounded-full text-sm font-bold text-[#0A1547]/70 bg-[#0A1547]/5 hover:bg-[#0A1547]/10 transition-colors"
+                onClick={closeLegacyCheckoutConfirm}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2 rounded-full text-sm font-bold text-white transition-opacity hover:opacity-90"
+                style={{ backgroundColor: "#A380F6" }}
+                onClick={continueLegacyCheckout}
+              >
+                Continue anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AdminLayout>
   );
 }
