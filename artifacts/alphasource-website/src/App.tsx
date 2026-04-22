@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -49,6 +49,212 @@ const DASHBOARD_TAB_ROUTE: Record<string, string> = {
   members: "/dashboard/members",
   billing: "/dashboard/billing",
 };
+const DASHBOARD_INACTIVITY_LIMIT_MS = 60 * 60 * 1000;
+const DASHBOARD_WARNING_WINDOW_MS = 60 * 1000;
+const DASHBOARD_ACTIVITY_STORAGE_KEY = "alphasource:dashboard_last_activity_ms";
+
+function readStoredDashboardActivity(): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    const raw = window.localStorage.getItem(DASHBOARD_ACTIVITY_STORAGE_KEY);
+    const parsed = Number(raw || "");
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeStoredDashboardActivity(value: number) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(DASHBOARD_ACTIVITY_STORAGE_KEY, String(Math.max(0, Math.floor(value))));
+  } catch {}
+}
+
+function DashboardInactivityController({ enabled }: { enabled: boolean }) {
+  const { logout } = useAuth();
+  const [, setLocation] = useLocation();
+  const [warningOpen, setWarningOpen] = useState(false);
+  const [secondsRemaining, setSecondsRemaining] = useState(60);
+  const lastActivityRef = useRef(0);
+  const warnedRef = useRef(false);
+  const logoutTriggeredRef = useRef(false);
+  const timersRef = useRef<{ warningTimer: number | null; logoutTimer: number | null; countdownTimer: number | null }>({
+    warningTimer: null,
+    logoutTimer: null,
+    countdownTimer: null,
+  });
+
+  const clearTimers = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (timersRef.current.warningTimer !== null) {
+      window.clearTimeout(timersRef.current.warningTimer);
+      timersRef.current.warningTimer = null;
+    }
+    if (timersRef.current.logoutTimer !== null) {
+      window.clearTimeout(timersRef.current.logoutTimer);
+      timersRef.current.logoutTimer = null;
+    }
+    if (timersRef.current.countdownTimer !== null) {
+      window.clearInterval(timersRef.current.countdownTimer);
+      timersRef.current.countdownTimer = null;
+    }
+  }, []);
+
+  const performLogout = useCallback(() => {
+    if (logoutTriggeredRef.current) return;
+    logoutTriggeredRef.current = true;
+    clearTimers();
+    setWarningOpen(false);
+    setSecondsRemaining(60);
+    warnedRef.current = false;
+    logout();
+    setLocation("/");
+  }, [clearTimers, logout, setLocation]);
+
+  const syncWarningCountdown = useCallback(() => {
+    const remaining = DASHBOARD_INACTIVITY_LIMIT_MS - (Date.now() - lastActivityRef.current);
+    if (remaining <= 0) {
+      performLogout();
+      return;
+    }
+    setSecondsRemaining(Math.max(1, Math.ceil(remaining / 1000)));
+  }, [performLogout]);
+
+  const startWarning = useCallback(() => {
+    if (warnedRef.current) return;
+    warnedRef.current = true;
+    setWarningOpen(true);
+    syncWarningCountdown();
+    if (typeof window === "undefined") return;
+    if (timersRef.current.countdownTimer !== null) {
+      window.clearInterval(timersRef.current.countdownTimer);
+    }
+    timersRef.current.countdownTimer = window.setInterval(syncWarningCountdown, 250);
+  }, [syncWarningCountdown]);
+
+  const scheduleFrom = useCallback((activityAt: number) => {
+    if (typeof window === "undefined" || !enabled) return;
+    clearTimers();
+    const elapsed = Date.now() - activityAt;
+    const remaining = DASHBOARD_INACTIVITY_LIMIT_MS - elapsed;
+    if (remaining <= 0) {
+      performLogout();
+      return;
+    }
+    if (remaining <= DASHBOARD_WARNING_WINDOW_MS) {
+      startWarning();
+    } else {
+      warnedRef.current = false;
+      setWarningOpen(false);
+      setSecondsRemaining(60);
+      timersRef.current.warningTimer = window.setTimeout(startWarning, remaining - DASHBOARD_WARNING_WINDOW_MS);
+    }
+    timersRef.current.logoutTimer = window.setTimeout(performLogout, remaining);
+  }, [clearTimers, enabled, performLogout, startWarning]);
+
+  const validateSessionAge = useCallback(() => {
+    if (!enabled || logoutTriggeredRef.current) return;
+    const stored = readStoredDashboardActivity();
+    const baseline = stored > 0 ? stored : Date.now();
+    if (stored <= 0) {
+      writeStoredDashboardActivity(baseline);
+    }
+    lastActivityRef.current = baseline;
+    if (Date.now() - baseline >= DASHBOARD_INACTIVITY_LIMIT_MS) {
+      performLogout();
+      return;
+    }
+    scheduleFrom(baseline);
+  }, [enabled, performLogout, scheduleFrom]);
+
+  const markActivity = useCallback((force = false) => {
+    if (!enabled || logoutTriggeredRef.current || typeof window === "undefined") return;
+    const now = Date.now();
+    if (!force && now - lastActivityRef.current < 750) return;
+    lastActivityRef.current = now;
+    warnedRef.current = false;
+    writeStoredDashboardActivity(now);
+    setWarningOpen(false);
+    setSecondsRemaining(60);
+    scheduleFrom(now);
+  }, [enabled, scheduleFrom]);
+
+  useEffect(() => {
+    if (!enabled || typeof window === "undefined" || typeof document === "undefined") {
+      clearTimers();
+      setWarningOpen(false);
+      setSecondsRemaining(60);
+      warnedRef.current = false;
+      return;
+    }
+
+    logoutTriggeredRef.current = false;
+    validateSessionAge();
+
+    const activityEvents: Array<keyof WindowEventMap> = [
+      "mousemove",
+      "mousedown",
+      "click",
+      "keydown",
+      "scroll",
+      "touchstart",
+    ];
+
+    const handleActivity = () => markActivity(false);
+    const handleFocus = () => validateSessionAge();
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") validateSessionAge();
+    };
+
+    activityEvents.forEach((eventName) => window.addEventListener(eventName, handleActivity));
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("pageshow", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      activityEvents.forEach((eventName) => window.removeEventListener(eventName, handleActivity));
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("pageshow", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      clearTimers();
+      warnedRef.current = false;
+      setWarningOpen(false);
+      setSecondsRemaining(60);
+    };
+  }, [clearTimers, enabled, markActivity, validateSessionAge]);
+
+  if (!enabled || !warningOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/35 backdrop-blur-[1px]">
+      <div
+        className="w-full max-w-md rounded-2xl bg-white p-5 sm:p-6"
+        style={{
+          border: "1px solid rgba(10,21,71,0.10)",
+          boxShadow: "0 12px 40px rgba(10,21,71,0.16)",
+        }}
+      >
+        <h2 className="text-base sm:text-lg font-black text-[#0A1547] mb-2">Session timeout warning</h2>
+        <p className="text-xs sm:text-sm text-[#0A1547]/75 leading-relaxed">
+          You will be logged out due to inactivity in{" "}
+          <span className="font-bold text-[#0A1547]">{secondsRemaining}</span>{" "}
+          second{secondsRemaining === 1 ? "" : "s"}.
+        </p>
+        <div className="mt-5 flex justify-end">
+          <button
+            type="button"
+            onClick={() => markActivity(true)}
+            className="px-4 py-2 rounded-full text-xs sm:text-sm font-bold text-white transition-opacity hover:opacity-90"
+            style={{ backgroundColor: "#A380F6" }}
+          >
+            Stay signed in
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /* ── Client dashboard guard ─────────────────────────────── */
 function DashboardGuard() {
@@ -82,16 +288,19 @@ function DashboardGuard() {
   }
 
   return (
-    <ClientProvider>
-      <Switch>
-        <Route path="/dashboard"            component={OverviewPage} />
-        <Route path="/dashboard/roles"      component={RolesPage} />
-        <Route path="/dashboard/candidates" component={CandidatesPage} />
-        <Route path="/dashboard/members"    component={MembersPage} />
-        <Route path="/dashboard/billing"    component={BillingPage} />
-        <Route component={NotFound} />
-      </Switch>
-    </ClientProvider>
+    <>
+      <DashboardInactivityController enabled={clientAuthReady && isLoggedIn} />
+      <ClientProvider>
+        <Switch>
+          <Route path="/dashboard"            component={OverviewPage} />
+          <Route path="/dashboard/roles"      component={RolesPage} />
+          <Route path="/dashboard/candidates" component={CandidatesPage} />
+          <Route path="/dashboard/members"    component={MembersPage} />
+          <Route path="/dashboard/billing"    component={BillingPage} />
+          <Route component={NotFound} />
+        </Switch>
+      </ClientProvider>
+    </>
   );
 }
 
@@ -108,20 +317,23 @@ function AdminGuard() {
   if (!isAdminLoggedIn) return null;
 
   return (
-    <AdminClientProvider>
-      <Switch>
-        <Route path="/admin"                  component={AdminOverviewPage} />
-        <Route path="/admin/clients"          component={AdminClientsPage} />
-        <Route path="/admin/roles"            component={AdminRolesPage} />
-        <Route path="/admin/candidates"       component={AdminCandidatesPage} />
-        <Route path="/admin/role-config"      component={AdminRoleConfigPage} />
-        <Route path="/admin/members"          component={AdminMembersPage} />
-        <Route path="/admin/accommodations"   component={AdminAccommodationsPage} />
-        <Route path="/admin/billing"          component={AdminBillingPage} />
-        <Route path="/admin/audit-logs"       component={AdminAuditLogsPage} />
-        <Route component={NotFound} />
-      </Switch>
-    </AdminClientProvider>
+    <>
+      <DashboardInactivityController enabled={adminAuthReady && isAdminLoggedIn} />
+      <AdminClientProvider>
+        <Switch>
+          <Route path="/admin"                  component={AdminOverviewPage} />
+          <Route path="/admin/clients"          component={AdminClientsPage} />
+          <Route path="/admin/roles"            component={AdminRolesPage} />
+          <Route path="/admin/candidates"       component={AdminCandidatesPage} />
+          <Route path="/admin/role-config"      component={AdminRoleConfigPage} />
+          <Route path="/admin/members"          component={AdminMembersPage} />
+          <Route path="/admin/accommodations"   component={AdminAccommodationsPage} />
+          <Route path="/admin/billing"          component={AdminBillingPage} />
+          <Route path="/admin/audit-logs"       component={AdminAuditLogsPage} />
+          <Route component={NotFound} />
+        </Switch>
+      </AdminClientProvider>
+    </>
   );
 }
 
