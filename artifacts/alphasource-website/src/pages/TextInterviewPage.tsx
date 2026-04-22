@@ -92,7 +92,7 @@ export default function TextInterviewPage({ params }: { params?: { token?: strin
   const pendingPasteCharsRef = useRef(0);
 
   const [started, setStarted] = useState(false);
-  const [loadingSession, setLoadingSession] = useState(true);
+  const [loadingSession, setLoadingSession] = useState(false);
   const [session, setSession] = useState<TextSession | null>(null);
   const [blocked, setBlocked] = useState<{ message: string } | null>(null);
   const [error, setError] = useState("");
@@ -172,8 +172,9 @@ export default function TextInterviewPage({ params }: { params?: { token?: strin
   }
 
   useEffect(() => {
+    if (!started) return;
     void loadSession();
-  }, [token]);
+  }, [token, started]);
 
   useEffect(() => {
     if (!chatReady) return;
@@ -347,20 +348,15 @@ export default function TextInterviewPage({ params }: { params?: { token?: strin
               >
                 <MessageSquareText className="w-6 h-6" style={{ color: "#A380F6" }} />
               </div>
-              <h1 className="text-xl font-black text-[#0A1547] mb-1">Text-Based Interview</h1>
+              <h1 className="text-xl font-black text-[#0A1547] mb-1">This is a text interview</h1>
               <p className="text-xs text-[#0A1547]/45 font-semibold leading-relaxed">
-                You are starting a text-based accommodation interview.
-                {session?.role_title ? (
-                  <>
-                    {" "}Role: <span className="font-semibold text-[#0A1547]">{session.role_title}</span>.
-                  </>
-                ) : null}
+                You will complete this interview in writing.
               </p>
               <div
                 className="rounded-xl p-3.5 mt-5 text-left text-xs text-[#0A1547]/60 leading-relaxed"
                 style={{ backgroundColor: "rgba(163,128,246,0.06)", border: "1px solid rgba(163,128,246,0.15)" }}
               >
-                You will upload your resume, then answer each question in order. You can review prior responses and submit when complete.
+                After you continue, you will upload your resume and then answer interview questions in writing.
               </div>
               <p className="text-[10px] text-[#0A1547]/45 mt-4">
                 By continuing, you agree to the{" "}
@@ -372,11 +368,15 @@ export default function TextInterviewPage({ params }: { params?: { token?: strin
               {error && <p className={errorCls}>{error}</p>}
               <button
                 type="button"
-                onClick={() => setStarted(true)}
+                onClick={() => {
+                  setError("");
+                  setLoadingSession(true);
+                  setStarted(true);
+                }}
                 className={`${primaryButtonCls} mt-7 mx-auto`}
                 style={{ backgroundColor: "#A380F6" }}
               >
-                Continue
+                Start Text Interview
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
