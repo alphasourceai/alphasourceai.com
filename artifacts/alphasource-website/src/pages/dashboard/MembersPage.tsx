@@ -121,6 +121,8 @@ export default function MembersPage() {
   const [members, setMembers]   = useState<Member[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersError, setMembersError] = useState("");
+  const [currentUserId, setCurrentUserId] = useState("");
+  const [currentUserEmail, setCurrentUserEmail] = useState("");
   const [name, setName]         = useState("");
   const [email, setEmail]       = useState("");
   const [role, setRole]         = useState<MemberRole>("Member");
@@ -170,6 +172,12 @@ export default function MembersPage() {
         const {
           data: { session },
         } = await supabase.auth.getSession();
+        const activeUserId = String(session?.user?.id || "").trim();
+        const activeUserEmail = String(session?.user?.email || "").trim().toLowerCase();
+        if (alive) {
+          setCurrentUserId(activeUserId);
+          setCurrentUserEmail(activeUserEmail);
+        }
         const token = String(session?.access_token || "").trim();
         if (!token) throw new Error("Missing session token.");
 
@@ -456,6 +464,14 @@ export default function MembersPage() {
         return sortDir === "asc" ? cmp : -cmp;
       })
     : members;
+  const isSelfMember = (member: Member): boolean => {
+    const memberId = String(member.id || "").trim();
+    const memberEmail = String(member.email || "").trim().toLowerCase();
+    return (
+      (currentUserId && memberId === currentUserId) ||
+      (currentUserEmail && memberEmail !== "—" && memberEmail === currentUserEmail)
+    );
+  };
 
   const ThSort = ({ col, label, className = "" }: { col: SortKey; label: string; className?: string }) => (
     <th className={`px-4 py-3.5 whitespace-nowrap text-left ${className}`}>
@@ -607,7 +623,9 @@ export default function MembersPage() {
                   </td>
                 </tr>
               ) : (
-                sorted.map((m, idx) => (
+                sorted.map((m, idx) => {
+                  const selfMember = isSelfMember(m);
+                  return (
                   <tr
                     key={m.id}
                     className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors"
@@ -648,16 +666,18 @@ export default function MembersPage() {
                       <td className="px-4 py-4 pr-6 text-center">
                         <button
                           onClick={() => { void handleRemove(m.id); }}
-                          disabled={Boolean(removingMembers[String(m.id)])}
+                          disabled={selfMember || Boolean(removingMembers[String(m.id)])}
                           className="p-2 rounded-lg text-[#0A1547]/25 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                          aria-label={`Remove ${m.name}`}
+                          aria-label={selfMember ? `Cannot remove ${m.name}` : `Remove ${m.name}`}
+                          title={selfMember ? "You cannot remove yourself" : `Remove ${m.name}`}
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </td>
                     )}
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
