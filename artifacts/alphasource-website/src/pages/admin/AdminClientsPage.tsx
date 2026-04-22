@@ -28,6 +28,12 @@ interface Client {
   stripeMembership: string | null;
   contract: string | null;
   periodEnds: string | null;
+  planSettingsPlanTier: PlanTier;
+  planSettingsBillingCycle: BillingCycle;
+  planSettingsPlatformFee: string | null;
+  planSettingsPerRoleFee: string | null;
+  planSettingsIncludedInterviewsPerRole: string | null;
+  planSettingsAdditionalInterviewFee: string | null;
 }
 
 const env =
@@ -88,6 +94,22 @@ function formatDate(value: unknown): string {
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return "";
   return parsed.toLocaleDateString();
+}
+
+function formatMoney(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "—";
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return "—";
+  return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(parsed);
+}
+
+function formatWholeNumber(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "—";
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return "—";
+  return String(Math.round(parsed));
 }
 
 function normalizePlanTier(value: unknown): PlanTier {
@@ -652,6 +674,12 @@ export default function AdminClientsPage() {
               stripeMembership: String(item.subscription_status || "").trim() || null,
               contract: contractStart && contractEnd ? `${contractStart} – ${contractEnd}` : null,
               periodEnds: formatDate(item.current_term_end) || null,
+              planSettingsPlanTier: normalizePlanTier(item.plan_settings_plan_tier),
+              planSettingsBillingCycle: normalizeBillingCycle(item.plan_settings_billing_interval),
+              planSettingsPlatformFee: String(item.plan_settings_platform_fee ?? "").trim() || null,
+              planSettingsPerRoleFee: String(item.plan_settings_per_role_fee ?? "").trim() || null,
+              planSettingsIncludedInterviewsPerRole: String(item.plan_settings_included_interviews_per_role ?? "").trim() || null,
+              planSettingsAdditionalInterviewFee: String(item.plan_settings_additional_interview_fee ?? "").trim() || null,
             };
           })
           .filter((item) => Boolean(item.id));
@@ -849,6 +877,12 @@ export default function AdminClientsPage() {
               client.rawBillingStatus === "active" && client.rawHasStripeSubscription && hasLiveSubscription;
             const showCheckout = !hasLiveSubscription;
             const autoRenew  = autoRenewStates[client.id] ?? client.autoRenew;
+            const isEnterpriseClient = (client.planTier || client.planSettingsPlanTier) === "enterprise";
+            const membershipFeeLabel = formatMoney(client.planSettingsPlatformFee);
+            const perRoleFeeLabel = formatMoney(client.planSettingsPerRoleFee);
+            const includedInterviewsLabel = formatWholeNumber(client.planSettingsIncludedInterviewsPerRole);
+            const additionalInterviewFeeLabel = formatMoney(client.planSettingsAdditionalInterviewFee);
+            const enterpriseBillingIntervalLabel = client.planSettingsBillingCycle || client.billingCycle || "—";
 
             return (
               <div key={client.id}>
@@ -942,6 +976,7 @@ export default function AdminClientsPage() {
                         <p className="text-xs font-black text-[#0A1547] mb-2">Membership details</p>
                         <div className="space-y-1.5">
                           {[
+                            ["Membership tier",     client.planTier ?? "—"],
                             ["Billing status", <span className="font-bold" style={{ color: baselineStatus === "active" ? "#02D99D" : "#FF6B6B" }}>{baselineStatus}</span>],
                             ["Stripe membership", client.stripeMembership ?? "—"],
                             ["Billing cycle",      client.billingCycle ?? "—"],
@@ -955,6 +990,25 @@ export default function AdminClientsPage() {
                             </div>
                           ))}
                         </div>
+                        {isEnterpriseClient && (
+                          <div className="mt-4 rounded-xl px-3.5 py-3 border border-[rgba(10,21,71,0.08)] bg-white/80">
+                            <p className="text-[11px] font-black uppercase tracking-wider text-[#0A1547]/55 mb-2.5">Enterprise Membership</p>
+                            <div className="space-y-1.5">
+                              {[
+                                ["Membership fee", membershipFeeLabel],
+                                ["Billing interval", enterpriseBillingIntervalLabel],
+                                ["Per-role fee", perRoleFeeLabel],
+                                ["Included interviews (per role)", includedInterviewsLabel],
+                                ["Additional interview fee", additionalInterviewFeeLabel],
+                              ].map(([label, value]) => (
+                                <div key={String(label)} className="flex items-baseline gap-1.5 text-xs">
+                                  <span className="text-[#0A1547]/40 font-semibold flex-shrink-0">{String(label)}:</span>
+                                  <span className="text-[#0A1547]/70 font-semibold">{String(value || "—")}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Right: actions */}
@@ -1007,7 +1061,10 @@ export default function AdminClientsPage() {
                         {/* Inactive-only: Membership Checkout Link */}
                         {showCheckout && (
                           <div>
-                            <p className="text-xs font-black text-[#0A1547] mb-2">Membership Checkout Link</p>
+                            <p className="text-xs font-black text-[#0A1547] mb-1">Legacy Checkout Tools</p>
+                            <p className="text-[11px] text-[#0A1547]/45 font-medium mb-2">
+                              Primary onboarding now starts from the signed agreement flow. Use this only as a fallback.
+                            </p>
                             <div className="flex gap-2 mb-2">
                               <div className="relative flex-1">
                                 <select
