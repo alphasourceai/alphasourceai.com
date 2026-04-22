@@ -496,6 +496,13 @@ export default function InterviewPage() {
                   I understand and I am in a quiet place.
                 </span>
               </label>
+              <p className="text-[10px] text-[#0A1547]/45 mt-3">
+                By continuing, you agree to the{" "}
+                <a href="/interview/terms" target="_blank" rel="noopener noreferrer" className="text-[#A380F6] hover:underline font-semibold">
+                  Candidate Terms &amp; Conditions
+                </a>
+                .
+              </p>
             </div>
 
             {/* Modal footer */}

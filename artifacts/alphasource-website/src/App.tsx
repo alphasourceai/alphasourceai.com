@@ -14,6 +14,7 @@ import HomePage from "@/pages/HomePage";
 import AlphaScreenPage from "@/pages/AlphaScreenPage";
 import AboutPage from "@/pages/AboutPage";
 import TermsPage from "@/pages/TermsPage";
+import CandidateTermsPage from "@/pages/CandidateTermsPage";
 import InterviewPage from "@/pages/InterviewPage";
 import InterviewCviPage from "@/pages/InterviewCviPage";
 import AccommodationRequestPage from "@/pages/AccommodationRequestPage";
@@ -184,6 +185,7 @@ function Router() {
       <Route path="/interview-host/:role_token" component={InterviewTokenAlias} />
       <Route path="/text-interview/:token" component={TextInterviewPage} />
       <Route path="/membership-agreement/sign/:token" component={MembershipAgreementSignerPage} />
+      <Route path="/interview/terms" component={CandidateTermsPage} />
       <Route path="/pwreset" component={PwResetPage} />
       <Route path="/interview-access" component={InterviewPage} />
       <Route path="/interview-cvi" component={InterviewCviPage} />

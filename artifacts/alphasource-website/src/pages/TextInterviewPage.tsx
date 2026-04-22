@@ -362,6 +362,13 @@ export default function TextInterviewPage({ params }: { params?: { token?: strin
               >
                 You will upload your resume, then answer each question in order. You can review prior responses and submit when complete.
               </div>
+              <p className="text-[10px] text-[#0A1547]/45 mt-4">
+                By continuing, you agree to the{" "}
+                <a href="/interview/terms" target="_blank" rel="noopener noreferrer" className="text-[#A380F6] hover:underline font-semibold">
+                  Candidate Terms &amp; Conditions
+                </a>
+                .
+              </p>
               {error && <p className={errorCls}>{error}</p>}
               <button
                 type="button"
