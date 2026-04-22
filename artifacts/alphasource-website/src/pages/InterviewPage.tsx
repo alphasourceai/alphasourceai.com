@@ -8,7 +8,6 @@ const CHECKLIST = [
   "Stable internet connection",
   "3 uninterrupted minutes to complete the interview",
   "Quiet environment free of background conversations and distractions",
-  "The interviewer is not mobile optimized yet; please complete this interview on a computer.",
   "You may complete only one interview per role. Once submitted, the interview cannot be retaken.",
 ];
 
