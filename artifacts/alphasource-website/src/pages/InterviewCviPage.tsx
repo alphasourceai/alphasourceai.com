@@ -10,6 +10,7 @@ type LiveSessionState = {
   email?: string;
   candidate_id?: string;
   role_id?: string;
+  candidate_assistance_contact?: string;
 };
 
 type DailyTrackSlot = {
@@ -110,6 +111,7 @@ function readLiveState(): LiveSessionState | null {
       email: parsed?.email ? String(parsed.email) : undefined,
       candidate_id: parsed?.candidate_id ? String(parsed.candidate_id) : undefined,
       role_id: parsed?.role_id ? String(parsed.role_id) : undefined,
+      candidate_assistance_contact: parsed?.candidate_assistance_contact ? String(parsed.candidate_assistance_contact) : undefined,
     };
   } catch {
     return null;
@@ -183,6 +185,7 @@ export default function InterviewCviPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [finishBusy, setFinishBusy] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
   const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
   const [hasLocalVideo, setHasLocalVideo] = useState(false);
@@ -460,6 +463,17 @@ export default function InterviewCviPage() {
   }, [finishBusy, leaveLiveRoute, session]);
 
   const timerLabel = useMemo(() => formatCountdown(secondsRemaining), [secondsRemaining]);
+  const candidateAssistanceContact = useMemo(
+    () => String(session?.candidate_assistance_contact || "").trim(),
+    [session?.candidate_assistance_contact],
+  );
+  const candidateAssistanceHref = useMemo(() => {
+    if (!candidateAssistanceContact) return "";
+    if (candidateAssistanceContact.includes("@")) return `mailto:${candidateAssistanceContact}`;
+    const digits = candidateAssistanceContact.replace(/[^\d]/g, "");
+    if (digits.length >= 7) return `tel:${candidateAssistanceContact}`;
+    return "";
+  }, [candidateAssistanceContact]);
 
   if (!session) return null;
 
@@ -525,7 +539,14 @@ export default function InterviewCviPage() {
             )}
           </div>
 
-          <div className="mt-3 flex items-center justify-end">
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setHelpOpen(true)}
+              className="px-4 py-2 rounded-full text-xs sm:text-sm font-bold transition-colors border border-[rgba(10,21,71,0.14)] text-[#0A1547] hover:bg-white"
+            >
+              Need help?
+            </button>
             <button
               type="button"
               onClick={finishInterview}
@@ -542,6 +563,52 @@ export default function InterviewCviPage() {
           )}
         </div>
       </main>
+
+      {helpOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/35 backdrop-blur-[1px]">
+          <div
+            className="w-full max-w-md bg-white rounded-2xl p-5 sm:p-6"
+            style={{
+              border: "1px solid rgba(10,21,71,0.10)",
+              boxShadow: "0 12px 40px rgba(10,21,71,0.16)",
+            }}
+          >
+            <h2 className="text-base sm:text-lg font-black text-[#0A1547] mb-3">Need help?</h2>
+            <div className="space-y-3">
+              <p className="text-xs sm:text-sm text-[#0A1547]/75 leading-relaxed">
+                <span className="font-bold text-[#0A1547]">Technical issues with the platform:</span>{" "}
+                <a href="mailto:info@alphasourceai.com" className="text-[#A380F6] hover:underline font-semibold">
+                  info@alphasourceai.com
+                </a>
+              </p>
+              <p className="text-xs sm:text-sm text-[#0A1547]/75 leading-relaxed">
+                <span className="font-bold text-[#0A1547]">Questions about the role or interview process:</span>{" "}
+                {candidateAssistanceContact ? (
+                  candidateAssistanceHref ? (
+                    <a href={candidateAssistanceHref} className="text-[#A380F6] hover:underline font-semibold">
+                      {candidateAssistanceContact}
+                    </a>
+                  ) : (
+                    <span className="font-semibold text-[#0A1547]">{candidateAssistanceContact}</span>
+                  )
+                ) : (
+                  <span className="text-[#0A1547]/60">Please contact your hiring team.</span>
+                )}
+              </p>
+            </div>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setHelpOpen(false)}
+                className="px-4 py-2 rounded-full text-xs sm:text-sm font-bold text-white transition-opacity hover:opacity-90"
+                style={{ backgroundColor: "#A380F6" }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

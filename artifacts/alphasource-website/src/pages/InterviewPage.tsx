@@ -372,6 +372,11 @@ export default function InterviewPage() {
       const maxInterviewMinutes = Number.isFinite(maxInterviewMinutesRaw) && maxInterviewMinutesRaw > 0
         ? Math.floor(maxInterviewMinutesRaw)
         : null;
+      const candidateAssistanceContact = String(
+        data?.candidate_assistance_contact ||
+        data?.candidateAssistanceContact ||
+        "",
+      ).trim();
 
       setInterviewStartState({
         interview_id: interviewId,
@@ -396,6 +401,7 @@ export default function InterviewPage() {
             email: candidateEmail,
             candidate_id: candidateId,
             role_id: roleId,
+            candidate_assistance_contact: candidateAssistanceContact,
           }),
         );
       } catch {}
