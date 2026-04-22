@@ -111,6 +111,8 @@ export default function MembershipAgreementSignerPage({ params }: SignerPageProp
   const [submitError, setSubmitError] = useState("");
   const [submitBusy, setSubmitBusy] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [checkoutError, setCheckoutError] = useState("");
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
@@ -279,6 +281,8 @@ export default function MembershipAgreementSignerPage({ params }: SignerPageProp
       setAccepted(false);
       setSubmitError("");
       setSubmitSuccess(false);
+      setCheckoutError("");
+      setCheckoutBusy(false);
       clearSignature();
     } catch (error) {
       setSession(null);
@@ -352,6 +356,48 @@ export default function MembershipAgreementSignerPage({ params }: SignerPageProp
     }
   };
 
+  const handleContinueToCheckout = async () => {
+    if (checkoutBusy) return;
+    setCheckoutError("");
+    if (!backendBase) {
+      setCheckoutError("Missing backend base URL configuration.");
+      return;
+    }
+    if (!token) {
+      setCheckoutError("Invalid signing token.");
+      return;
+    }
+
+    setCheckoutBusy(true);
+    try {
+      const response = await fetch(`${backendBase}/membership-agreements/checkout-session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "omit",
+        body: JSON.stringify({ token }),
+      });
+      const text = await response.text();
+      const payload = parseJsonSafe(text) as { url?: unknown; detail?: unknown; message?: unknown; error?: unknown } | null;
+      if (!response.ok) {
+        throw new Error(
+          (payload && typeof payload === "object" && (
+            (typeof payload.detail === "string" && payload.detail.trim()) ||
+            (typeof payload.message === "string" && payload.message.trim()) ||
+            (typeof payload.error === "string" && payload.error.trim())
+          )) || "Could not start checkout."
+        );
+      }
+      const checkoutUrl = String(payload?.url || "").trim();
+      if (!checkoutUrl) {
+        throw new Error("Checkout URL is missing.");
+      }
+      window.location.assign(checkoutUrl);
+    } catch (error) {
+      setCheckoutError(error instanceof Error ? error.message : "Could not start checkout.");
+      setCheckoutBusy(false);
+    }
+  };
+
   return (
     <div
       className="min-h-screen bg-[#F6F8FF] px-4 py-8 sm:px-6 sm:py-10"
@@ -400,9 +446,24 @@ export default function MembershipAgreementSignerPage({ params }: SignerPageProp
                 <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0" />
                 Agreement signed successfully. A signed copy has been sent by email.
               </p>
-              <p className="mt-2 text-xs text-emerald-700/90">
-                Our team will handle checkout manually next.
-              </p>
+              <p className="mt-2 text-xs text-emerald-700/90">Continue to checkout to activate your membership.</p>
+              <div className="mt-3 flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleContinueToCheckout();
+                  }}
+                  disabled={checkoutBusy}
+                  className="rounded-full px-5 py-2.5 text-sm font-bold text-white transition-all"
+                  style={{
+                    backgroundColor: checkoutBusy ? "rgba(10,21,71,0.25)" : "#A380F6",
+                    cursor: checkoutBusy ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {checkoutBusy ? "Redirecting..." : "Continue to checkout"}
+                </button>
+                {checkoutError ? <p className="text-xs font-semibold text-red-500">{checkoutError}</p> : null}
+              </div>
             </div>
           ) : (
             <div className="space-y-4">
