@@ -151,6 +151,17 @@ export default function MembershipAgreementSignerPage({ params }: SignerPageProp
     return () => window.removeEventListener("resize", onResize);
   }, [prepareCanvas]);
 
+  useEffect(() => {
+    if (loading || sessionError || !session || submitSuccess) return;
+    if (typeof window === "undefined") return;
+    const rafId = window.requestAnimationFrame(() => {
+      prepareCanvas();
+      hasStrokeRef.current = false;
+      setHasSignature(false);
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [loading, sessionError, session, submitSuccess, prepareCanvas]);
+
   const getPoint = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };

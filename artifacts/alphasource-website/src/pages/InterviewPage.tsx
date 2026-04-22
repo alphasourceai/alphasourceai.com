@@ -474,23 +474,23 @@ export default function InterviewPage() {
                 interfere with your responses.
               </div>
 
-              <label className="flex items-center gap-2.5 cursor-pointer select-none group">
-                <div
-                  className="w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all"
-                  style={{
-                    borderColor: understood ? "#A380F6" : "#D1D5DB",
-                    backgroundColor: understood ? "#A380F6" : "transparent",
-                  }}
-                  onClick={() => setUnderstood((u) => !u)}
-                >
-                  {understood && <Check className="w-2.5 h-2.5 text-white" />}
-                </div>
+              <label htmlFor="interview-acknowledgement" className="flex items-center gap-2.5 cursor-pointer select-none group">
                 <input
+                  id="interview-acknowledgement"
                   type="checkbox"
                   className="sr-only"
                   checked={understood}
                   onChange={(e) => setUnderstood(e.target.checked)}
                 />
+                <span
+                  className="w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all"
+                  style={{
+                    borderColor: understood ? "#A380F6" : "#D1D5DB",
+                    backgroundColor: understood ? "#A380F6" : "transparent",
+                  }}
+                >
+                  {understood && <Check className="w-2.5 h-2.5 text-white" />}
+                </span>
                 <span className="text-xs text-[#0A1547]/70 font-semibold">
                   I understand and I am in a quiet place.
                 </span>
