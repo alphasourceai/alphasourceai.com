@@ -168,6 +168,8 @@ export default function AdminRolesPage() {
   const [openingJd, setOpeningJd] = useState<Record<string, boolean>>({});
   const [loadingRubric, setLoadingRubric] = useState<Record<string, boolean>>({});
   const [deletingRoles, setDeletingRoles] = useState<Record<string, boolean>>({});
+  const [creatingRole, setCreatingRole] = useState<boolean>(false);
+  const [jdFile, setJdFile] = useState<File | null>(null);
   const [rubricModal, setRubricModal] = useState<{ roleName: string; questions: string[] } | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [form, setForm] = useState({ title: "", type: "Basic", jdFileName: "" });
@@ -359,6 +361,100 @@ export default function AdminRolesPage() {
     setCopied(role.id);
     setTimeout(() => setCopied(null), 1500);
     setActionNotice({ tone: "success", text: "Link copied." });
+  };
+
+  const createRole = async () => {
+    if (creatingRole) return;
+    if (!backendBase) {
+      setActionNotice({ tone: "error", text: "Missing backend base URL configuration." });
+      return;
+    }
+
+    const clientId = String(selectedClientId || "").trim();
+    if (!clientId || clientId === "all") {
+      setActionNotice({ tone: "error", text: "Select a specific client to create a role." });
+      return;
+    }
+
+    const title = String(form.title || "").trim();
+    if (!title) {
+      setActionNotice({ tone: "error", text: "Role title is required." });
+      return;
+    }
+
+    const normalizedType = String(form.type || "").trim().toUpperCase();
+    const interviewType = ["BASIC", "DETAILED", "TECHNICAL"].includes(normalizedType) ? normalizedType : "BASIC";
+    if (jdFile) {
+      const ext = String(jdFile.name || "").toLowerCase().split(".").pop() || "";
+      if (!["pdf", "docx"].includes(ext)) {
+        setActionNotice({ tone: "error", text: "JD file must be a PDF or DOCX." });
+        return;
+      }
+    }
+
+    setActionNotice(null);
+    setCreatingRole(true);
+    let createdRoleId = "";
+    let roleCreated = false;
+    try {
+      const token = await getSessionToken();
+      const response = await fetch(`${backendBase}/admin/roles`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "omit",
+        body: JSON.stringify({
+          client_id: clientId,
+          title,
+          interview_type: interviewType,
+        }),
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error(extractErrorMessage(text));
+      roleCreated = true;
+      const payload = parseJsonSafe(text) as { item?: { id?: unknown } | null; role?: { id?: unknown } | null } | null;
+      createdRoleId = String(payload?.item?.id || payload?.role?.id || "").trim();
+      if (jdFile && !createdRoleId) {
+        throw new Error("Role created, but JD upload could not start: missing role id in create response.");
+      }
+
+      if (jdFile && createdRoleId) {
+        const uploadFormData = new FormData();
+        uploadFormData.append("file", jdFile);
+        uploadFormData.append("client_id", clientId);
+        uploadFormData.append("role_id", createdRoleId);
+        const uploadResponse = await fetch(
+          `${backendBase}/roles-upload/upload-jd?client_id=${encodeURIComponent(clientId)}&role_id=${encodeURIComponent(createdRoleId)}`,
+          {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+            credentials: "omit",
+            body: uploadFormData,
+          },
+        );
+        const uploadText = await uploadResponse.text();
+        if (!uploadResponse.ok) {
+          throw new Error(`Role created, but JD upload failed: ${extractErrorMessage(uploadText)}`);
+        }
+      }
+
+      setForm({ title: "", type: "Basic", jdFileName: "" });
+      setJdFile(null);
+      setActionNotice({ tone: "success", text: "Role created." });
+      setRefreshNonce((value) => value + 1);
+    } catch (error) {
+      if (roleCreated) {
+        setRefreshNonce((value) => value + 1);
+      }
+      setActionNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not create role.",
+      });
+    } finally {
+      setCreatingRole(false);
+    }
   };
 
   const openRoleJd = async (role: Role) => {
@@ -568,16 +664,25 @@ export default function AdminRolesPage() {
             <input
               type="file"
               className="hidden"
-              accept=".pdf,.doc,.docx"
-              onChange={(e) => setForm({ ...form, jdFileName: e.target.files?.[0]?.name ?? "" })}
+              accept=".pdf,.docx"
+              onChange={(e) => {
+                const file = e.target.files?.[0] ?? null;
+                setJdFile(file);
+                setForm({ ...form, jdFileName: file?.name ?? "" });
+              }}
             />
           </label>
 
           <button
+            type="button"
+            onClick={() => {
+              void createRole();
+            }}
+            disabled={creatingRole}
             className="flex-shrink-0 px-5 py-2 rounded-full text-sm font-bold text-white transition-opacity hover:opacity-90"
             style={{ backgroundColor: "#A380F6" }}
           >
-            Create
+            {creatingRole ? "Creating..." : "Create"}
           </button>
         </div>
       </div>
