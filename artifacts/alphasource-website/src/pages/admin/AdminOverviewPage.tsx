@@ -510,7 +510,7 @@ export default function AdminOverviewPage() {
 
     return [...scopedRoles]
       .sort((a, b) => b.createdAtMs - a.createdAtMs)
-      .slice(0, 6)
+      .slice(0, 10)
       .map((role) => ({
         client: clientNameById[role.clientId] || "—",
         role: role.title,
@@ -720,7 +720,7 @@ export default function AdminOverviewPage() {
                 No client volume data yet.
               </div>
             )}
-            {clientBreakdown.map((client, i) => (
+            {clientBreakdown.slice(0, 10).map((client, i) => (
               <div
                 key={i}
                 className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50/60 transition-colors"

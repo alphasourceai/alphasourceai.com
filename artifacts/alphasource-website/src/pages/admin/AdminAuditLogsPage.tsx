@@ -458,11 +458,11 @@ export default function AdminAuditLogsPage() {
         <span className="text-xs text-[#0A1547]/35 font-medium italic">Global — not client specific</span>
       </div>
 
-      {/* ── Section 1: Audit Logs ──────────────────────────── */}
+      {/* ── Section 1: Contract Renewal Processing Runs ──────────────────────────── */}
       <div className={card} style={cardStyle}>
         {/* Header */}
         <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center gap-3">
-          <p className="text-sm font-black text-[#0A1547] mr-auto">Audit Logs</p>
+          <p className="text-sm font-black text-[#0A1547] mr-auto">Contract Renewal Processing Runs</p>
 
           {/* Date range */}
           <input
