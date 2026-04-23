@@ -199,8 +199,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setAdminAuthReady(true);
           return;
         }
-        if (session) seedDashboardActivityNow();
-        else clearDashboardActivity();
+        if (session) {
+          if (readStoredDashboardActivity() <= 0) {
+            seedDashboardActivityNow();
+          }
+        } else {
+          clearDashboardActivity();
+        }
         setIsLoggedIn(Boolean(session));
         setClientAuthReady(true);
         await syncAdminFromSession(session);
@@ -225,8 +230,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         void supabase.auth.signOut({ scope: "local" }).catch(() => {});
         return;
       }
-      if (session) seedDashboardActivityNow();
-      else clearDashboardActivity();
+      if (!session) clearDashboardActivity();
       setIsLoggedIn(Boolean(session));
       void syncAdminFromSession(session).catch(() => {
         setIsAdminLoggedIn(false);
