@@ -66,12 +66,36 @@ const backendBase = firstBase(
   env.BACKEND_URL,
 );
 const DASHBOARD_ACTIVITY_STORAGE_KEY = "alphasource:dashboard_last_activity_ms";
+const DASHBOARD_INACTIVITY_LIMIT_MS = 60 * 60 * 1000;
+
+function readStoredDashboardActivity(): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    const raw = window.localStorage.getItem(DASHBOARD_ACTIVITY_STORAGE_KEY);
+    const parsed = Number(raw || "");
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  } catch {
+    return 0;
+  }
+}
 
 function seedDashboardActivityNow() {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(DASHBOARD_ACTIVITY_STORAGE_KEY, String(Date.now()));
   } catch {}
+}
+
+function clearDashboardActivity() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(DASHBOARD_ACTIVITY_STORAGE_KEY);
+  } catch {}
+}
+
+function hasStaleDashboardActivity(): boolean {
+  const last = readStoredDashboardActivity();
+  return last > 0 && (Date.now() - last) >= DASHBOARD_INACTIVITY_LIMIT_MS;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -166,12 +190,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then(async ({ data }) => {
         if (!mounted) return;
         const session = data.session || null;
+        if (session && hasStaleDashboardActivity()) {
+          clearDashboardActivity();
+          await supabase.auth.signOut({ scope: "local" }).catch(() => {});
+          setIsLoggedIn(false);
+          setClientAuthReady(true);
+          setIsAdminLoggedIn(false);
+          setAdminAuthReady(true);
+          return;
+        }
+        if (session) seedDashboardActivityNow();
+        else clearDashboardActivity();
         setIsLoggedIn(Boolean(session));
         setClientAuthReady(true);
         await syncAdminFromSession(session);
       })
       .catch(() => {
         if (!mounted) return;
+        clearDashboardActivity();
         setIsLoggedIn(false);
         setClientAuthReady(true);
         setIsAdminLoggedIn(false);
@@ -180,7 +216,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session && String(event || "") === "INITIAL_SESSION" && hasStaleDashboardActivity()) {
+        clearDashboardActivity();
+        setIsLoggedIn(false);
+        setIsAdminLoggedIn(false);
+        setAdminAuthReady(true);
+        void supabase.auth.signOut({ scope: "local" }).catch(() => {});
+        return;
+      }
+      if (session) seedDashboardActivityNow();
+      else clearDashboardActivity();
       setIsLoggedIn(Boolean(session));
       void syncAdminFromSession(session).catch(() => {
         setIsAdminLoggedIn(false);
@@ -275,6 +321,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!probe.ok) {
         setAdminLoginError(probe.error);
         setIsAdminLoggedIn(false);
+        clearDashboardActivity();
         await supabase.auth.signOut();
         setAdminAuthReady(true);
         return { error: probe.error };
@@ -298,6 +345,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const clearAdminLoginError = () => setAdminLoginError("");
 
   const logout = () => {
+    clearDashboardActivity();
     void supabase.auth.signOut().catch(() => {});
     setIsLoggedIn(false);
     setIsAdminLoggedIn(false);
