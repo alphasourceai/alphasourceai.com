@@ -65,6 +65,14 @@ const backendBase = firstBase(
   env.PUBLIC_BACKEND_URL,
   env.BACKEND_URL,
 );
+const DASHBOARD_ACTIVITY_STORAGE_KEY = "alphasource:dashboard_last_activity_ms";
+
+function seedDashboardActivityNow() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(DASHBOARD_ACTIVITY_STORAGE_KEY, String(Date.now()));
+  } catch {}
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoggedIn, setIsLoggedIn]           = useState(false);
@@ -212,6 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setIsLoggedIn(true);
+      seedDashboardActivityNow();
       setClientLoginError("");
       return { error: null };
     } catch {
@@ -273,6 +282,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setIsAdminLoggedIn(true);
       setAdminAuthReady(true);
+      seedDashboardActivityNow();
       setAdminLoginError("");
       return { error: null };
     } catch {
