@@ -581,6 +581,12 @@ export default function InterviewCviPage() {
   }, [endInterview, finishBusy, session]);
 
   const timerLabel = useMemo(() => formatCountdown(secondsRemaining), [secondsRemaining]);
+  const timerToneClass = useMemo(() => {
+    if (typeof secondsRemaining !== "number") return "bg-black/60 border-white/20 text-white";
+    if (secondsRemaining <= 60) return "bg-[#EF4444]/90 border-[#DC2626] text-white";
+    if (secondsRemaining <= 120) return "bg-[#FBBF24]/90 border-[#F59E0B] text-[#3A2600]";
+    return "bg-black/60 border-white/20 text-white";
+  }, [secondsRemaining]);
   const candidateAssistanceContact = useMemo(
     () => String(session?.candidate_assistance_contact || "").trim(),
     [session?.candidate_assistance_contact],
@@ -651,7 +657,7 @@ export default function InterviewCviPage() {
             )}
 
             {timerLabel && (
-              <div className="absolute top-3 right-3 px-3 py-1 rounded-full bg-black/60 border border-white/20 text-[11px] font-bold tracking-wide text-white">
+              <div className={`absolute top-3 right-3 px-3 py-1 rounded-full border text-[11px] font-bold tracking-wide ${timerToneClass}`}>
                 {timerLabel}
               </div>
             )}
