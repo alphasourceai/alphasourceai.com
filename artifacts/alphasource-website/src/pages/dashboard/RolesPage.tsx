@@ -259,10 +259,13 @@ function TypeBadge({ type }: { type: InterviewType }) {
 function UsageBar({ left, used }: { left: number; used: number }) {
   const total = left + used;
   const pct = total > 0 ? (used / total) * 100 : 0;
+  const hasLeft = left != null && Number.isFinite(left);
+  const warningColor = hasLeft && left <= 1 ? "#EF4444" : hasLeft && left <= 3 ? "#D97706" : "#A380F6";
+  const leftColor = warningColor === "#A380F6" ? "#0A1547" : warningColor;
   return (
     <div className="min-w-[90px]">
       <div className="flex items-baseline gap-1 mb-1.5">
-        <span className="text-sm font-black text-[#0A1547]">{left}</span>
+        <span className="text-sm font-black" style={{ color: leftColor }}>{left}</span>
         <span className="text-[10px] text-[#0A1547]/40 font-semibold">left</span>
         <span className="text-[10px] text-[#0A1547]/25 mx-0.5">/</span>
         <span className="text-sm font-black text-[#0A1547]/60">{used}</span>
@@ -271,7 +274,7 @@ function UsageBar({ left, used }: { left: number; used: number }) {
       <div className="w-full bg-gray-100 rounded-full h-1">
         <div
           className="h-1 rounded-full"
-          style={{ width: `${pct}%`, backgroundColor: "#A380F6" }}
+          style={{ width: `${pct}%`, backgroundColor: warningColor }}
         />
       </div>
     </div>
