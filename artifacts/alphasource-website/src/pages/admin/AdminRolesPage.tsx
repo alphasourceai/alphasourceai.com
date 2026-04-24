@@ -21,6 +21,10 @@ interface Role {
   hasJD: boolean;
   hasRubric: boolean;
   rubricQuestions: string[];
+  includedInterviewsPerRole: number | null;
+  purchasedInterviews: number | null;
+  usedInterviews: number | null;
+  remainingInterviews: number | null;
 }
 
 const env =
@@ -81,6 +85,13 @@ function formatRoleCreated(value: unknown): { text: string; ts: number } {
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return { text: "—", ts: 0 };
   return { text: parsed.toLocaleString(), ts: parsed.getTime() };
+}
+
+function toWholeNonNegative(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.floor(n));
 }
 
 function extractRubricQuestions(rubric: unknown): string[] {
@@ -273,6 +284,10 @@ export default function AdminRolesPage() {
               hasJD: Boolean(String(item.job_description_url || "").trim()),
               hasRubric: rubricQuestions.length > 0,
               rubricQuestions,
+              includedInterviewsPerRole: toWholeNonNegative(item.included_interviews_per_role),
+              purchasedInterviews: toWholeNonNegative(item.purchased_interviews),
+              usedInterviews: toWholeNonNegative(item.used_interviews),
+              remainingInterviews: toWholeNonNegative(item.remaining_interviews),
             };
           })
           .filter((item) => Boolean(item.id));
@@ -733,8 +748,8 @@ export default function AdminRolesPage() {
         <div
           className={`grid items-center px-5 py-3 border-b border-gray-100 ${
             showClient
-              ? "grid-cols-[1fr_120px_130px_110px_56px_56px_120px_48px]"
-              : "grid-cols-[1fr_130px_110px_56px_56px_120px_48px]"
+              ? "grid-cols-[minmax(160px,1fr)_110px_120px_90px_110px_120px_56px_56px_110px_48px]"
+              : "grid-cols-[minmax(180px,1fr)_120px_90px_110px_120px_56px_56px_110px_48px]"
           }`}
         >
           <button
@@ -758,6 +773,8 @@ export default function AdminRolesPage() {
           >
             Type <SortIcon col="type" />
           </button>
+          <p className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">Usage</p>
+          <p className="text-center text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">Purchased Add’l Interviews</p>
           <p className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">Rubric</p>
           <p className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">JD</p>
           <p className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">Link</p>
@@ -783,8 +800,8 @@ export default function AdminRolesPage() {
                   key={role.id}
                   className={`grid items-center px-5 py-3.5 hover:bg-gray-50/60 transition-colors ${
                     showClient
-                      ? "grid-cols-[1fr_120px_130px_110px_56px_56px_120px_48px]"
-                      : "grid-cols-[1fr_130px_110px_56px_56px_120px_48px]"
+                      ? "grid-cols-[minmax(160px,1fr)_110px_120px_90px_110px_120px_56px_56px_110px_48px]"
+                      : "grid-cols-[minmax(180px,1fr)_120px_90px_110px_120px_56px_56px_110px_48px]"
                   }`}
                 >
                   {/* Name + token */}
@@ -812,6 +829,18 @@ export default function AdminRolesPage() {
                   >
                     {role.type}
                   </span>
+
+                  {/* Usage */}
+                  <p className="text-xs text-[#0A1547]/55 font-bold pr-2">
+                    {role.remainingInterviews == null || role.usedInterviews == null
+                      ? "—"
+                      : `${role.remainingInterviews} left / ${role.usedInterviews} used`}
+                  </p>
+
+                  {/* Purchased add'l interviews */}
+                  <p className="text-center text-xs text-[#0A1547]/55 font-bold">
+                    {role.purchasedInterviews == null ? "—" : role.purchasedInterviews}
+                  </p>
 
                   {/* Rubric icon */}
                   <div className="flex justify-center">
