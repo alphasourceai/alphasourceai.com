@@ -467,7 +467,7 @@ export default function MembersPage() {
   const isSelfMember = (member: Member): boolean => {
     const memberId = String(member.id || "").trim();
     const memberEmail = String(member.email || "").trim().toLowerCase();
-    return (
+    return Boolean(
       (currentUserId && memberId === currentUserId) ||
       (currentUserEmail && memberEmail !== "—" && memberEmail === currentUserEmail)
     );

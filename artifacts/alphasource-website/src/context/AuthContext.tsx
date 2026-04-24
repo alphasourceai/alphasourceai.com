@@ -44,7 +44,7 @@ const isValidEmail = (value: string) =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
 
 const env =
-  typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
+  (typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {}) as Record<string, unknown>;
 
 function trimTrailingSlashes(value: unknown): string {
   return String(value || "").trim().replace(/\/+$/, "");
