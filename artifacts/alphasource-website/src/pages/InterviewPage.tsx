@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useLocation } from "wouter";
 import { Upload, FileText, Trash2, Check, ArrowRight, ChevronRight } from "lucide-react";
 
@@ -87,6 +87,16 @@ const errorCls = "text-red-500 text-[10px] mt-1 font-semibold";
 const isValidPhone = (value: string) => /^(\d{10}|\(\d{3}\)\s?\d{3}-\d{4}|\d{3}-\d{3}-\d{4}|\d{3}\.\d{3}\.\d{4})$/.test(String(value || "").trim());
 const isValidResumeFile = (file: File | null | undefined) =>
   Boolean(file && /\.(pdf|doc|docx)$/i.test(String(file.name || "")));
+type DevicePreferences = {
+  selectedCameraDeviceId?: string;
+  selectedMicrophoneDeviceId?: string;
+};
+type NetworkCheck = {
+  checking: boolean;
+  bars: number;
+  latencyMs: number | null;
+};
+const networkStatusText = ["Connection unavailable", "Weak connection", "Fair connection", "Good connection", "Strong connection"];
 
 const env = (
   typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {}
@@ -181,6 +191,23 @@ export default function InterviewPage() {
     conversation_url: "",
     max_interview_minutes: null,
   });
+  const [deviceModalOpen, setDeviceModalOpen] = useState(false);
+  const [deviceLoading, setDeviceLoading] = useState(false);
+  const [deviceError, setDeviceError] = useState("");
+  const [cameraDevices, setCameraDevices] = useState<MediaDeviceInfo[]>([]);
+  const [microphoneDevices, setMicrophoneDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedCameraDeviceId, setSelectedCameraDeviceId] = useState("");
+  const [selectedMicrophoneDeviceId, setSelectedMicrophoneDeviceId] = useState("");
+  const [savedDevicePreferences, setSavedDevicePreferences] = useState<DevicePreferences>({});
+  const [micLevel, setMicLevel] = useState(0);
+  const [networkOnline, setNetworkOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
+  const [networkCheck, setNetworkCheck] = useState<NetworkCheck>({ checking: false, bars: 0, latencyMs: null });
+  const [speakerTesting, setSpeakerTesting] = useState(false);
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
+  const previewStreamRef = useRef<MediaStream | null>(null);
+  const micAnimationRef = useRef<number | null>(null);
+  const micAudioContextRef = useRef<AudioContext | null>(null);
+  const networkCheckAbortRef = useRef<AbortController | null>(null);
 
   /* ── Helpers ─────────────────────────────────────────────────── */
   function handleFile(file: File) {
@@ -206,6 +233,210 @@ export default function InterviewPage() {
     setErrors(e);
     return Object.keys(e).length === 0;
   }
+
+  function stopDevicePreview() {
+    if (micAnimationRef.current !== null) {
+      window.cancelAnimationFrame(micAnimationRef.current);
+      micAnimationRef.current = null;
+    }
+    if (micAudioContextRef.current) {
+      void micAudioContextRef.current.close().catch(() => {});
+      micAudioContextRef.current = null;
+    }
+    if (previewStreamRef.current) {
+      previewStreamRef.current.getTracks().forEach((track) => track.stop());
+      previewStreamRef.current = null;
+    }
+    if (previewVideoRef.current) {
+      previewVideoRef.current.srcObject = null;
+    }
+    setMicLevel(0);
+  }
+
+  async function loadDeviceOptions() {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    setCameraDevices(devices.filter((device) => device.kind === "videoinput"));
+    setMicrophoneDevices(devices.filter((device) => device.kind === "audioinput"));
+  }
+
+  async function startDevicePreview() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setDeviceError("Camera and microphone checks are not supported in this browser.");
+      return;
+    }
+
+    setDeviceLoading(true);
+    setDeviceError("");
+    stopDevicePreview();
+    try {
+      const constraints: MediaStreamConstraints = {
+        video: selectedCameraDeviceId ? { deviceId: { exact: selectedCameraDeviceId } } : true,
+        audio: selectedMicrophoneDeviceId ? { deviceId: { exact: selectedMicrophoneDeviceId } } : true,
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      previewStreamRef.current = stream;
+      if (previewVideoRef.current) {
+        previewVideoRef.current.srcObject = stream;
+        void previewVideoRef.current.play().catch(() => {});
+      }
+
+      await loadDeviceOptions();
+      const cameraId = stream.getVideoTracks()[0]?.getSettings?.().deviceId || "";
+      const microphoneId = stream.getAudioTracks()[0]?.getSettings?.().deviceId || "";
+      if (!selectedCameraDeviceId && cameraId) setSelectedCameraDeviceId(cameraId);
+      if (!selectedMicrophoneDeviceId && microphoneId) setSelectedMicrophoneDeviceId(microphoneId);
+
+      const audioTrack = stream.getAudioTracks()[0];
+      const AudioCtor =
+        window.AudioContext ||
+        (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (audioTrack && AudioCtor) {
+        const audioContext = new AudioCtor();
+        micAudioContextRef.current = audioContext;
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        const source = audioContext.createMediaStreamSource(new MediaStream([audioTrack]));
+        source.connect(analyser);
+        const data = new Uint8Array(analyser.fftSize);
+        const tick = () => {
+          analyser.getByteTimeDomainData(data);
+          let sum = 0;
+          for (const value of data) {
+            const diff = (value - 128) / 128;
+            sum += diff * diff;
+          }
+          setMicLevel(Math.min(100, Math.round(Math.sqrt(sum / data.length) * 140)));
+          micAnimationRef.current = window.requestAnimationFrame(tick);
+        };
+        tick();
+      }
+    } catch {
+      setDeviceError("Could not access your camera or microphone. You can allow permissions, try again, or skip and use browser defaults.");
+    } finally {
+      setDeviceLoading(false);
+    }
+  }
+
+  function handleSkipDeviceCheck() {
+    setSavedDevicePreferences({});
+    setSelectedCameraDeviceId("");
+    setSelectedMicrophoneDeviceId("");
+    setDeviceError("");
+    stopDevicePreview();
+    setDeviceModalOpen(false);
+  }
+
+  function handleProceedDeviceCheck() {
+    setSavedDevicePreferences({
+      selectedCameraDeviceId: selectedCameraDeviceId || undefined,
+      selectedMicrophoneDeviceId: selectedMicrophoneDeviceId || undefined,
+    });
+    stopDevicePreview();
+    setDeviceModalOpen(false);
+  }
+
+  async function playSpeakerTest() {
+    setSpeakerTesting(true);
+    setDeviceError("");
+    try {
+      const AudioCtor =
+        window.AudioContext ||
+        (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtor) throw new Error("unsupported");
+      const audioContext = new AudioCtor();
+      if (audioContext.state === "suspended") await audioContext.resume();
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.value = 660;
+      gain.gain.value = 0.08;
+      oscillator.connect(gain);
+      gain.connect(audioContext.destination);
+      oscillator.start();
+      oscillator.stop(audioContext.currentTime + 0.18);
+      oscillator.onended = () => {
+        void audioContext.close().catch(() => {});
+        setSpeakerTesting(false);
+      };
+    } catch {
+      setSpeakerTesting(false);
+      setDeviceError("Could not play the speaker test sound in this browser.");
+    }
+  }
+
+  async function runNetworkCheck() {
+    networkCheckAbortRef.current?.abort();
+    networkCheckAbortRef.current = null;
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      setNetworkOnline(false);
+      setNetworkCheck({ checking: false, bars: 0, latencyMs: null });
+      return;
+    }
+
+    const controller = new AbortController();
+    networkCheckAbortRef.current = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 4500);
+    const startedAt = performance.now();
+    setNetworkCheck({ checking: true, bars: 0, latencyMs: null });
+
+    try {
+      const response = await fetch(`/logo-dark-text-clear.png?network_check=${Date.now()}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error("network-check-failed");
+      const latencyMs = Math.round(performance.now() - startedAt);
+      const bars = latencyMs >= 700 ? 1 : latencyMs >= 300 ? 2 : latencyMs >= 150 ? 3 : 4;
+      if (networkCheckAbortRef.current === controller) {
+        setNetworkOnline(true);
+        setNetworkCheck({ checking: false, bars, latencyMs });
+      }
+    } catch (error) {
+      const timedOut = Boolean(error && typeof error === "object" && "name" in error && (error as { name?: string }).name === "AbortError");
+      if (networkCheckAbortRef.current === controller) {
+        setNetworkCheck({ checking: false, bars: timedOut ? 1 : 0, latencyMs: null });
+      }
+    } finally {
+      window.clearTimeout(timeout);
+      if (networkCheckAbortRef.current === controller) networkCheckAbortRef.current = null;
+    }
+  }
+
+  useEffect(() => {
+    const syncNetwork = () => setNetworkOnline(navigator.onLine);
+    window.addEventListener("online", syncNetwork);
+    window.addEventListener("offline", syncNetwork);
+    return () => {
+      window.removeEventListener("online", syncNetwork);
+      window.removeEventListener("offline", syncNetwork);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!deviceModalOpen) {
+      networkCheckAbortRef.current?.abort();
+      networkCheckAbortRef.current = null;
+      return;
+    }
+    void runNetworkCheck();
+  }, [deviceModalOpen, networkOnline]);
+
+  useEffect(() => {
+    if (!deviceModalOpen) {
+      stopDevicePreview();
+      return;
+    }
+    void startDevicePreview();
+    return () => stopDevicePreview();
+  }, [deviceModalOpen, selectedCameraDeviceId, selectedMicrophoneDeviceId]);
+
+  useEffect(() => () => {
+    networkCheckAbortRef.current?.abort();
+    networkCheckAbortRef.current = null;
+    stopDevicePreview();
+  }, []);
 
   async function handleSubmit() {
     if (!validateStep1()) return;
@@ -310,6 +541,7 @@ export default function InterviewPage() {
       }));
       setStartError("");
       setStep("ready");
+      setDeviceModalOpen(true);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch {
       setOtpError("Network error verifying code.");
@@ -401,6 +633,12 @@ export default function InterviewPage() {
             candidate_id: candidateId,
             role_id: roleId,
             candidate_assistance_contact: candidateAssistanceContact,
+            ...(savedDevicePreferences.selectedCameraDeviceId
+              ? { selectedCameraDeviceId: savedDevicePreferences.selectedCameraDeviceId }
+              : {}),
+            ...(savedDevicePreferences.selectedMicrophoneDeviceId
+              ? { selectedMicrophoneDeviceId: savedDevicePreferences.selectedMicrophoneDeviceId }
+              : {}),
           }),
         );
       } catch {}
@@ -520,6 +758,153 @@ export default function InterviewPage() {
               >
                 Continue
                 <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deviceModalOpen && step === "ready" && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-[#0A1547]/45 backdrop-blur-sm">
+          <div
+            className="bg-white rounded-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto shadow-2xl"
+            style={{ border: "1px solid rgba(10,21,71,0.08)" }}
+          >
+            <div className="px-6 py-5 border-b border-gray-100">
+              <p className="text-[10px] font-black uppercase tracking-widest text-[#A380F6] mb-1">Device check</p>
+              <h2 className="text-lg font-black text-[#0A1547]">Check your audio and video</h2>
+              <p className="text-xs text-[#0A1547]/55 font-semibold mt-1 leading-relaxed">
+                Test or change your camera and microphone, play a speaker test, and confirm your network is ready before joining the interview.
+              </p>
+            </div>
+
+            <div className="p-6 grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
+              <div className="space-y-4">
+                <div className="relative rounded-2xl overflow-hidden bg-[#0A1547] aspect-video flex items-center justify-center">
+                  <video ref={previewVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                  {!previewStreamRef.current && (
+                    <span className="absolute text-xs font-semibold text-white/65">Camera preview</span>
+                  )}
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40">Microphone level</span>
+                    <span className="text-[10px] font-semibold text-[#0A1547]/35">{micLevel}%</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                    <div className="h-full rounded-full transition-all" style={{ width: `${micLevel}%`, backgroundColor: "#02D99D" }} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 block mb-1.5">Camera source</label>
+                  <select
+                    value={selectedCameraDeviceId}
+                    onChange={(e) => setSelectedCameraDeviceId(e.target.value)}
+                    className={inputCls}
+                  >
+                    <option value="">Default camera</option>
+                    {cameraDevices.map((device, index) => (
+                      <option key={device.deviceId || `camera-${index}`} value={device.deviceId}>
+                        {device.label || `Camera ${index + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-[#0A1547]/40 block mb-1.5">Microphone source</label>
+                  <select
+                    value={selectedMicrophoneDeviceId}
+                    onChange={(e) => setSelectedMicrophoneDeviceId(e.target.value)}
+                    className={inputCls}
+                  >
+                    <option value="">Default microphone</option>
+                    {microphoneDevices.map((device, index) => (
+                      <option key={device.deviceId || `microphone-${index}`} value={device.deviceId}>
+                        {device.label || `Microphone ${index + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="rounded-xl p-3.5 bg-gray-50 border border-gray-100">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-black text-[#0A1547]">Speaker test</p>
+                      <p className="text-[10px] text-[#0A1547]/45 font-semibold">Play a short sound and confirm you can hear it.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { void playSpeakerTest(); }}
+                      disabled={speakerTesting}
+                      className="px-3.5 py-2 rounded-full text-xs font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                      style={{ backgroundColor: "#A380F6" }}
+                    >
+                      {speakerTesting ? "Playing..." : "Play sound"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-xl p-3.5 bg-gray-50 border border-gray-100">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-black text-[#0A1547]">Network</p>
+                      <p className="text-[10px] text-[#0A1547]/45 font-semibold">Lightweight connection check.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { void runNetworkCheck(); }}
+                      disabled={networkCheck.checking}
+                      className="px-3 py-1.5 rounded-full text-[10px] font-black text-[#0A1547] bg-white border border-gray-200 transition-opacity hover:opacity-80 disabled:opacity-50"
+                    >
+                      {networkCheck.checking ? "Testing..." : "Retest"}
+                    </button>
+                  </div>
+                  <div className="mt-3 flex items-end justify-between gap-3">
+                    <div className="flex items-end gap-1" aria-label={`${networkCheck.bars} of 4 connection bars`}>
+                      {[1, 2, 3, 4].map((bar) => (
+                        <span
+                          key={bar}
+                          className={`w-2 rounded-full ${bar <= networkCheck.bars ? "bg-[#009E73]" : "bg-gray-200"}`}
+                          style={{ height: `${bar * 4 + 8}px` }}
+                        />
+                      ))}
+                    </div>
+                    <div className="text-right">
+                      <p className={`text-xs font-black ${networkCheck.checking ? "text-[#0A1547]/55" : networkCheck.bars > 0 ? "text-[#009E73]" : "text-red-500"}`}>
+                        {networkCheck.checking ? "Checking connection" : networkStatusText[networkCheck.bars]}
+                      </p>
+                      <p className="text-[10px] text-[#0A1547]/45 font-semibold">
+                        {networkCheck.latencyMs !== null ? `${networkCheck.latencyMs} ms` : networkCheck.checking ? "Testing latency..." : networkOnline ? "Latency unavailable" : "Offline"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {deviceError && <p className="text-xs text-red-500 font-semibold leading-relaxed">{deviceError}</p>}
+                {deviceLoading && <p className="text-xs text-[#0A1547]/45 font-semibold">Checking devices...</p>}
+              </div>
+            </div>
+
+            <div className="px-6 py-5 border-t border-gray-100 flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleSkipDeviceCheck}
+                className="px-5 py-2.5 rounded-full text-sm font-bold text-[#0A1547]/55 bg-[#0A1547]/5 hover:bg-[#0A1547]/10 transition-colors"
+              >
+                Skip
+              </button>
+              <button
+                type="button"
+                onClick={handleProceedDeviceCheck}
+                className="px-5 py-2.5 rounded-full text-sm font-bold text-white hover:opacity-90 transition-opacity"
+                style={{ backgroundColor: "#A380F6" }}
+              >
+                Proceed
               </button>
             </div>
           </div>
@@ -760,6 +1145,13 @@ export default function InterviewPage() {
               <p className="text-[10px] text-[#0A1547]/30 mb-8 leading-relaxed max-w-xs">
                 Make sure you are in a quiet space with a stable internet connection before starting.
               </p>
+              <button
+                type="button"
+                onClick={() => setDeviceModalOpen(true)}
+                className="mb-5 px-4 py-2 rounded-full text-xs font-bold text-[#7C5FCC] bg-[#A380F6]/10 hover:bg-[#A380F6]/15 transition-colors"
+              >
+                Device check
+              </button>
 
               <button
                 onClick={handleStartInterview}

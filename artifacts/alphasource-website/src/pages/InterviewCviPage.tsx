@@ -11,6 +11,8 @@ type LiveSessionState = {
   candidate_id?: string;
   role_id?: string;
   candidate_assistance_contact?: string;
+  selectedCameraDeviceId?: string;
+  selectedMicrophoneDeviceId?: string;
 };
 
 type DailyTrackSlot = {
@@ -45,6 +47,8 @@ type DailyCallObject = {
   on: (event: string, handler: (event?: DailyEvent) => void) => void;
   off?: (event: string, handler: (event?: DailyEvent) => void) => void;
   participants?: () => Record<string, DailyParticipant>;
+  setInputDevicesAsync?: (devices: { videoDeviceId?: string; audioDeviceId?: string }) => Promise<unknown>;
+  setInputDevices?: (devices: { videoDeviceId?: string; audioDeviceId?: string }) => Promise<unknown> | unknown;
 };
 
 type DailySdk = {
@@ -112,6 +116,8 @@ function readLiveState(): LiveSessionState | null {
       candidate_id: parsed?.candidate_id ? String(parsed.candidate_id) : undefined,
       role_id: parsed?.role_id ? String(parsed.role_id) : undefined,
       candidate_assistance_contact: parsed?.candidate_assistance_contact ? String(parsed.candidate_assistance_contact) : undefined,
+      selectedCameraDeviceId: parsed?.selectedCameraDeviceId ? String(parsed.selectedCameraDeviceId) : undefined,
+      selectedMicrophoneDeviceId: parsed?.selectedMicrophoneDeviceId ? String(parsed.selectedMicrophoneDeviceId) : undefined,
     };
   } catch {
     return null;
@@ -277,6 +283,27 @@ export default function InterviewCviPage() {
       call?.on(event, handler);
       handlers.push([event, handler]);
     };
+    const applySelectedDevices = async () => {
+      if (!call) return;
+      const devices: { videoDeviceId?: string; audioDeviceId?: string } = {};
+      if (session.selectedCameraDeviceId) devices.videoDeviceId = session.selectedCameraDeviceId;
+      if (session.selectedMicrophoneDeviceId) devices.audioDeviceId = session.selectedMicrophoneDeviceId;
+      if (!devices.videoDeviceId && !devices.audioDeviceId) return;
+
+      try {
+        if (typeof call.setInputDevicesAsync === "function") {
+          await call.setInputDevicesAsync(devices);
+          return;
+        }
+        if (typeof call.setInputDevices === "function") {
+          await call.setInputDevices(devices);
+          return;
+        }
+        console.warn("[InterviewCviPage] Daily input device selection unsupported; using defaults.");
+      } catch (error) {
+        console.warn("[InterviewCviPage] Could not apply selected input devices; using defaults.", error);
+      }
+    };
 
     const beginStartupWatchdog = () => {
       clearStartupTimer();
@@ -360,6 +387,7 @@ export default function InterviewCviPage() {
           }
         });
 
+        await applySelectedDevices();
         beginStartupWatchdog();
         await call.join({
           url: session.conversation_url,
