@@ -114,6 +114,7 @@ export default function AdminCandidatesPage() {
   const [sortKey, setSortKey]       = useState<SortKey>("created");
   const [sortDir, setSortDir]       = useState<SortDir>("desc");
   const [roleFilter, setRoleFilter] = useState("all");
+  const [candidateSearch, setCandidateSearch] = useState("");
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [candidatesLoading, setCandidatesLoading] = useState<boolean>(false);
   const [candidatesError, setCandidatesError] = useState<string>("");
@@ -136,6 +137,10 @@ export default function AdminCandidatesPage() {
     const timer = setTimeout(() => setActionNotice(null), 3200);
     return () => clearTimeout(timer);
   }, [actionNotice]);
+
+  useEffect(() => {
+    setCandidateSearch("");
+  }, [selectedClientId, roleFilter]);
 
   const getSessionToken = async (): Promise<string> => {
     const {
@@ -448,8 +453,18 @@ export default function AdminCandidatesPage() {
     ? byClient
     : byClient.filter((c) => c.role === roleFilter);
 
+  const candidateSearchTerm = candidateSearch.trim().toLowerCase();
+  const filteredCandidates = candidateSearchTerm
+    ? byRole.filter((candidate) =>
+        [
+          candidate.name,
+          candidate.email,
+        ].some((value) => String(value || "").toLowerCase().includes(candidateSearchTerm)),
+      )
+    : byRole;
+
   /* Sort */
-  const sorted = [...byRole].sort((a, b) => {
+  const sorted = [...filteredCandidates].sort((a, b) => {
     let av: string | number = 0;
     let bv: string | number = 0;
     switch (sortKey) {
@@ -515,6 +530,22 @@ export default function AdminCandidatesPage() {
           <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0A1547]/30 pointer-events-none" />
         </div>
 
+        <input
+          className={selectCls + " flex-1 min-w-48 max-w-sm cursor-text"}
+          placeholder="Search candidate name or email..."
+          value={candidateSearch}
+          onChange={(e) => setCandidateSearch(e.target.value)}
+        />
+        {candidateSearch && (
+          <button
+            type="button"
+            className="px-3 py-2 rounded-full text-xs font-bold text-[#0A1547]/55 bg-[#0A1547]/5 hover:bg-[#0A1547]/10 transition-colors"
+            onClick={() => setCandidateSearch("")}
+          >
+            Clear
+          </button>
+        )}
+
         <button
           className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold text-white transition-opacity hover:opacity-90"
           style={{ backgroundColor: "#A380F6" }}
@@ -526,7 +557,7 @@ export default function AdminCandidatesPage() {
         </button>
 
         <p className="text-xs text-[#0A1547]/35 font-semibold ml-auto">
-          {sorted.length} candidate{sorted.length !== 1 ? "s" : ""}
+          {sorted.length} of {byRole.length} candidate{byRole.length !== 1 ? "s" : ""}
         </p>
       </div>
 
@@ -687,7 +718,9 @@ export default function AdminCandidatesPage() {
 
           {!candidatesLoading && !candidatesError && sorted.length === 0 && (
             <div className="py-12 text-center">
-              <p className="text-sm text-[#0A1547]/35 font-semibold">{emptyMessage}</p>
+              <p className="text-sm text-[#0A1547]/35 font-semibold">
+                {candidateSearchTerm && byRole.length > 0 ? "No candidates match your search." : emptyMessage}
+              </p>
             </div>
           )}
         </div>

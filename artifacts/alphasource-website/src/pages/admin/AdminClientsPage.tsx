@@ -249,6 +249,7 @@ export default function AdminClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [clientsLoading, setClientsLoading] = useState(false);
   const [clientsError, setClientsError] = useState("");
+  const [clientSearch, setClientSearch] = useState("");
   const [autoRenewStates, setAutoRenewStates] = useState<Record<string, boolean>>({});
   const [actionNotice, setActionNotice] = useState<{ tone: "success" | "error"; text: string } | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
@@ -613,7 +614,14 @@ export default function AdminClientsPage() {
     else { setSortKey(key); setSortDir("asc"); }
   };
 
-  const sorted = [...clients].sort((a, b) => {
+  const clientSearchTerm = clientSearch.trim().toLowerCase();
+  const filteredClients = clientSearchTerm
+    ? clients.filter((client) =>
+        client.name.toLowerCase().includes(clientSearchTerm),
+      )
+    : clients;
+
+  const sorted = [...filteredClients].sort((a, b) => {
     let av = a[sortKey] ?? "";
     let bv = b[sortKey] ?? "";
     av = String(av).toLowerCase();
@@ -825,6 +833,31 @@ export default function AdminClientsPage() {
         </div>
       </div>
 
+      {/* ── Search ────────────────────────────────────────── */}
+      <div
+        className="bg-white rounded-2xl px-5 py-3.5 mb-5 flex flex-wrap items-center gap-3"
+        style={{ border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 2px 12px rgba(10,21,71,0.04)" }}
+      >
+        <input
+          className={inputCls + " max-w-sm"}
+          placeholder="Search client name..."
+          value={clientSearch}
+          onChange={(e) => setClientSearch(e.target.value)}
+        />
+        {clientSearch && (
+          <button
+            type="button"
+            className="px-3 py-2 rounded-full text-xs font-bold text-[#0A1547]/55 bg-[#0A1547]/5 hover:bg-[#0A1547]/10 transition-colors"
+            onClick={() => setClientSearch("")}
+          >
+            Clear
+          </button>
+        )}
+        <p className="text-xs text-[#0A1547]/35 font-semibold ml-auto">
+          {sorted.length} of {clients.length} client{clients.length !== 1 ? "s" : ""}
+        </p>
+      </div>
+
       {/* ── Clients table ─────────────────────────────────── */}
       <div
         className="bg-white rounded-2xl overflow-hidden"
@@ -876,7 +909,7 @@ export default function AdminClientsPage() {
             </div>
           ) : sorted.length === 0 ? (
             <div className="px-5 py-6 text-sm font-semibold text-[#0A1547]/35">
-              No clients found.
+              {clientSearchTerm && clients.length > 0 ? "No clients match your search." : "No clients found."}
             </div>
           ) : sorted.map((client) => {
             const expanded = expandedId === client.id;

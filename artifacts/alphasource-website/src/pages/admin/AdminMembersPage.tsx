@@ -109,6 +109,7 @@ export default function AdminMembersPage() {
   const [members, setMembers]     = useState<Member[]>([]);
   const [membersLoading, setMembersLoading] = useState<boolean>(false);
   const [membersError, setMembersError] = useState<string>("");
+  const [memberSearch, setMemberSearch] = useState("");
   const [name, setName]           = useState("");
   const [email, setEmail]         = useState("");
   const [role, setRole]           = useState<MemberRole>("Member");
@@ -122,11 +123,16 @@ export default function AdminMembersPage() {
   const activeClientId = String(selectedClientId || "").trim();
   const isAllClientsView = activeClientId === "all";
 
+  useEffect(() => {
+    setMemberSearch("");
+  }, [activeClientId]);
+
   /* Reset local form/sort state whenever selected client changes */
   useEffect(() => {
     setMembers([]);
     setName("");
     setEmail("");
+    setMemberSearch("");
     setRole("Member");
     setSubmitted(false);
     setSortKey(null);
@@ -420,14 +426,24 @@ export default function AdminMembersPage() {
     ? members
     : members.filter((member) => member.clientId === activeClientId);
 
+  const memberSearchTerm = memberSearch.trim().toLowerCase();
+  const filteredMembers = memberSearchTerm
+    ? visibleMembers.filter((member) =>
+        [
+          member.name,
+          member.email,
+        ].some((value) => String(value || "").toLowerCase().includes(memberSearchTerm)),
+      )
+    : visibleMembers;
+
   const sorted = sortKey
-    ? [...visibleMembers].sort((a, b) => {
+    ? [...filteredMembers].sort((a, b) => {
         const av = (sortKey === "client" ? a.clientName : a[sortKey]).toLowerCase();
         const bv = (sortKey === "client" ? b.clientName : b[sortKey]).toLowerCase();
         const cmp = av.localeCompare(bv);
         return sortDir === "asc" ? cmp : -cmp;
       })
-    : visibleMembers;
+    : filteredMembers;
 
   function SortIcon({ col }: { col: SortKey }) {
     if (sortKey !== col) return <ChevronDown className="w-3 h-3 text-[#0A1547]/20 ml-0.5 flex-shrink-0" />;
@@ -516,6 +532,28 @@ export default function AdminMembersPage() {
           </div>
         </div>
 
+        <div className="px-5 py-3.5 border-b border-gray-100 flex flex-wrap items-center gap-3">
+          <input
+            type="text"
+            placeholder="Search member name or email..."
+            value={memberSearch}
+            onChange={(e) => setMemberSearch(e.target.value)}
+            className={inputCls + " border-gray-200 max-w-sm"}
+          />
+          {memberSearch && (
+            <button
+              type="button"
+              className="px-3 py-2 rounded-full text-xs font-bold text-[#0A1547]/55 bg-[#0A1547]/5 hover:bg-[#0A1547]/10 transition-colors"
+              onClick={() => setMemberSearch("")}
+            >
+              Clear
+            </button>
+          )}
+          <p className="text-xs text-[#0A1547]/35 font-semibold ml-auto">
+            {sorted.length} of {visibleMembers.length} member{visibleMembers.length !== 1 ? "s" : ""}
+          </p>
+        </div>
+
         {/* Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -571,7 +609,7 @@ export default function AdminMembersPage() {
               ) : sorted.length === 0 ? (
                 <tr>
                   <td colSpan={isAllClientsView ? 5 : 4} className="text-center py-14 text-sm text-[#0A1547]/30 font-semibold">
-                    No members yet — add one above.
+                    {memberSearchTerm && visibleMembers.length > 0 ? "No members match your search." : "No members yet — add one above."}
                   </td>
                 </tr>
               ) : (

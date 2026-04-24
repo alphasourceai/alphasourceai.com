@@ -164,6 +164,7 @@ export default function AdminRolesPage() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [rolesLoading, setRolesLoading] = useState<boolean>(false);
   const [rolesError, setRolesError] = useState<string>("");
+  const [roleSearch, setRoleSearch] = useState("");
   const [actionNotice, setActionNotice] = useState<{ tone: "success" | "error"; text: string } | null>(null);
   const [openingJd, setOpeningJd] = useState<Record<string, boolean>>({});
   const [loadingRubric, setLoadingRubric] = useState<Record<string, boolean>>({});
@@ -189,6 +190,10 @@ export default function AdminRolesPage() {
     const timer = setTimeout(() => setActionNotice(null), 3200);
     return () => clearTimeout(timer);
   }, [actionNotice]);
+
+  useEffect(() => {
+    setRoleSearch("");
+  }, [selectedClientId]);
 
   const getSessionToken = async (): Promise<string> => {
     const {
@@ -295,9 +300,16 @@ export default function AdminRolesPage() {
   };
 
   /* Filter by selected client */
-  const filtered = selectedClientId === "all"
+  const filteredByClient = selectedClientId === "all"
     ? roles
     : roles.filter((r) => r.clientId === selectedClientId);
+
+  const roleSearchTerm = roleSearch.trim().toLowerCase();
+  const filtered = roleSearchTerm
+    ? filteredByClient.filter((role) =>
+        role.name.toLowerCase().includes(roleSearchTerm),
+      )
+    : filteredByClient;
 
   /* Sort */
   const sorted = [...filtered].sort((a, b) => {
@@ -687,6 +699,31 @@ export default function AdminRolesPage() {
         </div>
       </div>
 
+      {/* ── Search ────────────────────────────────────────── */}
+      <div
+        className="bg-white rounded-2xl px-5 py-3.5 mb-5 flex flex-wrap items-center gap-3"
+        style={{ border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 2px 12px rgba(10,21,71,0.04)" }}
+      >
+        <input
+          className={inputCls + " max-w-sm"}
+          placeholder="Search role name..."
+          value={roleSearch}
+          onChange={(e) => setRoleSearch(e.target.value)}
+        />
+        {roleSearch && (
+          <button
+            type="button"
+            className="px-3 py-2 rounded-full text-xs font-bold text-[#0A1547]/55 bg-[#0A1547]/5 hover:bg-[#0A1547]/10 transition-colors"
+            onClick={() => setRoleSearch("")}
+          >
+            Clear
+          </button>
+        )}
+        <p className="text-xs text-[#0A1547]/35 font-semibold ml-auto">
+          {sorted.length} of {filteredByClient.length} role{filteredByClient.length !== 1 ? "s" : ""}
+        </p>
+      </div>
+
       {/* ── Roles table ───────────────────────────────────── */}
       <div
         className="bg-white rounded-2xl overflow-hidden"
@@ -840,7 +877,9 @@ export default function AdminRolesPage() {
 
           {!rolesLoading && !rolesError && sorted.length === 0 && (
             <div className="py-12 text-center">
-              <p className="text-sm text-[#0A1547]/35 font-semibold">No roles found for this client.</p>
+              <p className="text-sm text-[#0A1547]/35 font-semibold">
+                {roleSearchTerm && filteredByClient.length > 0 ? "No roles match your search." : "No roles found for this client."}
+              </p>
             </div>
           )}
         </div>
