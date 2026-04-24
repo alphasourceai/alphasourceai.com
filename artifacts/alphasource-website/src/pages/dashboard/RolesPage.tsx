@@ -320,6 +320,7 @@ export default function RolesPage() {
   const [dragging, setDragging] = useState(false);
   const [sortKey, setSortKey] = useState<RoleSortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [roleSearch, setRoleSearch] = useState("");
   const [roles, setRoles] = useState<Role[]>([]);
   const [rolesLoading, setRolesLoading] = useState(false);
   const [rolesError, setRolesError] = useState("");
@@ -368,6 +369,10 @@ export default function RolesPage() {
     setEmbeddedCheckoutLoading(false);
     setEmbeddedCheckoutError("");
   }, [selectedClientId, clientLoading, clientError]);
+
+  useEffect(() => {
+    setRoleSearch("");
+  }, [selectedClientId]);
 
   useEffect(() => {
     if (!actionNotice) return;
@@ -510,8 +515,13 @@ export default function RolesPage() {
     }
   };
 
+  const roleSearchTerm = roleSearch.trim().toLowerCase();
+  const filteredRoles = roleSearchTerm
+    ? roles.filter((role) => role.name.toLowerCase().includes(roleSearchTerm))
+    : roles;
+
   const sortedRoles = sortKey
-    ? [...roles].sort((a, b) => {
+    ? [...filteredRoles].sort((a, b) => {
         let av: string | number;
         let bv: string | number;
         switch (sortKey) {
@@ -525,7 +535,7 @@ export default function RolesPage() {
         const cmp = typeof av === "string" ? av.localeCompare(bv as string) : (av - (bv as number));
         return sortDir === "asc" ? cmp : -cmp;
       })
-    : roles;
+    : filteredRoles;
 
   const isSupportedJdFile = (file: File): boolean => {
     const name = String(file?.name || "").trim().toLowerCase();
@@ -1014,6 +1024,31 @@ export default function RolesPage() {
         </div>
       )}
 
+      {/* Search */}
+      <div
+        className="bg-white rounded-2xl px-5 py-3.5 mb-5 flex flex-wrap items-center gap-3"
+        style={{ border: "1px solid rgba(10,21,71,0.07)", boxShadow: "0 2px 12px rgba(10,21,71,0.04)" }}
+      >
+        <input
+          className="w-full max-w-sm px-4 py-2 rounded-xl bg-gray-50 border border-gray-200 text-[#0A1547] text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] transition-all"
+          placeholder="Search role name..."
+          value={roleSearch}
+          onChange={(e) => setRoleSearch(e.target.value)}
+        />
+        {roleSearch && (
+          <button
+            type="button"
+            className="px-3 py-2 rounded-full text-xs font-bold text-[#0A1547]/55 bg-[#0A1547]/5 hover:bg-[#0A1547]/10 transition-colors"
+            onClick={() => setRoleSearch("")}
+          >
+            Clear
+          </button>
+        )}
+        <p className="text-xs text-[#0A1547]/35 font-semibold ml-auto">
+          {sortedRoles.length} of {roles.length} role{roles.length !== 1 ? "s" : ""}
+        </p>
+      </div>
+
       {/* Roles table */}
       <div
         className="bg-white rounded-2xl overflow-hidden"
@@ -1116,7 +1151,7 @@ export default function RolesPage() {
               {!rolesLoading && !rolesError && sortedRoles.length === 0 && (
                 <tr>
                   <td colSpan={roleTableColumnCount} className="px-6 py-12 text-center text-sm text-[#0A1547]/35 font-semibold">
-                    No roles yet.
+                    {roles.length === 0 ? "No roles yet." : "No roles match your search."}
                   </td>
                 </tr>
               )}

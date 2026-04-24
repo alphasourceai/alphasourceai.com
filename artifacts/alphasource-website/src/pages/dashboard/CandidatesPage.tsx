@@ -757,6 +757,7 @@ export default function CandidatesPage() {
   const [sortDir, setSortDir]           = useState<SortDir>("asc");
   const [clientRoles, setClientRoles] = useState<ClientRoleOption[]>([]);
   const [selectedRoleId, setSelectedRoleId] = useState("all");
+  const [candidateSearch, setCandidateSearch] = useState("");
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidatesError, setCandidatesError] = useState("");
@@ -1074,7 +1075,12 @@ export default function CandidatesPage() {
 
   useEffect(() => {
     setSelectedRoleId("all");
+    setCandidateSearch("");
   }, [selectedClientId]);
+
+  useEffect(() => {
+    setCandidateSearch("");
+  }, [selectedRoleId]);
 
   useEffect(() => {
     if (selectedRoleId === "all") return;
@@ -1094,7 +1100,7 @@ export default function CandidatesPage() {
   }, [transcriptModal]);
 
   /* Filter */
-  const filtered = candidates.filter((c) => {
+  const filteredByControls = candidates.filter((c) => {
     if (selectedRoleId !== "all" && c.roleId !== selectedRoleId) {
       return false;
     }
@@ -1103,6 +1109,14 @@ export default function CandidatesPage() {
     }
     return true;
   });
+  const candidateSearchTerm = candidateSearch.trim().toLowerCase();
+  const filtered = candidateSearchTerm
+    ? filteredByControls.filter((candidate) =>
+        [candidate.name, candidate.email].some((value) =>
+          String(value || "").toLowerCase().includes(candidateSearchTerm),
+        ),
+      )
+    : filteredByControls;
 
   /* Sort */
   const sorted = sortKey
@@ -1208,6 +1222,24 @@ export default function CandidatesPage() {
             )}
           </div>
         </div>
+
+        {/* Candidate search */}
+        <input
+          type="text"
+          value={candidateSearch}
+          onChange={(e) => setCandidateSearch(e.target.value)}
+          placeholder="Search candidate name or email..."
+          className="text-xs font-semibold text-[#0A1547] bg-gray-50 border border-gray-200 rounded-full px-3 py-1.5 h-[30px] min-w-56 max-w-sm flex-1 focus:outline-none focus:ring-2 focus:ring-[#A380F6]/25 focus:border-[#A380F6] placeholder-gray-400"
+        />
+        {candidateSearch && (
+          <button
+            type="button"
+            className="px-3 py-2 rounded-full text-xs font-bold text-[#0A1547]/55 bg-[#0A1547]/5 hover:bg-[#0A1547]/10 transition-colors"
+            onClick={() => setCandidateSearch("")}
+          >
+            Clear
+          </button>
+        )}
 
         {/* Export */}
         <div className="ml-auto">
