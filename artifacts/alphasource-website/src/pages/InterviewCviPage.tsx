@@ -47,6 +47,7 @@ type DailyCallObject = {
   on: (event: string, handler: (event?: DailyEvent) => void) => void;
   off?: (event: string, handler: (event?: DailyEvent) => void) => void;
   participants?: () => Record<string, DailyParticipant>;
+  sendAppMessage?: (message: unknown, recipients?: string | string[]) => void;
   setInputDevicesAsync?: (devices: { videoDeviceId?: string; audioDeviceId?: string }) => Promise<unknown>;
   setInputDevices?: (devices: { videoDeviceId?: string; audioDeviceId?: string }) => Promise<unknown> | unknown;
 };
@@ -65,6 +66,10 @@ const DAILY_SCRIPT_ID = "alphasource-daily-sdk";
 const DAILY_SCRIPT_SRC = "https://unpkg.com/@daily-co/daily-js";
 const LIVE_STATE_KEY = "alphasource_interview_live_state";
 const STARTUP_REMOTE_TIMEOUT_MS = 12000;
+const SOFT_CLOSE_TEXT = "We are approaching our time limit for this interview. Thank you for your time today. Our session will end momentarily.";
+const SOFT_CLOSE_THRESHOLD_SECONDS = 10;
+const SOFT_CLOSE_END_DELAY_MS = 7000;
+const CLOSING_UTTERANCE_END_DELAY_MS = 5500;
 
 const env = (
   typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {}
@@ -198,6 +203,10 @@ export default function InterviewCviPage() {
 
   const callRef = useRef<DailyCallObject | null>(null);
   const leavingRef = useRef(false);
+  const endTriggeredRef = useRef(false);
+  const softCloseSentRef = useRef(false);
+  const softCloseEndTimerRef = useRef<number | null>(null);
+  const closeEndTimerRef = useRef<number | null>(null);
   const startupRemoteSeenRef = useRef(false);
   const startupRecoveryAttemptedRef = useRef(false);
   const startupTimerRef = useRef<number | null>(null);
@@ -210,6 +219,17 @@ export default function InterviewCviPage() {
     if (startupTimerRef.current) {
       window.clearTimeout(startupTimerRef.current);
       startupTimerRef.current = null;
+    }
+  }, []);
+
+  const clearAutoEndTimers = useCallback(() => {
+    if (softCloseEndTimerRef.current) {
+      window.clearTimeout(softCloseEndTimerRef.current);
+      softCloseEndTimerRef.current = null;
+    }
+    if (closeEndTimerRef.current) {
+      window.clearTimeout(closeEndTimerRef.current);
+      closeEndTimerRef.current = null;
     }
   }, []);
 
@@ -265,6 +285,58 @@ export default function InterviewCviPage() {
     } catch {}
     setLocation("/interview/complete");
   }, [setLocation, teardownCall]);
+
+  const endInterview = useCallback(async (reason: string) => {
+    if (endTriggeredRef.current) {
+      setFinishBusy(false);
+      return;
+    }
+    endTriggeredRef.current = true;
+    clearAutoEndTimers();
+    try {
+      const conversationId = String(session?.conversation_id || "").trim();
+      const interviewId = String(session?.interview_id || "").trim();
+      const roleToken = String(session?.role_token || "").trim();
+      if (backendBase && conversationId && interviewId && roleToken) {
+        const response = await fetch(joinUrl(backendBase, "/tavus/end-conversation"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversation_id: conversationId,
+            interview_id: interviewId,
+            role_token: roleToken,
+          }),
+        });
+        if (!response.ok) {
+          console.warn("[InterviewCviPage] End interview request failed.", { reason, status: response.status });
+        }
+      }
+    } catch (error) {
+      console.warn("[InterviewCviPage] Could not end interview cleanly. Closing this session now.", { reason, error });
+      setError("Could not end interview cleanly. Closing this session now.");
+    } finally {
+      setFinishBusy(false);
+      await leaveLiveRoute();
+    }
+  }, [clearAutoEndTimers, leaveLiveRoute, session]);
+
+  const sendSoftClose = useCallback(() => {
+    if (softCloseSentRef.current || endTriggeredRef.current) return;
+    softCloseSentRef.current = true;
+    try {
+      callRef.current?.sendAppMessage?.({
+        event_type: "conversation.echo",
+        eventType: "conversation.echo",
+        properties: { text: SOFT_CLOSE_TEXT },
+      }, "*");
+    } catch {}
+    softCloseEndTimerRef.current = window.setTimeout(() => {
+      softCloseEndTimerRef.current = null;
+      void endInterview("time_limit_soft_close");
+    }, SOFT_CLOSE_END_DELAY_MS);
+  }, [endInterview]);
+
+  useEffect(() => () => clearAutoEndTimers(), [clearAutoEndTimers]);
 
   useEffect(() => {
     if (!session?.conversation_url) {
@@ -377,13 +449,35 @@ export default function InterviewCviPage() {
               "",
             ).trim().toLowerCase();
             if (toolName === "end_interview") {
-              void leaveLiveRoute();
+              void endInterview("tool_call");
               return;
             }
           }
+          const utteranceRole = String(data?.properties?.role || data?.role || "").toLowerCase();
+          const speech = String(data?.properties?.speech || data?.properties?.text || data?.speech || data?.text || "").toLowerCase();
+          const isReplicaUtterance =
+            eventType === "conversation.utterance" &&
+            (utteranceRole === "replica" || utteranceRole === "assistant" || utteranceRole === "agent");
+          if (
+            isReplicaUtterance &&
+            (
+              speech.includes("concludes the interview") ||
+              speech.includes("ending the session") ||
+              speech.includes("end the session") ||
+              speech.includes("ending the interview") ||
+              speech.includes("end the interview")
+            ) &&
+            !closeEndTimerRef.current
+          ) {
+            closeEndTimerRef.current = window.setTimeout(() => {
+              closeEndTimerRef.current = null;
+              void endInterview("closing_utterance");
+            }, CLOSING_UTTERANCE_END_DELAY_MS);
+            return;
+          }
           const payloadText = JSON.stringify(data || {}).toLowerCase();
           if (/call_ended|call-ended|meeting-ended|meeting_ended|room_left|room-left|session_ended|session-ended|conversation_ended|conversation-ended|interview_ended|interview-ended/.test(payloadText)) {
-            void leaveLiveRoute();
+            void endInterview("ended_payload");
           }
         });
 
@@ -417,7 +511,7 @@ export default function InterviewCviPage() {
       handlers = [];
       void teardownCall();
     };
-  }, [clearStartupTimer, leaveLiveRoute, session, syncParticipants, teardownCall]);
+  }, [clearStartupTimer, endInterview, leaveLiveRoute, session, syncParticipants, teardownCall]);
 
   useEffect(() => {
     const maxMinutes = session?.max_interview_minutes;
@@ -427,16 +521,29 @@ export default function InterviewCviPage() {
     }
 
     startMsRef.current = Date.now();
+    let timer: number | null = null;
     const tick = () => {
       const elapsed = Math.floor((Date.now() - startMsRef.current) / 1000);
       const remaining = Math.max(maxMinutes * 60 - elapsed, 0);
       setSecondsRemaining(remaining);
+      if (remaining > 0 && remaining <= SOFT_CLOSE_THRESHOLD_SECONDS) {
+        sendSoftClose();
+      }
+      if (remaining <= 0) {
+        if (timer) {
+          window.clearInterval(timer);
+          timer = null;
+        }
+        void endInterview("time_limit");
+      }
     };
 
     tick();
-    const timer = window.setInterval(tick, 1000);
-    return () => window.clearInterval(timer);
-  }, [session?.max_interview_minutes]);
+    timer = window.setInterval(tick, 1000);
+    return () => {
+      if (timer) window.clearInterval(timer);
+    };
+  }, [endInterview, sendSoftClose, session?.max_interview_minutes]);
 
   useEffect(() => {
     if (!backendBase || !session?.interview_id || !session?.role_token) return;
@@ -470,25 +577,8 @@ export default function InterviewCviPage() {
     if (finishBusy || !session) return;
     setFinishBusy(true);
     setError("");
-    try {
-      if (backendBase && session.conversation_id) {
-        await fetch(joinUrl(backendBase, "/tavus/end-conversation"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            conversation_id: session.conversation_id,
-            interview_id: session.interview_id,
-            role_token: session.role_token,
-          }),
-        });
-      }
-    } catch {
-      setError("Could not end interview cleanly. Closing this session now.");
-    } finally {
-      setFinishBusy(false);
-      await leaveLiveRoute();
-    }
-  }, [finishBusy, leaveLiveRoute, session]);
+    await endInterview("manual");
+  }, [endInterview, finishBusy, session]);
 
   const timerLabel = useMemo(() => formatCountdown(secondsRemaining), [secondsRemaining]);
   const candidateAssistanceContact = useMemo(
