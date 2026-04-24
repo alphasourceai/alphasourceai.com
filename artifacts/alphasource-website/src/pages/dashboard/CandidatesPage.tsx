@@ -157,6 +157,24 @@ function toSortDate(value: unknown): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
+function normalizeQuestionList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || "").trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return normalizeQuestionList(parsed);
+    } catch {
+      // fall through to plain string
+    }
+    return [trimmed];
+  }
+  return [];
+}
+
 function formatCreated(value: unknown): string {
   const raw = String(value || "").trim();
   if (!raw) return "—";
@@ -250,6 +268,7 @@ function mapRowToCandidate(item: Record<string, unknown>, index: number): Candid
   const displayedRiskReason = insufficientInterview ? "" : riskReasonFromTranscript;
   const reliabilityState: Candidate["reliabilityState"] =
     !hasInterview ? "unavailable" : isTextInterview ? "not_applicable" : reliabilityFromTranscript !== null ? "available" : "unavailable";
+  const unansweredQuestions = normalizeQuestionList(item.unanswered_candidate_questions);
 
   return {
     id,
@@ -286,7 +305,9 @@ function mapRowToCandidate(item: Record<string, unknown>, index: number): Candid
     interviewSummary: hasInterview
       ? (interviewSummaryRaw || "No interview summary available yet.")
       : "Interview not yet completed.",
-    unanswered: hasInterview ? "Not available in this view." : "Interview not yet completed.",
+    unanswered: hasInterview
+      ? (unansweredQuestions.length ? unansweredQuestions.join("\n") : "No unanswered questions captured.")
+      : "Interview not yet completed.",
     reliability: reliabilityState === "available" ? reliabilityFromTranscript : null,
     reliabilityState,
     risk: displayedRisk,
