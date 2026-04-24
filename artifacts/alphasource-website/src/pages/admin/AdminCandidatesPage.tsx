@@ -77,6 +77,52 @@ function toScore(value: unknown): number | null {
   return Math.max(0, Math.min(100, Math.round(n)));
 }
 
+function parseRecord(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = parseJsonSafe(value);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+  }
+  return null;
+}
+
+function hasInsufficientInterviewSignal(
+  item: Record<string, unknown>,
+  resumeScore: number | null,
+  interviewScore: number | null,
+  overallScore: number | null,
+): boolean {
+  const transcriptScores = parseRecord(item.transcript_scores);
+  const interviewAnalysis = parseRecord(item.interview_analysis);
+  const markerText = [
+    item.interview_summary,
+    item.analysis_summary,
+    interviewAnalysis?.summary,
+    transcriptScores?.ai_aided_risk_reason,
+    item.status,
+    item.interview_status,
+  ]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+  if (
+    markerText.includes("before any substantive responses were recorded") ||
+    markerText.includes("before substantive responses were captured") ||
+    markerText.includes("insufficient data") ||
+    markerText.includes("no substantive interview response")
+  ) {
+    return true;
+  }
+
+  if (interviewScore !== 0 || resumeScore === null || overallScore === null) return false;
+  const derivedFromZero = toScore((resumeScore + interviewScore) / 2);
+  if (derivedFromZero === null || Math.abs(overallScore - derivedFromZero) > 1) return false;
+
+  const transcriptText = String(item.transcript || "").trim();
+  const transcriptWordCount = transcriptText ? transcriptText.split(/\s+/).filter(Boolean).length : 0;
+  return transcriptWordCount <= 10;
+}
+
 function formatDateTime(value: unknown): { text: string; ts: number } {
   const raw = String(value || "").trim();
   if (!raw) return { text: "—", ts: 0 };
@@ -392,7 +438,12 @@ export default function AdminCandidatesPage() {
             const reportGenerated = formatDateTime(item.report_generated_at);
             const roleId = String(item.role_id || "").trim();
             const roleTitle = String(roleTitleById[roleId] || "").trim();
-            const interviewScore = toScore(item.interview_score);
+            const resumeScore = toScore(item.resume_score);
+            const rawInterviewScore = toScore(item.interview_score);
+            const rawOverallScore = toScore(item.overall_score);
+            const insufficientInterview = hasInsufficientInterviewSignal(item, resumeScore, rawInterviewScore, rawOverallScore);
+            const interviewScore = insufficientInterview ? null : rawInterviewScore;
+            const overallScore = insufficientInterview ? null : rawOverallScore;
             const statusRaw = String(item.status || item.interview_status || "").trim();
             const normalizedStatus =
               statusRaw ||
@@ -407,9 +458,9 @@ export default function AdminCandidatesPage() {
               roleId,
               created: created.text,
               createdTs: created.ts,
-              resume: toScore(item.resume_score),
+              resume: resumeScore,
               interview: interviewScore,
-              overall: toScore(item.overall_score),
+              overall: overallScore,
               status: normalizedStatus,
               reportDate: reportGenerated.text,
               latestReportUrl: String(item.latest_report_url || "").trim() || null,
