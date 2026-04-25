@@ -58,6 +58,18 @@ interface AgreementAuditRow {
   status:      string;
 }
 
+interface EmailDeliveryEventRow {
+  id:             string;
+  eventAt:        string;
+  eventTs:        number;
+  eventType:      string;
+  category:       string;
+  email:          string;
+  reasonResponse: string;
+  messageId:      string;
+  alert:          string;
+}
+
 const statusColors = {
   success:   { bg: "rgba(2,217,157,0.10)",   text: "#00886A" },
   error:     { bg: "rgba(255,107,107,0.10)", text: "#C94040" },
@@ -189,18 +201,23 @@ export default function AdminAuditLogsPage() {
   const [cancellationDateTo, setCancellationDateTo] = useState("");
   const [agreementDateFrom, setAgreementDateFrom] = useState("");
   const [agreementDateTo, setAgreementDateTo] = useState("");
+  const [emailDeliveryDateFrom, setEmailDeliveryDateFrom] = useState("");
+  const [emailDeliveryDateTo, setEmailDeliveryDateTo] = useState("");
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [billingRows, setBillingRows] = useState<BillingReconciliationRow[]>([]);
   const [cancellationRuns, setCancellationRuns] = useState<CancellationRun[]>([]);
   const [agreementRows, setAgreementRows] = useState<AgreementAuditRow[]>([]);
+  const [emailDeliveryRows, setEmailDeliveryRows] = useState<EmailDeliveryEventRow[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
   const [billingLoading, setBillingLoading] = useState(false);
   const [cancellationLoading, setCancellationLoading] = useState(false);
   const [agreementLoading, setAgreementLoading] = useState(false);
+  const [emailDeliveryLoading, setEmailDeliveryLoading] = useState(false);
   const [auditError, setAuditError] = useState("");
   const [billingError, setBillingError] = useState("");
   const [cancellationError, setCancellationError] = useState("");
   const [agreementError, setAgreementError] = useState("");
+  const [emailDeliveryError, setEmailDeliveryError] = useState("");
 
   const inputCls =
     "px-3 py-2 rounded-xl text-xs text-[#0A1547] font-medium border border-[rgba(10,21,71,0.10)] " +
@@ -388,11 +405,51 @@ export default function AdminAuditLogsPage() {
     }
   };
 
+  const refreshEmailDeliveryRows = async () => {
+    setEmailDeliveryLoading(true);
+    setEmailDeliveryError("");
+    try {
+      const payload = await authedGet("/admin/audit/email-delivery-events", "Failed to load email delivery events.");
+      const items =
+        payload && typeof payload === "object" && Array.isArray((payload as { items?: unknown }).items)
+          ? ((payload as { items: unknown[] }).items || [])
+          : [];
+      const mapped: EmailDeliveryEventRow[] = items
+        .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+        .map((item, index) => {
+          const eventAt = item.event_at || item.created_at || "";
+          const reasonParts = [item.reason, item.status, item.response]
+            .map((value) => String(value || "").trim())
+            .filter(Boolean);
+          const alertError = String(item.alert_error || "").trim();
+          const alertSentAt = item.alert_sent_at ? formatDateTime(item.alert_sent_at) : "";
+          return {
+            id: String(item.id || `email-delivery-${index}`),
+            eventAt: formatDateTime(eventAt),
+            eventTs: toTimestamp(eventAt),
+            eventType: String(item.event_type || "—"),
+            category: String(item.email_category || item.category || "—"),
+            email: String(item.email || "—"),
+            reasonResponse: reasonParts.length ? reasonParts.join(" / ") : "—",
+            messageId: String(item.sg_message_id || item.sg_event_id || "—"),
+            alert: alertError ? `Error: ${alertError}` : alertSentAt ? `Sent ${alertSentAt}` : "—",
+          };
+        });
+      setEmailDeliveryRows(mapped);
+    } catch (error) {
+      setEmailDeliveryRows([]);
+      setEmailDeliveryError(error instanceof Error ? error.message : "Failed to load email delivery events.");
+    } finally {
+      setEmailDeliveryLoading(false);
+    }
+  };
+
   useEffect(() => {
     void refreshAuditLogs();
     void refreshBillingReconciliation();
     void refreshCancellationRuns();
     void refreshAgreementRows();
+    void refreshEmailDeliveryRows();
   }, []);
 
   const auditStartTs = parseBoundary(auditDateFrom, false);
@@ -436,6 +493,14 @@ export default function AdminAuditLogsPage() {
   const filteredAgreementRows = scopedAgreementRows.filter((row) => {
     if (agreementStartTs != null && row.eventTs < agreementStartTs) return false;
     if (agreementEndTs != null && row.eventTs > agreementEndTs) return false;
+    return true;
+  });
+
+  const emailDeliveryStartTs = parseBoundary(emailDeliveryDateFrom, false);
+  const emailDeliveryEndTs = parseBoundary(emailDeliveryDateTo, true);
+  const filteredEmailDeliveryRows = emailDeliveryRows.filter((row) => {
+    if (emailDeliveryStartTs != null && row.eventTs < emailDeliveryStartTs) return false;
+    if (emailDeliveryEndTs != null && row.eventTs > emailDeliveryEndTs) return false;
     return true;
   });
 
@@ -666,7 +731,104 @@ export default function AdminAuditLogsPage() {
         </div>
       </div>
 
-      {/* ── Section 3: Billing Reconciliation ─────────────── */}
+      {/* ── Section 3: Email Delivery Problems ─────────────── */}
+      <div className={card} style={cardStyle}>
+        <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center gap-3">
+          <p className="text-sm font-black text-[#0A1547] mr-auto">Email Delivery Problems</p>
+          <input
+            type="text"
+            className={inputCls}
+            value={emailDeliveryDateFrom}
+            onChange={(e) => setEmailDeliveryDateFrom(e.target.value)}
+            placeholder="MM/DD/YYYY"
+          />
+          <input
+            type="text"
+            className={inputCls}
+            value={emailDeliveryDateTo}
+            onChange={(e) => setEmailDeliveryDateTo(e.target.value)}
+            placeholder="MM/DD/YYYY"
+          />
+          <button
+            onClick={() => {
+              downloadCsv(
+                "email-delivery-problems.csv",
+                ["Event Time", "Event", "Category", "Recipient", "Reason / Response", "Message ID", "Alert"],
+                filteredEmailDeliveryRows.map((row) => [
+                  row.eventAt,
+                  row.eventType,
+                  row.category,
+                  row.email,
+                  row.reasonResponse,
+                  row.messageId,
+                  row.alert,
+                ]),
+              );
+            }}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-all hover:opacity-90 flex-shrink-0"
+            style={{ backgroundColor: "rgba(10,21,71,0.07)", color: "#0A1547" }}
+          >
+            <Download className="w-3.5 h-3.5" />
+            Export CSV
+          </button>
+          {refreshBtn("Refresh", refreshEmailDeliveryRows, emailDeliveryLoading)}
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[980px]">
+            <thead>
+              <tr className="border-b border-gray-100">
+                <th className={thCls + " pl-5"}>Event Time</th>
+                <th className={thCls}>Event</th>
+                <th className={thCls}>Category</th>
+                <th className={thCls}>Recipient</th>
+                <th className={thCls}>Reason / Response</th>
+                <th className={thCls}>Message ID</th>
+                <th className={thCls + " pr-5"}>Alert</th>
+              </tr>
+            </thead>
+            <tbody>
+              {emailDeliveryLoading ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-10 text-sm text-[#0A1547]/30 font-semibold">
+                    Loading email delivery events...
+                  </td>
+                </tr>
+              ) : emailDeliveryError ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-10 text-sm text-red-500 font-semibold">
+                    {emailDeliveryError}
+                  </td>
+                </tr>
+              ) : filteredEmailDeliveryRows.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-10 text-sm text-[#0A1547]/30 font-semibold">
+                    No email delivery problem events yet.
+                  </td>
+                </tr>
+              ) : (
+                filteredEmailDeliveryRows.map((row, idx) => (
+                  <tr
+                    key={row.id}
+                    className="border-b border-gray-50 hover:bg-gray-50/40 transition-colors"
+                    style={idx === filteredEmailDeliveryRows.length - 1 ? { borderBottom: "none" } : {}}
+                  >
+                    <td className={tdCls + " pl-5 whitespace-nowrap"}>{row.eventAt}</td>
+                    <td className={tdCls}><StatusBadge status={row.eventType} /></td>
+                    <td className={tdCls + " font-semibold text-[#0A1547]/70"}>{row.category}</td>
+                    <td className={tdCls + " text-[#0A1547]/45"}>{row.email}</td>
+                    <td className={tdCls + " text-[#0A1547]/45"}>{row.reasonResponse}</td>
+                    <td className={tdCls + " font-mono text-[#0A1547]/35 text-[11px]"}>{row.messageId === "—" ? "—" : shortTail(row.messageId)}</td>
+                    <td className={tdCls + " pr-5 text-[#0A1547]/35"}>{row.alert}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── Section 4: Billing Reconciliation ─────────────── */}
       <div className={card} style={cardStyle}>
         <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center gap-3">
           <p className="text-sm font-black text-[#0A1547] mr-auto">Billing Reconciliation</p>
@@ -760,7 +922,7 @@ export default function AdminAuditLogsPage() {
         </div>
       </div>
 
-      {/* ── Section 4: Contract Cancellation Runs ─────────── */}
+      {/* ── Section 5: Contract Cancellation Runs ─────────── */}
       <div className={card} style={cardStyle}>
         <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center gap-3">
           <p className="text-sm font-black text-[#0A1547] mr-auto">Contract Cancellation Runs</p>
