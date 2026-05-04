@@ -8,6 +8,7 @@ import { ClientProvider } from "@/context/ClientContext";
 import { AdminClientProvider } from "@/context/AdminClientContext";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import TawkWidget from "@/components/TawkWidget";
 
 /* Public pages */
 import HomePage from "@/pages/HomePage";
@@ -45,6 +46,9 @@ import AdminAuditLogsPage from "@/pages/admin/AdminAuditLogsPage";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
+const env =
+  typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
+const PUBLIC_TAWK_ROUTES = new Set(["/", "/about", "/alphascreen", "/faq"]);
 const DASHBOARD_TAB_ROUTE: Record<string, string> = {
   roles: "/dashboard/roles",
   candidates: "/dashboard/candidates",
@@ -389,6 +393,7 @@ function Router() {
     location.startsWith("/accommodation-request/") ||
     location === "/interview-cvi" ||
     location === "/interview-complete";
+  const isPublicTawkRoute = PUBLIC_TAWK_ROUTES.has(location);
 
   if (isDashboard) return <DashboardGuard />;
   if (isAdmin)     return <AdminGuard />;
@@ -426,6 +431,14 @@ function Router() {
         </Switch>
       </main>
       <Footer />
+      {isPublicTawkRoute && (
+        <TawkWidget
+          enabled={(env as Record<string, unknown>).VITE_TAWK_PUBLIC_ENABLED === "true"}
+          propertyId={String((env as Record<string, unknown>).VITE_TAWK_PUBLIC_PROPERTY_ID || "")}
+          widgetId={String((env as Record<string, unknown>).VITE_TAWK_PUBLIC_WIDGET_ID || "")}
+          variant="public"
+        />
+      )}
     </div>
   );
 }

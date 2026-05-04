@@ -22,6 +22,10 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useClient } from "@/context/ClientContext";
+import TawkWidget from "@/components/TawkWidget";
+
+const env =
+  typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
 
 /* ── Nav items ───────────────────────────────────────────────── */
 interface NavItem {
@@ -600,6 +604,12 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
           onClose={endTour}
         />
       )}
+      <TawkWidget
+        enabled={(env as Record<string, unknown>).VITE_TAWK_DASHBOARD_ENABLED === "true"}
+        propertyId={String((env as Record<string, unknown>).VITE_TAWK_DASHBOARD_PROPERTY_ID || "")}
+        widgetId={String((env as Record<string, unknown>).VITE_TAWK_DASHBOARD_WIDGET_ID || "")}
+        variant="dashboard"
+      />
     </div>
   );
 }
