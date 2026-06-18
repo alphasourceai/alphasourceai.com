@@ -257,10 +257,10 @@ export default function MembersPage() {
   const [actionNotice, setActionNotice] = useState<{ tone: "success" | "error"; text: string } | null>(null);
   const [membersReloadKey, setMembersReloadKey] = useState(0);
   const entityOptions = useMemo(
-    () => buildEntityFilterOptions(clients, selectedClientId),
+    () => buildEntityFilterOptions(clients, selectedClientId, { useParentNameLabel: true }),
     [clients, selectedClientId],
   );
-  const entityHelpText = useMemo(() => entityFilterHelpText(entityOptions), [entityOptions]);
+  const entityHelpText = useMemo(() => entityFilterHelpText(entityOptions, "members"), [entityOptions]);
 
   const nameErr  = submitted && name.trim() === "";
   const emailErr = submitted && !isValidEmail(email);

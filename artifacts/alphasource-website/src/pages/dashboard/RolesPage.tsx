@@ -391,7 +391,7 @@ export default function RolesPage() {
   const embeddedCheckoutContainerRef = useRef<HTMLDivElement>(null);
   const embeddedCheckoutInstanceRef = useRef<{ unmount?: () => void; destroy?: () => void } | null>(null);
   const entityOptions = useMemo(
-    () => buildEntityFilterOptions(clients, selectedClientId),
+    () => buildEntityFilterOptions(clients, selectedClientId, { useParentNameLabel: true }),
     [clients, selectedClientId],
   );
   const entityHelpText = useMemo(() => entityFilterHelpText(entityOptions), [entityOptions]);

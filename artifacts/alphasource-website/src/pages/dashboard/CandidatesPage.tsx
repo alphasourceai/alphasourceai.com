@@ -1153,7 +1153,7 @@ export default function CandidatesPage() {
 
   const minScoreNum = minScore === "" ? null : parseInt(minScore, 10);
   const entityOptions = useMemo(
-    () => buildEntityFilterOptions(clients, selectedClientId),
+    () => buildEntityFilterOptions(clients, selectedClientId, { useParentNameLabel: true }),
     [clients, selectedClientId],
   );
   const entityHelpText = useMemo(() => entityFilterHelpText(entityOptions), [entityOptions]);
