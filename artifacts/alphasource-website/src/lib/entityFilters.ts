@@ -108,7 +108,7 @@ export function entityFilterHelpText(
   const parentLabel = options.find((option) => option.value === "parent")?.label || "Parent";
   const parentSubject = parentLabel === "Parent" ? "The parent option" : parentLabel;
   if (mode === "members") {
-    return `${parentSubject} shows members assigned directly to the parent. The ${allLabel} option shows parent plus child entity member assignments. A specific entity option shows members assigned directly to that entity; inherited or effective access is not included. The Entity column shows which entity each row belongs to.`;
+    return `${parentSubject} shows members assigned directly to the parent. The ${allLabel} option shows parent plus child entity member assignments. A specific entity option shows members assigned directly to that entity. Inherited or effective access is not included in this direct-assignment view.`;
   }
   return `${parentSubject} shows records assigned directly to the parent. The ${allLabel} option shows parent plus child entity records. A specific entity option shows records assigned directly to that entity. The Entity column shows which entity each row belongs to.`;
 }
