@@ -360,6 +360,7 @@ export default function MembershipAgreementSignerPage({ params }: SignerPageProp
   const isSignableSession = sessionState === "signable";
   const isActivationPendingSession = sessionState === "activation_pending";
   const isActivationCompleteSession = sessionState === "activation_complete";
+  const isAgreementSignedPendingPaymentSetupSession = sessionState === "agreement_signed_pending_payment_setup";
 
   const handleSubmit = async () => {
     if (submitBusy) return;
@@ -609,14 +610,18 @@ export default function MembershipAgreementSignerPage({ params }: SignerPageProp
               ? "Membership Activation"
               : isActivationCompleteSession
                 ? "Membership Activated"
-                : "Membership Agreement Signature"}
+                : isAgreementSignedPendingPaymentSetupSession
+                  ? "Agreement Signed"
+                  : "Membership Agreement Signature"}
           </h1>
           <p className="mt-1 text-xs sm:text-sm text-[#0A1547]/60">
             {isActivationPendingSession
               ? "Your agreement is signed. Complete checkout to activate your membership."
               : isActivationCompleteSession
                 ? "Checkout is complete. Continue to account setup if needed."
-                : "Review the agreement draft, then type your name, confirm acceptance, and draw your signature."}
+                : isAgreementSignedPendingPaymentSetupSession
+                  ? "Your agreement is signed. Payment and account setup happen after signing in later steps."
+                  : "Review the agreement draft, then type your name, confirm acceptance, and draw your signature."}
           </p>
         </div>
 
@@ -645,6 +650,37 @@ export default function MembershipAgreementSignerPage({ params }: SignerPageProp
             </div>
           ) : !session ? (
             <p className="text-sm font-semibold text-[#0A1547]/55">No agreement session available.</p>
+          ) : isAgreementSignedPendingPaymentSetupSession ? (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4">
+              <p className="flex items-start gap-2 text-sm font-semibold text-emerald-700">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                Agreement signed successfully. Payment and account setup happen after signing in later steps.
+              </p>
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-emerald-200 bg-white/70 px-3.5 py-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700/70">Client</p>
+                  <p className="mt-1 text-sm font-bold text-emerald-800">{session.client_legal_name || "—"}</p>
+                  <p className="text-[11px] text-emerald-800/75">{session.dba_trade_name || "No DBA"}</p>
+                </div>
+                <div className="rounded-xl border border-emerald-200 bg-white/70 px-3.5 py-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700/70">Membership</p>
+                  <p className="mt-1 text-sm font-bold text-emerald-800">{toDisplayText(session.membership_tier)}</p>
+                  <p className="text-[11px] text-emerald-800/75">Billing: {toDisplayText(session.billing_option)}</p>
+                </div>
+              </div>
+              {session.executed_pdf_url ? (
+                <div className="mt-3">
+                  <a
+                    href={session.executed_pdf_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-full border border-emerald-300 bg-white px-4 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-100/70"
+                  >
+                    View signed agreement
+                  </a>
+                </div>
+              ) : null}
+            </div>
           ) : isActivationPendingSession ? (
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4">
               <p className="flex items-start gap-2 text-sm font-semibold text-emerald-700">

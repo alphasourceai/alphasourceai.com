@@ -8,6 +8,7 @@ import {
   Clock3,
   Layers3,
   ShieldCheck,
+  X,
 } from "lucide-react";
 import LeadCaptureForm from "@/components/LeadCaptureForm";
 import { trackEvent } from "@/lib/analytics";
@@ -15,6 +16,8 @@ import { getPublicBackendBase, joinUrl } from "@/lib/urlConfig";
 
 type PackageLoadState = "loading" | "ready" | "fallback";
 type PurchaseIntentStatus = "idle" | "submitting" | "success";
+type AgreementPrepStatus = "idle" | "preparing" | "ready";
+type BillingCadenceKey = "monthly" | "annual";
 
 type BillingCadence = {
   key?: string;
@@ -25,6 +28,11 @@ type BillingCadence = {
 type AlphaScreenPackage = {
   plan_key: string;
   display_name: string;
+  platform_monthly_fee: number;
+  platform_monthly_fee_cents: number;
+  platform_annual_fee: number;
+  platform_annual_fee_cents: number;
+  annual_discount_percent: number;
   included_interviews: number;
   included_interviews_per_role: number;
   interview_duration_minutes: number;
@@ -57,6 +65,14 @@ type PurchaseIntentResult = {
     plan_key?: string;
     display_name?: string;
     billing_cadence?: string;
+    platform_fee?: number;
+    platform_fee_cents?: number;
+    platform_fee_billing_cadence?: string;
+    platform_monthly_fee?: number;
+    platform_monthly_fee_cents?: number;
+    platform_annual_fee?: number;
+    platform_annual_fee_cents?: number;
+    annual_discount_percent?: number;
     included_interviews?: number;
     interview_duration_minutes?: number;
     max_interview_minutes?: number;
@@ -67,10 +83,30 @@ type PurchaseIntentResult = {
   next_step_message?: string;
 };
 
+type PurchaseAgreementResult = {
+  purchase_intent_id?: string;
+  status?: string;
+  agreement?: {
+    id?: string;
+    status?: string;
+    signing_url?: string | null;
+    signing_path?: string | null;
+    expires_at?: string | null;
+    refreshed?: boolean;
+    selected_package?: PurchaseIntentResult["selected_package"];
+  };
+  next_step_message?: string;
+};
+
 const FALLBACK_PACKAGES: AlphaScreenPackage[] = [
   {
     plan_key: "basic",
     display_name: "Basic",
+    platform_monthly_fee: 299,
+    platform_monthly_fee_cents: 29900,
+    platform_annual_fee: 3229.2,
+    platform_annual_fee_cents: 322920,
+    annual_discount_percent: 10,
     included_interviews: 20,
     included_interviews_per_role: 20,
     interview_duration_minutes: 10,
@@ -87,6 +123,11 @@ const FALLBACK_PACKAGES: AlphaScreenPackage[] = [
   {
     plan_key: "pro",
     display_name: "Pro",
+    platform_monthly_fee: 599,
+    platform_monthly_fee_cents: 59900,
+    platform_annual_fee: 6469.2,
+    platform_annual_fee_cents: 646920,
+    annual_discount_percent: 10,
     included_interviews: 30,
     included_interviews_per_role: 30,
     interview_duration_minutes: 12,
@@ -142,6 +183,10 @@ function purchaseIntentEndpoint(): string {
   return joinUrl(getPublicBackendBase(), "/api/alphascreen/purchase-intents");
 }
 
+function purchaseIntentAgreementEndpoint(purchaseIntentId: string): string {
+  return joinUrl(getPublicBackendBase(), `/api/alphascreen/purchase-intents/${encodeURIComponent(purchaseIntentId)}/agreement`);
+}
+
 function validEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
 }
@@ -173,6 +218,11 @@ function normalizePackage(raw: unknown): AlphaScreenPackage | null {
   return {
     plan_key: planKey,
     display_name: String(source.display_name || fallback.display_name).trim() || fallback.display_name,
+    platform_monthly_fee: asNumber(source.platform_monthly_fee, fallback.platform_monthly_fee),
+    platform_monthly_fee_cents: asNumber(source.platform_monthly_fee_cents, fallback.platform_monthly_fee_cents),
+    platform_annual_fee: asNumber(source.platform_annual_fee, fallback.platform_annual_fee),
+    platform_annual_fee_cents: asNumber(source.platform_annual_fee_cents, fallback.platform_annual_fee_cents),
+    annual_discount_percent: asNumber(source.annual_discount_percent, fallback.annual_discount_percent),
     included_interviews: asNumber(source.included_interviews, fallback.included_interviews),
     included_interviews_per_role: asNumber(source.included_interviews_per_role, fallback.included_interviews_per_role),
     interview_duration_minutes: asNumber(source.interview_duration_minutes, fallback.interview_duration_minutes),
@@ -203,6 +253,24 @@ function formatUsd(value: number): string {
   }).format(value);
 }
 
+function formatUsdWithCents(value: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function platformFeeForCadence(plan: AlphaScreenPackage, billingCadence: string): number {
+  return billingCadence === "annual" ? plan.platform_annual_fee : plan.platform_monthly_fee;
+}
+
+function formatPlatformFee(plan: AlphaScreenPackage, billingCadence: string): string {
+  const value = platformFeeForCadence(plan, billingCadence);
+  return billingCadence === "annual" ? formatUsdWithCents(value) : formatUsd(value);
+}
+
 function cadenceOptions(plan: AlphaScreenPackage | null): BillingCadence[] {
   const options = (plan?.billing_cadences || []).filter((cadence) => String(cadence.key || "").trim());
   return options.length ? options : [{ key: "monthly", display_name: "Monthly" }];
@@ -213,13 +281,17 @@ function defaultCadence(plan: AlphaScreenPackage | null): string {
   return options.find((cadence) => cadence.key === "monthly")?.key || options[0]?.key || "monthly";
 }
 
+function planSupportsCadence(plan: AlphaScreenPackage | null, cadence: string): boolean {
+  return cadenceOptions(plan).some((option) => option.key === cadence);
+}
+
 function cadenceLabel(plan: AlphaScreenPackage | null, key: string): string {
   const match = cadenceOptions(plan).find((cadence) => cadence.key === key);
   return match?.display_name || key || "Billing cadence";
 }
 
 function validatePurchaseForm(form: PurchaseIntentForm, selectedPlan: AlphaScreenPackage | null): string {
-  if (!selectedPlan) return "Choose Basic or Pro before starting purchase intake.";
+  if (!selectedPlan) return "Choose Basic or Pro before starting signup.";
   if (!cleanText(form.company_legal_name, 120)) return "Company legal name is required.";
   if (!cleanText(form.buyer_first_name, 80)) return "Buyer first name is required.";
   if (!cleanText(form.buyer_last_name, 80)) return "Buyer last name is required.";
@@ -252,22 +324,20 @@ function PackageMetric({
 function PlanCard({
   plan,
   selected,
+  billingCadence,
   onStart,
 }: {
   plan: AlphaScreenPackage;
   selected: boolean;
+  billingCadence: BillingCadenceKey;
   onStart: (plan: AlphaScreenPackage) => void;
 }) {
   const accent = PLAN_ACCENTS[plan.plan_key] || PLAN_ACCENTS.basic;
   const included = plan.included_interviews_per_role || plan.included_interviews;
   const duration = plan.max_interview_minutes || plan.interview_duration_minutes;
   const overage = plan.additional_interview_fee || plan.additional_interview_price || plan.overage_price;
-  const cadenceLabels = plan.billing_cadences.length
-    ? plan.billing_cadences.map((cadence) => {
-      const label = cadence.display_name || cadence.key || "Billing";
-      return cadence.stripe_price_configured ? label : `${label} planned`;
-    })
-    : ["Monthly planned", "Annual planned"];
+  const platformSuffix = billingCadence === "annual" ? "/year platform" : "/mo platform";
+  const annualDiscount = plan.annual_discount_percent || 10;
 
   return (
     <article
@@ -291,9 +361,15 @@ function PlanCard({
 
       <div className="mb-5">
         <div className="flex items-end gap-2">
-          <span className="text-4xl font-black tracking-normal text-[#0A1547]">{formatUsd(plan.per_role_fee)}</span>
-          <span className="pb-1.5 text-sm font-bold text-[#0A1547]/55">/ role / mo</span>
+          <span className="text-4xl font-black tracking-normal text-[#0A1547]">{formatPlatformFee(plan, billingCadence)}</span>
+          <span className="pb-1.5 text-sm font-bold text-[#0A1547]/55">{platformSuffix}</span>
         </div>
+        <p className="mt-2 text-sm font-black text-[#0A1547]">+ {formatUsd(plan.per_role_fee)} / role</p>
+        {billingCadence === "annual" ? (
+          <p className="mt-1 text-xs font-bold text-[#0A1547]/55">
+            Annual is paid upfront with a {annualDiscount}% discount on the platform fee only.
+          </p>
+        ) : null}
         <p className="mt-2 text-sm leading-relaxed text-[#0A1547]/60">{BEST_FOR[plan.plan_key]}</p>
       </div>
 
@@ -315,14 +391,12 @@ function PlanCard({
         />
       </div>
 
-      <div className="mt-5 flex flex-wrap gap-2">
-        {cadenceLabels.map((label) => (
-          <span
-            key={label}
-            className="rounded-full border border-[#0A1547]/10 bg-[#F8F9FD] px-3 py-1 text-xs font-bold text-[#0A1547]/65"
-          >
-            {label}
-          </span>
+      <div className="mt-5 grid gap-2">
+        {["On-Demand PDF Reports", "Email support"].map((item) => (
+          <div key={item} className="flex items-center gap-2 text-sm font-bold text-[#0A1547]/70">
+            <CheckCircle className="h-4 w-4 flex-shrink-0" style={{ color: accent.color }} />
+            <span>{item}</span>
+          </div>
         ))}
       </div>
 
@@ -334,9 +408,9 @@ function PlanCard({
           style={{ backgroundColor: selected ? "#0A1547" : accent.color }}
           data-analytics-cta={`Start with ${plan.display_name}`}
           data-analytics-placement="pricing-card"
-          data-analytics-target="#purchase-intake"
+          data-analytics-target="#signup-modal"
         >
-          {selected ? `${plan.display_name} selected` : `Start with ${plan.display_name}`}
+          Start with {plan.display_name}
         </button>
         <a
           href="#pricing-demo"
@@ -360,20 +434,22 @@ function EnterpriseCard() {
       <div className="mb-5 flex items-start justify-between gap-4">
         <div>
           <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#02ABE0]">Enterprise</p>
-          <h2 className="mt-2 text-2xl font-black">Custom package</h2>
+          <h2 className="mt-2 text-2xl font-black">Custom Pricing</h2>
         </div>
         <div className="rounded-lg bg-white/10 p-2.5 text-[#02D99D]">
           <Building2 className="h-5 w-5" />
         </div>
       </div>
       <p className="text-sm leading-relaxed text-white/70">
-        For teams that need custom interview volume, enterprise onboarding, advanced support, or negotiated commercial terms.
+        For teams that need custom interview volume, enterprise onboarding, advanced scoring options, or negotiated commercial terms.
       </p>
       <div className="mt-6 grid gap-3">
         {[
-          "Custom interview volume",
-          "Agreement and billing review",
-          "Priority implementation planning",
+          "Custom interviews included",
+          "15-minute interview cap",
+          "Volume discounts",
+          "Advanced scoring models available",
+          "Priority Support",
         ].map((item) => (
           <div key={item} className="flex items-center gap-3 text-sm font-bold text-white/85">
             <CheckCircle className="h-4 w-4 flex-shrink-0 text-[#02D99D]" />
@@ -440,23 +516,31 @@ function PurchaseIntentPanel({
   status,
   error,
   result,
+  agreementStatus,
+  agreementError,
+  agreementResult,
   onChange,
   onSubmit,
+  onContinueToAgreement,
 }: {
   selectedPlan: AlphaScreenPackage | null;
   form: PurchaseIntentForm;
   status: PurchaseIntentStatus;
   error: string;
   result: PurchaseIntentResult | null;
+  agreementStatus: AgreementPrepStatus;
+  agreementError: string;
+  agreementResult: PurchaseAgreementResult | null;
   onChange: <K extends keyof PurchaseIntentForm>(field: K, value: PurchaseIntentForm[K]) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onContinueToAgreement: () => void;
 }) {
   if (!selectedPlan) {
     return (
       <div className="rounded-lg border border-dashed border-[#0A1547]/18 bg-white px-6 py-8 text-center">
-        <h3 className="text-xl font-black text-[#0A1547]">Choose Basic or Pro to start purchase intake.</h3>
+        <h3 className="text-xl font-black text-[#0A1547]">Choose Basic or Pro to start signup.</h3>
         <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-[#0A1547]/60">
-          This creates a pending purchase intent for QA. Agreement signing, payment, and account activation remain separate later steps.
+          No payment is collected in this step. Agreement signing, payment, and account activation remain separate later steps.
         </p>
       </div>
     );
@@ -467,8 +551,12 @@ function PurchaseIntentPanel({
   const overage = selectedPlan.additional_interview_fee || selectedPlan.additional_interview_price || selectedPlan.overage_price;
   const options = cadenceOptions(selectedPlan);
   const planName = result?.selected_package?.display_name || selectedPlan.display_name;
+  const billingCadence = form.billing_cadence === "annual" ? "annual" : "monthly";
+  const selectedPlatformFee = result?.selected_package?.platform_fee ?? platformFeeForCadence(selectedPlan, billingCadence);
+  const selectedPlatformFeeLabel = billingCadence === "annual" ? formatUsdWithCents(selectedPlatformFee) : formatUsd(selectedPlatformFee);
 
   if (status === "success" && result) {
+    const signingUrl = String(agreementResult?.agreement?.signing_url || "").trim();
     return (
       <div className="rounded-lg border border-[#02D99D]/35 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
@@ -477,15 +565,15 @@ function PurchaseIntentPanel({
               <CheckCircle className="h-6 w-6" />
             </div>
             <p className="text-sm font-black uppercase tracking-[0.18em] text-[#02D99D]">
-              {result.duplicate ? "Pending intent found" : "Purchase intent received"}
+              {result.duplicate ? "Signup profile found" : "Signup profile created"}
             </p>
-            <h3 className="mt-2 text-2xl font-black text-[#0A1547]">{planName} intake is pending.</h3>
+            <h3 className="mt-2 text-2xl font-black text-[#0A1547]">{planName} signup is ready for agreement review.</h3>
             <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[#0A1547]/60">
-              {result.next_step_message || "Next step: membership agreement signing will be prepared in the next step."}
+              {agreementResult?.next_step_message || result.next_step_message || "Next step: membership agreement signing will be prepared for review."}
             </p>
           </div>
           <div className="rounded-lg bg-[#F8F9FD] px-4 py-3 text-sm font-bold text-[#0A1547]/65">
-            ID: {result.purchase_intent_id}
+            No payment collected
           </div>
         </div>
         <div className="mt-6 grid gap-4 md:grid-cols-3">
@@ -493,6 +581,9 @@ function PurchaseIntentPanel({
             <p className="text-xs font-black uppercase tracking-[0.14em] text-[#0A1547]/45">Package</p>
             <p className="mt-2 text-sm font-black text-[#0A1547]">
               {planName} - {cadenceLabel(selectedPlan, form.billing_cadence)}
+            </p>
+            <p className="mt-1 text-xs font-semibold text-[#0A1547]/55">
+              {selectedPlatformFeeLabel} platform, {formatUsd(selectedPlan.per_role_fee)} / role
             </p>
             <p className="mt-1 text-xs font-semibold text-[#0A1547]/55">
               {included} interviews, {duration}-minute cap, {formatUsd(overage)} additional interviews
@@ -511,22 +602,74 @@ function PurchaseIntentPanel({
             <p className="mt-1 text-xs font-semibold text-[#0A1547]/55">{form.buyer_email}</p>
           </div>
         </div>
+        <div className="mt-6 grid gap-3 rounded-lg border border-[#0A1547]/10 bg-[#F8F9FD] p-4 md:grid-cols-3">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-[#02D99D]">Step 1</p>
+            <p className="mt-1 text-sm font-black text-[#0A1547]">Signup profile created</p>
+            <p className="mt-1 text-xs font-semibold text-[#0A1547]/55">{planName} package details are saved for agreement review.</p>
+          </div>
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-[#A380F6]">Step 2</p>
+            <p className="mt-1 text-sm font-black text-[#0A1547]">Review and sign agreement</p>
+            <p className="mt-1 text-xs font-semibold text-[#0A1547]/55">Generate a tokenized membership agreement signing link.</p>
+          </div>
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-[#0A1547]/45">Step 3</p>
+            <p className="mt-1 text-sm font-black text-[#0A1547]">Payment and account setup</p>
+            <p className="mt-1 text-xs font-semibold text-[#0A1547]/55">Handled after signing in later steps.</p>
+          </div>
+        </div>
+        {agreementError ? (
+          <div className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700" role="alert">
+            {agreementError}
+          </div>
+        ) : null}
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+          {signingUrl ? (
+            <a
+              href={signingUrl}
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#0A1547] px-6 py-3.5 text-sm font-black text-white transition-opacity hover:opacity-90"
+              data-analytics-cta="Open Membership Agreement"
+              data-analytics-placement="signup-modal-success"
+              data-analytics-target="/membership-agreement/sign"
+            >
+              Open membership agreement
+              <ArrowRight className="h-4 w-4" />
+            </a>
+          ) : (
+            <button
+              type="button"
+              onClick={onContinueToAgreement}
+              disabled={agreementStatus === "preparing"}
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#0A1547] px-6 py-3.5 text-sm font-black text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              data-analytics-cta="Continue to Agreement"
+              data-analytics-placement="signup-modal-success"
+              data-analytics-target="/membership-agreement/sign"
+            >
+              {agreementStatus === "preparing" ? "Preparing agreement..." : "Continue to agreement"}
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          )}
+          <p className="text-xs font-semibold leading-relaxed text-[#0A1547]/50">
+            No payment details are collected here, and checkout is not started.
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <form onSubmit={onSubmit} className="rounded-lg border border-[#0A1547]/10 bg-white p-6 shadow-sm" data-testid="purchase-intent-form">
+    <form onSubmit={onSubmit} className="rounded-lg border border-[#0A1547]/10 bg-white p-6 shadow-sm" data-testid="signup-profile-form">
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-sm font-black uppercase tracking-[0.18em] text-[#A380F6]">Buyer intake</p>
           <h3 className="mt-2 text-2xl font-black text-[#0A1547]">Start with {selectedPlan.display_name}</h3>
           <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[#0A1547]/60">
-            No payment is collected here. This creates a pending purchase intent so the agreement step can be prepared later.
+            No payment is collected here. You will review the membership agreement before checkout, and access is activated only after agreement signing and payment.
           </p>
         </div>
         <div className="rounded-lg bg-[#F8F9FD] px-4 py-3 text-sm font-bold text-[#0A1547]/65">
-          {included} interviews per role - {duration}-minute cap - {formatUsd(overage)} overage
+          {selectedPlatformFeeLabel} platform - {formatUsd(selectedPlan.per_role_fee)} / role - {included} interviews per role
         </div>
       </div>
 
@@ -640,15 +783,15 @@ function PurchaseIntentPanel({
           type="submit"
           disabled={status === "submitting"}
           className="inline-flex items-center justify-center gap-2 rounded-full bg-[#0A1547] px-6 py-3.5 text-sm font-black text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-          data-analytics-cta="Submit Purchase Intent"
-          data-analytics-placement="purchase-intake"
-          data-analytics-target="/alphascreen/pricing#purchase-intake"
+          data-analytics-cta="Create Signup Profile"
+          data-analytics-placement="signup-modal"
+          data-analytics-target="/alphascreen/pricing#signup-modal"
         >
-          {status === "submitting" ? "Creating pending intent..." : "Create pending purchase intent"}
+          {status === "submitting" ? "Creating signup profile..." : "Create signup profile"}
           <ArrowRight className="h-4 w-4" />
         </button>
         <p className="text-xs font-semibold leading-relaxed text-[#0A1547]/50">
-          This QA step does not create an agreement, checkout session, user, client, or membership.
+          Payment details are not collected in this step.
         </p>
       </div>
     </form>
@@ -672,11 +815,16 @@ export default function AlphaScreenPricingPage() {
   const [packages, setPackages] = useState<AlphaScreenPackage[]>(FALLBACK_PACKAGES);
   const [loadState, setLoadState] = useState<PackageLoadState>("loading");
   const purchaseFormStartedRef = useRef(false);
+  const [selectedBillingCadence, setSelectedBillingCadence] = useState<BillingCadenceKey>("monthly");
+  const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
   const [selectedPlanKey, setSelectedPlanKey] = useState("");
   const [purchaseForm, setPurchaseForm] = useState<PurchaseIntentForm>(EMPTY_PURCHASE_FORM);
   const [purchaseStatus, setPurchaseStatus] = useState<PurchaseIntentStatus>("idle");
   const [purchaseError, setPurchaseError] = useState("");
   const [purchaseResult, setPurchaseResult] = useState<PurchaseIntentResult | null>(null);
+  const [agreementStatus, setAgreementStatus] = useState<AgreementPrepStatus>("idle");
+  const [agreementError, setAgreementError] = useState("");
+  const [agreementResult, setAgreementResult] = useState<PurchaseAgreementResult | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -709,29 +857,47 @@ export default function AlphaScreenPricingPage() {
   );
 
   const startPurchase = (plan: AlphaScreenPackage) => {
+    const cadence = planSupportsCadence(plan, selectedBillingCadence) ? selectedBillingCadence : defaultCadence(plan);
     setSelectedPlanKey(plan.plan_key);
+    setCheckoutModalOpen(true);
+    purchaseFormStartedRef.current = false;
     setPurchaseStatus("idle");
     setPurchaseError("");
     setPurchaseResult(null);
-    setPurchaseForm((prev) => ({ ...prev, billing_cadence: defaultCadence(plan) }));
+    setAgreementStatus("idle");
+    setAgreementError("");
+    setAgreementResult(null);
+    setPurchaseForm((prev) => ({ ...prev, billing_cadence: cadence }));
     trackEvent("signup_started", { plan: plan.plan_key, step: "plan_selection" });
-    window.setTimeout(() => {
-      document.getElementById("purchase-intake")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 0);
+  };
+
+  const closeCheckoutModal = () => {
+    if (purchaseStatus === "submitting" || agreementStatus === "preparing") return;
+    setCheckoutModalOpen(false);
+  };
+
+  const updateSelectedBillingCadence = (cadence: BillingCadenceKey) => {
+    setSelectedBillingCadence(cadence);
+    if (selectedPlan && planSupportsCadence(selectedPlan, cadence)) {
+      setPurchaseForm((prev) => ({ ...prev, billing_cadence: cadence }));
+    }
   };
 
   const updatePurchaseField = <K extends keyof PurchaseIntentForm>(field: K, value: PurchaseIntentForm[K]) => {
     if (!purchaseFormStartedRef.current) {
       purchaseFormStartedRef.current = true;
       trackEvent("lead_form_started", {
-        form_id: "alphascreen-purchase-intent",
-        form_type: "purchase_intent",
+        form_id: "alphascreen-signup-profile",
+        form_type: "signup_profile",
         product_interest: "alphascreen",
         first_field: String(field),
       });
       trackEvent("signup_step_viewed", { plan: selectedPlanKey, step: "buyer_intake" });
     }
     setPurchaseError("");
+    if (field === "billing_cadence" && (value === "monthly" || value === "annual")) {
+      setSelectedBillingCadence(value);
+    }
     setPurchaseForm((prev) => ({ ...prev, [field]: value }));
   };
 
@@ -739,16 +905,16 @@ export default function AlphaScreenPricingPage() {
     event.preventDefault();
     const validationMessage = validatePurchaseForm(purchaseForm, selectedPlan);
     trackEvent("lead_form_submit_attempted", {
-      form_id: "alphascreen-purchase-intent",
-      form_type: "purchase_intent",
+      form_id: "alphascreen-signup-profile",
+      form_type: "signup_profile",
       product_interest: "alphascreen",
     });
 
     if (validationMessage || !selectedPlan) {
       setPurchaseError(validationMessage || "Choose Basic or Pro before submitting.");
       trackEvent("lead_form_submit_failed", {
-        form_id: "alphascreen-purchase-intent",
-        form_type: "purchase_intent",
+        form_id: "alphascreen-signup-profile",
+        form_type: "signup_profile",
         product_interest: "alphascreen",
         error_type: "validation",
       });
@@ -787,13 +953,13 @@ export default function AlphaScreenPricingPage() {
 
       if (!response.ok) {
         const detail = body.detail || (response.status === 429
-          ? "Too many purchase intake attempts. Please wait a few minutes and try again."
-          : "We could not create this purchase intent. Please try again.");
+          ? "Too many signup attempts. Please wait a few minutes and try again."
+          : "We could not create this signup profile. Please try again.");
         setPurchaseStatus("idle");
         setPurchaseError(detail);
         trackEvent("lead_form_submit_failed", {
-          form_id: "alphascreen-purchase-intent",
-          form_type: "purchase_intent",
+          form_id: "alphascreen-signup-profile",
+          form_type: "signup_profile",
           product_interest: "alphascreen",
           error_type: response.status === 429 ? "rate_limited" : "backend",
         });
@@ -802,25 +968,70 @@ export default function AlphaScreenPricingPage() {
 
       setPurchaseResult(body);
       setPurchaseStatus("success");
+      setAgreementStatus("idle");
+      setAgreementError("");
+      setAgreementResult(null);
       trackEvent("lead_form_submit_succeeded", {
-        form_id: "alphascreen-purchase-intent",
-        form_type: "purchase_intent",
+        form_id: "alphascreen-signup-profile",
+        form_type: "signup_profile",
         product_interest: "alphascreen",
       });
       trackEvent("signup_step_completed", {
         plan: selectedPlan.plan_key,
-        step: "purchase_intent",
+        step: "signup_profile",
         completion_percent: 50,
       });
     } catch (_) {
       setPurchaseStatus("idle");
-      setPurchaseError("We could not reach the purchase intake service. Please try again.");
+      setPurchaseError("We could not reach the signup service. Please try again.");
       trackEvent("lead_form_submit_failed", {
-        form_id: "alphascreen-purchase-intent",
-        form_type: "purchase_intent",
+        form_id: "alphascreen-signup-profile",
+        form_type: "signup_profile",
         product_interest: "alphascreen",
         error_type: "network",
       });
+    }
+  };
+
+  const handleContinueToAgreement = async () => {
+    const purchaseIntentId = String(purchaseResult?.purchase_intent_id || "").trim();
+    if (!purchaseIntentId || agreementStatus === "preparing") return;
+    setAgreementStatus("preparing");
+    setAgreementError("");
+    trackEvent("signup_step_viewed", {
+      plan: selectedPlanKey,
+      step: "agreement_prepare",
+      completion_percent: 60,
+    });
+
+    try {
+      const response = await fetch(purchaseIntentAgreementEndpoint(purchaseIntentId), {
+        method: "POST",
+        headers: { Accept: "application/json" },
+      });
+      const body = await response.json().catch(() => ({})) as PurchaseAgreementResult & {
+        detail?: string;
+        code?: string;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        const detail = body.detail || "We could not prepare the membership agreement. Please try again.";
+        setAgreementStatus("idle");
+        setAgreementError(detail);
+        return;
+      }
+
+      setAgreementResult(body);
+      setAgreementStatus("ready");
+      trackEvent("signup_step_completed", {
+        plan: selectedPlanKey,
+        step: "agreement_prepare",
+        completion_percent: 70,
+      });
+    } catch (_) {
+      setAgreementStatus("idle");
+      setAgreementError("We could not reach the agreement service. Please try again.");
     }
   };
 
@@ -881,16 +1092,16 @@ export default function AlphaScreenPricingPage() {
             </div>
             <div className="mt-5 grid gap-3">
               {[
-                ["Basic", "20 interviews", "10-minute cap"],
-                ["Pro", "30 interviews", "12-minute cap"],
+                ["Basic", "$299/mo + $399/role", "20 interviews, 10-minute cap"],
+                ["Pro", "$599/mo + $699/role", "30 interviews, 12-minute cap"],
                 ["Enterprise", "Custom volume", "Contact Sales"],
-              ].map(([name, volume, duration]) => (
+              ].map(([name, price, detail]) => (
                 <div key={name} className="grid grid-cols-[1fr_auto] gap-3 rounded-lg bg-[#F8F9FD] px-4 py-3">
                   <div>
                     <p className="text-sm font-black text-[#0A1547]">{name}</p>
-                    <p className="text-xs font-semibold text-[#0A1547]/50">{volume}</p>
+                    <p className="text-xs font-semibold text-[#0A1547]/50">{price}</p>
                   </div>
-                  <p className="self-center text-xs font-black text-[#0A1547]/60">{duration}</p>
+                  <p className="self-center text-right text-xs font-black text-[#0A1547]/60">{detail}</p>
                 </div>
               ))}
             </div>
@@ -900,11 +1111,29 @@ export default function AlphaScreenPricingPage() {
 
       <section id="packages" className="bg-white py-16 lg:py-20">
         <div className="mx-auto max-w-7xl px-6 lg:px-8">
-          <div className="mb-8 max-w-3xl">
-            <p className="text-sm font-black uppercase tracking-[0.18em] text-[#02ABE0]">Packages</p>
-            <h2 className="mt-3 text-3xl font-black leading-tight text-[#0A1547] lg:text-4xl">
-              Pick the screening capacity that matches your hiring motion.
-            </h2>
+          <div className="mb-8 grid gap-5 lg:grid-cols-[1fr_auto] lg:items-end">
+            <div className="max-w-3xl">
+              <p className="text-sm font-black uppercase tracking-[0.18em] text-[#02ABE0]">Packages</p>
+              <h2 className="mt-3 text-3xl font-black leading-tight text-[#0A1547] lg:text-4xl">
+                Pick the screening capacity that matches your hiring motion.
+              </h2>
+            </div>
+            <div className="rounded-lg border border-[#0A1547]/10 bg-[#F8F9FD] p-1">
+              {(["monthly", "annual"] as BillingCadenceKey[]).map((cadence) => (
+                <button
+                  key={cadence}
+                  type="button"
+                  onClick={() => updateSelectedBillingCadence(cadence)}
+                  className={`rounded-md px-4 py-2 text-sm font-black transition-colors ${
+                    selectedBillingCadence === cadence
+                      ? "bg-[#0A1547] text-white"
+                      : "text-[#0A1547]/65 hover:text-[#0A1547]"
+                  }`}
+                >
+                  {cadence === "annual" ? "Annual" : "Monthly"}
+                </button>
+              ))}
+            </div>
           </div>
           <LoadingNotice state={loadState} />
           <div className="grid gap-5 lg:grid-cols-3">
@@ -913,41 +1142,70 @@ export default function AlphaScreenPricingPage() {
                 key={plan.plan_key}
                 plan={plan}
                 selected={selectedPlanKey === plan.plan_key}
+                billingCadence={selectedBillingCadence}
                 onStart={startPurchase}
               />
             ))}
             <EnterpriseCard />
           </div>
           <p className="mt-5 max-w-3xl text-sm leading-relaxed text-[#0A1547]/55">
-            Package details shown here are for planning. Self-serve signup, agreement generation, and Stripe checkout are not active on this page yet.
+            Annual pricing is paid upfront with a 10% discount on the platform fee only. Role fees remain listed separately. Stripe checkout and account activation are not active on this page yet.
           </p>
         </div>
       </section>
 
-      <section id="purchase-intake" className="bg-[#F8F9FD] py-16 lg:py-20">
-        <div className="mx-auto max-w-7xl px-6 lg:px-8">
-          <div className="mb-8 grid gap-5 lg:grid-cols-[0.72fr_1fr] lg:items-end">
-            <div>
-              <p className="text-sm font-black uppercase tracking-[0.18em] text-[#A380F6]">Purchase intake</p>
-              <h2 className="mt-3 text-3xl font-black leading-tight text-[#0A1547] lg:text-4xl">
-                Create a pending purchase intent.
-              </h2>
-            </div>
-            <p className="text-sm leading-relaxed text-[#0A1547]/60">
-              Basic and Pro buyers can enter company and admin details here. This does not collect payment details or activate access.
-            </p>
-          </div>
-          <PurchaseIntentPanel
-            selectedPlan={selectedPlan}
-            form={purchaseForm}
-            status={purchaseStatus}
-            error={purchaseError}
-            result={purchaseResult}
-            onChange={updatePurchaseField}
-            onSubmit={handlePurchaseSubmit}
+      {checkoutModalOpen ? (
+        <div id="signup-modal" className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0A1547]/55 px-4 py-5 backdrop-blur-sm sm:py-8">
+          <button
+            type="button"
+            className="absolute inset-0 cursor-default"
+            aria-label="Close signup modal"
+            onClick={closeCheckoutModal}
           />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="signup-modal-title"
+            className="relative w-full max-w-5xl rounded-lg bg-white shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-[#0A1547]/10 px-5 py-4 sm:px-6">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-[#A380F6]">alphaScreen signup</p>
+                <h2 id="signup-modal-title" className="mt-1 text-xl font-black text-[#0A1547] sm:text-2xl">
+                  Start package signup
+                </h2>
+                <p className="mt-1 text-sm font-semibold text-[#0A1547]/55">
+                  Agreement review comes next. Payment is not collected here.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeCheckoutModal}
+                disabled={purchaseStatus === "submitting" || agreementStatus === "preparing"}
+                className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-[#0A1547]/10 bg-[#F8F9FD] text-[#0A1547] transition-colors hover:border-[#A380F6] hover:text-[#A380F6] disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="max-h-[calc(100vh-9rem)] overflow-y-auto p-4 sm:p-6">
+              <PurchaseIntentPanel
+                selectedPlan={selectedPlan}
+                form={purchaseForm}
+                status={purchaseStatus}
+                error={purchaseError}
+                result={purchaseResult}
+                agreementStatus={agreementStatus}
+                agreementError={agreementError}
+                agreementResult={agreementResult}
+                onChange={updatePurchaseField}
+                onSubmit={handlePurchaseSubmit}
+                onContinueToAgreement={handleContinueToAgreement}
+              />
+            </div>
+          </div>
         </div>
-      </section>
+      ) : null}
 
       <section className="bg-[#F8F9FD] py-16 lg:py-20">
         <div className="mx-auto max-w-7xl px-6 lg:px-8">
@@ -956,7 +1214,7 @@ export default function AlphaScreenPricingPage() {
               <p className="text-sm font-black uppercase tracking-[0.18em] text-[#A380F6]">Coming workflow</p>
               <h2 className="mt-3 text-3xl font-black leading-tight text-[#0A1547]">What self-serve signup will require</h2>
               <p className="mt-4 text-sm leading-relaxed text-[#0A1547]/60">
-                This pricing page is the UI foundation only. The commercial flow will stay gated until agreement generation, payment, and account activation are wired end to end.
+                This pricing page now supports staged signup details and agreement preparation. Payment and account activation stay gated until the later workflow is wired end to end.
               </p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
