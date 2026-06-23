@@ -623,7 +623,7 @@ function PurchaseIntentPanel({
           {signingUrl ? (
             <a
               href={signingUrl}
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#0A1547] px-6 py-3.5 text-sm font-black text-white transition-opacity hover:opacity-90"
+              className="inline-flex items-center justify-center gap-2 rounded-full border border-[#8E6EE0] bg-[#A380F6] px-6 py-3.5 text-sm font-black text-white shadow-[0_10px_24px_rgba(163,128,246,0.26)] transition-colors hover:border-[#7B5FD4] hover:bg-[#8E6EE0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A380F6]/45 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
               data-analytics-cta="Open Membership Agreement"
               data-analytics-placement="signup-modal-success"
               data-analytics-target="/membership-agreement/sign"
