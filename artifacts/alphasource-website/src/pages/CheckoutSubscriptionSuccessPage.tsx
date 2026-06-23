@@ -18,7 +18,7 @@ const STATUS_COPY: Record<ReturnStatus, {
 }> = {
   ready: {
     eyebrow: "Payment confirmed",
-    title: "Your alphaScreen subscription is ready for account access.",
+    title: "Your alphaScreen membership is ready for account access.",
     body: "Stripe checkout was verified and your membership is linked. Open the dashboard if you are already signed in, or sign in from the public site.",
     tone: "success",
   },

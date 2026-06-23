@@ -60,9 +60,9 @@ const PUBLIC_ROUTES: Record<string, Omit<SeoConfig, "robots" | "imagePath" | "ty
     },
   },
   "/alphascreen/pricing": {
-    title: "alphaScreen Pricing | AI Interview Screening Packages",
+    title: "alphaScreen Pricing | AI Interview Screening Memberships",
     description:
-      "Compare alphaScreen Basic, Pro, and Enterprise package options for structured AI-assisted interview screening, included interviews, duration caps, and additional interview pricing.",
+      "Compare alphaScreen Basic, Pro, and Enterprise membership options for structured AI-assisted interview screening, included interviews, duration caps, and additional interview pricing.",
     path: "/alphascreen/pricing",
     jsonLd: {
       "@context": "https://schema.org",
@@ -74,7 +74,7 @@ const PUBLIC_ROUTES: Record<string, Omit<SeoConfig, "robots" | "imagePath" | "ty
       },
       category: "AI-assisted interview screening software",
       description:
-        "Public alphaScreen package preview for structured AI-assisted candidate screening.",
+        "Public alphaScreen membership preview for structured AI-assisted candidate screening.",
       url: "https://www.alphasourceai.com/alphascreen/pricing",
       offers: {
         "@type": "AggregateOffer",

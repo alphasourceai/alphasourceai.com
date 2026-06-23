@@ -73,7 +73,7 @@ function HeroSection() {
               transition={{ delay: 0.25, duration: 0.6 }}
               className="text-base text-[#0A1547]/50 leading-relaxed mb-8"
             >
-              A subscription-based AI interview agent that lets you create job roles and conduct automated screening interviews with AI avatars. The platform leverages advanced AI to comprehensively evaluate candidates — with flexible scheduling so candidates can interview anytime, day or night.
+              A membership-based AI interview agent that lets you create job roles and conduct automated screening interviews with AI avatars. The platform leverages advanced AI to comprehensively evaluate candidates — with flexible scheduling so candidates can interview anytime, day or night.
             </motion.p>
 
             <motion.div
@@ -101,15 +101,6 @@ function HeroSection() {
                 data-analytics-placement="alphascreen-hero"
               >
                 See How It Works
-              </a>
-              <a
-                href="/alphascreen/pricing"
-                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 text-base font-semibold text-[#0A1547] bg-white border border-[#0A1547]/10 rounded-full transition-all hover:border-[#02ABE0] hover:text-[#02ABE0] hover:shadow-md active:scale-95"
-                data-testid="alphascreen-pricing-link"
-                data-analytics-cta="View Pricing"
-                data-analytics-placement="alphascreen-hero"
-              >
-                View Pricing
               </a>
             </motion.div>
           </div>
@@ -151,16 +142,16 @@ function HeroSection() {
 }
 
 function PricingSignupSection() {
-  const packages = [
+  const memberships = [
     {
       name: "Basic",
-      price: "$299/mo + $399/role",
-      details: ["20 interviews per role", "10-minute interview cap", "$30 additional interviews"],
+      description: "For teams that want consistent screening for focused hiring needs.",
+      details: "20 interviews per role · 10-minute interviews",
     },
     {
       name: "Pro",
-      price: "$599/mo + $699/role",
-      details: ["30 interviews per role", "12-minute interview cap", "$35 additional interviews"],
+      description: "For teams with more active roles and higher candidate volume.",
+      details: "30 interviews per role · 12-minute interviews",
     },
   ];
 
@@ -174,12 +165,12 @@ function PricingSignupSection() {
             viewport={{ once: true, amount: 0.3 }}
             variants={fadeUp}
           >
-            <p className="text-sm font-black uppercase tracking-[0.18em] text-[#02ABE0]">Pricing and signup</p>
+            <p className="text-sm font-black uppercase tracking-[0.18em] text-[#02ABE0]">PRICING AND SIGNUP</p>
             <h2 className="mt-3 text-3xl lg:text-4xl font-black text-[#0A1547] leading-tight">
-              Start with a package, then complete agreement review and secure checkout.
+              Choose the membership that fits your hiring volume.
             </h2>
             <p className="mt-4 text-base leading-relaxed text-[#0A1547]/60">
-              Basic and Pro packages are available through the public signup flow. Select a package, provide buyer details, review the membership agreement, and complete payment in Stripe Checkout before dashboard access is activated.
+              Start with Basic or Pro, then complete agreement review and secure checkout when you are ready. Each membership includes structured AI-assisted interviews, candidate scoring, and on-demand reports for your hiring team.
             </p>
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
               <a
@@ -187,19 +178,19 @@ function PricingSignupSection() {
                 className="inline-flex items-center justify-center gap-2 px-6 py-3.5 text-base font-semibold text-white rounded-full transition-all hover:opacity-90 hover:shadow-lg active:scale-95"
                 style={{ backgroundColor: "#A380F6" }}
                 data-testid="alphascreen-signup-pricing-cta"
-                data-analytics-cta="View Pricing and Start Signup"
+                data-analytics-cta="Compare Memberships"
                 data-analytics-placement="alphascreen-pricing-section"
               >
-                View pricing and start signup
+                Compare memberships
                 <ArrowRight className="w-4 h-4" />
               </a>
               <a
                 href="#request-demo"
                 className="inline-flex items-center justify-center gap-2 px-6 py-3.5 text-base font-semibold text-[#0A1547] bg-[#F8F9FD] border border-[#0A1547]/10 rounded-full transition-all hover:border-[#02ABE0] hover:text-[#02ABE0] active:scale-95"
-                data-analytics-cta="Request Demo Instead"
+                data-analytics-cta="Talk to Sales"
                 data-analytics-placement="alphascreen-pricing-section"
               >
-                Request demo instead
+                Talk to sales
               </a>
             </div>
           </motion.div>
@@ -212,24 +203,20 @@ function PricingSignupSection() {
             custom={1}
             className="grid gap-4 sm:grid-cols-2"
           >
-            {packages.map((item) => (
+            {memberships.map((item) => (
               <div key={item.name} className="rounded-lg border border-[#0A1547]/10 bg-[#F8F9FD] p-5">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#A380F6]">{item.name}</p>
-                    <p className="mt-2 text-2xl font-black text-[#0A1547]">{item.price}</p>
+                    <p className="mt-2 text-sm font-semibold leading-relaxed text-[#0A1547]/60">{item.description}</p>
                   </div>
                   <div className="h-9 w-9 rounded-lg bg-white flex items-center justify-center text-[#02D99D]">
                     <CheckCircle className="h-5 w-5" />
                   </div>
                 </div>
-                <div className="mt-5 grid gap-2">
-                  {item.details.map((detail) => (
-                    <div key={detail} className="flex items-center gap-2 text-sm font-semibold text-[#0A1547]/65">
-                      <CheckCircle className="h-4 w-4 flex-shrink-0 text-[#02D99D]" />
-                      <span>{detail}</span>
-                    </div>
-                  ))}
+                <div className="mt-5 flex items-center gap-2 text-sm font-black text-[#0A1547]/70">
+                  <CheckCircle className="h-4 w-4 flex-shrink-0 text-[#02D99D]" />
+                  <span>{item.details}</span>
                 </div>
               </div>
             ))}

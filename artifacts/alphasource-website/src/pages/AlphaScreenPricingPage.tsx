@@ -342,7 +342,7 @@ function PlanCard({
           <p className="text-[11px] font-black uppercase tracking-[0.18em]" style={{ color: accent.color }}>
             {plan.display_name}
           </p>
-          <h2 className="mt-2 text-2xl font-black text-[#0A1547]">{plan.display_name} package</h2>
+          <h2 className="mt-2 text-2xl font-black text-[#0A1547]">{plan.display_name} membership</h2>
         </div>
         <div className="rounded-lg p-2.5" style={{ backgroundColor: accent.bg, color: accent.color }}>
           {plan.plan_key === "pro" ? <BriefcaseBusiness className="h-5 w-5" /> : <Layers3 className="h-5 w-5" />}
@@ -400,7 +400,7 @@ function PlanCard({
           data-analytics-placement="pricing-card"
           data-analytics-target="#signup-modal"
         >
-          Start with {plan.display_name}
+          Start {plan.display_name} membership
         </button>
         <a
           href="#pricing-demo"
@@ -423,14 +423,14 @@ function EnterpriseCard() {
       <div className="mb-5 flex items-start justify-between gap-4">
         <div>
           <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#02ABE0]">Enterprise</p>
-          <h2 className="mt-2 text-2xl font-black">Custom Pricing</h2>
+          <h2 className="mt-2 text-2xl font-black">Enterprise membership</h2>
         </div>
         <div className="rounded-lg bg-white/10 p-2.5 text-[#02D99D]">
           <Building2 className="h-5 w-5" />
         </div>
       </div>
       <p className="text-sm leading-relaxed text-white/70">
-        For teams that need custom interview volume, enterprise onboarding, advanced scoring options, or negotiated commercial terms.
+        For teams that need custom interview volume, enterprise onboarding, advanced scoring options, or custom membership terms.
       </p>
       <div className="mt-6 grid gap-3">
         {[
@@ -451,11 +451,11 @@ function EnterpriseCard() {
         <a
           href="#pricing-demo"
           className="flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-white px-4 py-3 text-sm font-black text-[#0A1547] transition-opacity hover:opacity-90"
-          data-analytics-cta="Contact Sales"
+          data-analytics-cta="Talk to Sales"
           data-analytics-placement="pricing-enterprise"
           data-analytics-target="#pricing-demo"
         >
-          Contact Sales
+          Talk to sales
           <ArrowRight className="h-4 w-4" />
         </a>
       </div>
@@ -557,9 +557,9 @@ function PurchaseIntentPanel({
               <CheckCircle className="h-6 w-6" />
             </div>
             <p className="text-sm font-black uppercase tracking-[0.18em] text-[#02D99D]">
-              {result.duplicate ? "Signup profile found" : "Signup profile created"}
+              {result.duplicate ? "Signup details found" : "Signup details saved"}
             </p>
-            <h3 className="mt-2 text-2xl font-black text-[#0A1547]">{planName} signup is ready for agreement review.</h3>
+            <h3 className="mt-2 text-2xl font-black text-[#0A1547]">{planName} membership is ready for agreement review.</h3>
             <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[#0A1547]/60">
               Next: review and sign your membership agreement. After signing, you will continue to secure payment.
             </p>
@@ -570,9 +570,9 @@ function PurchaseIntentPanel({
         </div>
         <div className="mt-6 grid gap-4 md:grid-cols-3">
           <div className="rounded-lg border border-[#0A1547]/10 bg-[#F8F9FD] p-4">
-            <p className="text-xs font-black uppercase tracking-[0.14em] text-[#0A1547]/45">Package</p>
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-[#0A1547]/45">Membership</p>
             <p className="mt-2 text-sm font-black text-[#0A1547]">
-              {planName} - {cadenceLabel(selectedPlan, form.billing_cadence)}
+              {planName} membership - {cadenceLabel(selectedPlan, form.billing_cadence)}
             </p>
             <p className="mt-1 text-xs font-semibold text-[#0A1547]/55">
               {selectedPlatformFeeLabel} platform, {formatUsd(selectedPlan.per_role_fee)} / role
@@ -597,8 +597,8 @@ function PurchaseIntentPanel({
         <div className="mt-6 grid gap-3 rounded-lg border border-[#0A1547]/10 bg-[#F8F9FD] p-4 md:grid-cols-3">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.14em] text-[#02D99D]">Step 1</p>
-            <p className="mt-1 text-sm font-black text-[#0A1547]">Signup profile created</p>
-            <p className="mt-1 text-xs font-semibold text-[#0A1547]/55">{planName} package details are saved for agreement review.</p>
+            <p className="mt-1 text-sm font-black text-[#0A1547]">Signup details saved</p>
+            <p className="mt-1 text-xs font-semibold text-[#0A1547]/55">{planName} membership details are saved for agreement review.</p>
           </div>
           <div>
             <p className="text-xs font-black uppercase tracking-[0.14em] text-[#A380F6]">Step 2</p>
@@ -655,7 +655,7 @@ function PurchaseIntentPanel({
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-sm font-black uppercase tracking-[0.18em] text-[#A380F6]">Buyer intake</p>
-          <h3 className="mt-2 text-2xl font-black text-[#0A1547]">Start with {selectedPlan.display_name}</h3>
+          <h3 className="mt-2 text-2xl font-black text-[#0A1547]">Start {selectedPlan.display_name} membership</h3>
           <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[#0A1547]/60">
             No payment is collected here. You will review the membership agreement before checkout, and access is activated only after signing and payment are confirmed.
           </p>
@@ -775,11 +775,11 @@ function PurchaseIntentPanel({
           type="submit"
           disabled={status === "submitting"}
           className="inline-flex items-center justify-center gap-2 rounded-full bg-[#0A1547] px-6 py-3.5 text-sm font-black text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-          data-analytics-cta="Create Signup Profile"
+          data-analytics-cta="Save Signup Details"
           data-analytics-placement="signup-modal"
           data-analytics-target="/alphascreen/pricing#signup-modal"
         >
-          {status === "submitting" ? "Creating signup profile..." : "Create signup profile"}
+          {status === "submitting" ? "Saving signup details..." : "Save signup details"}
           <ArrowRight className="h-4 w-4" />
         </button>
         <p className="text-xs font-semibold leading-relaxed text-[#0A1547]/50">
@@ -797,8 +797,8 @@ function LoadingNotice({ state }: { state: PackageLoadState }) {
   return (
     <div className="mb-6 rounded-lg border border-[#0A1547]/10 bg-white px-4 py-3 text-sm font-semibold text-[#0A1547]/65">
       {isLoading
-        ? "Loading current alphaScreen package configuration..."
-        : "Showing current package defaults while live package configuration is unavailable."}
+        ? "Loading current alphaScreen membership configuration..."
+        : "Showing current membership defaults while live membership configuration is unavailable."}
     </div>
   );
 }
@@ -946,7 +946,7 @@ export default function AlphaScreenPricingPage() {
       if (!response.ok) {
         const detail = body.detail || (response.status === 429
           ? "Too many signup attempts. Please wait a few minutes and try again."
-          : "We could not create this signup profile. Please try again.");
+          : "We could not save these signup details. Please try again.");
         setPurchaseStatus("idle");
         setPurchaseError(detail);
         trackEvent("lead_form_submit_failed", {
@@ -1050,10 +1050,10 @@ export default function AlphaScreenPricingPage() {
               <a
                 href="#packages"
                 className="inline-flex items-center justify-center gap-2 rounded-full bg-[#A380F6] px-6 py-3.5 text-base font-black text-white transition-opacity hover:opacity-90"
-                data-analytics-cta="View Packages"
+                data-analytics-cta="Compare Memberships"
                 data-analytics-placement="pricing-hero"
               >
-                View packages
+                Compare memberships
                 <ArrowRight className="h-4 w-4" />
               </a>
               <a
@@ -1067,7 +1067,7 @@ export default function AlphaScreenPricingPage() {
               </a>
             </div>
             <p className="mt-5 max-w-xl text-sm font-semibold leading-relaxed text-[#0A1547]/55">
-              Start signup with a package selection, then review the agreement and continue to secure payment before dashboard activation.
+              Start signup with a membership selection, then review the agreement and continue to secure payment before dashboard activation.
             </p>
           </div>
 
@@ -1076,8 +1076,8 @@ export default function AlphaScreenPricingPage() {
               <div className="flex items-center gap-3">
                 <img src="/alpha-symbol.png" alt="" className="h-9 w-9" />
                 <div>
-                  <p className="text-sm font-black text-[#0A1547]">alphaScreen packages</p>
-                  <p className="text-xs font-bold text-[#0A1547]/45">Public pricing preview</p>
+                  <p className="text-sm font-black text-[#0A1547]">alphaScreen memberships</p>
+                  <p className="text-xs font-bold text-[#0A1547]/45">Membership pricing preview</p>
                 </div>
               </div>
               <ShieldCheck className="h-5 w-5 text-[#02D99D]" />
@@ -1086,7 +1086,7 @@ export default function AlphaScreenPricingPage() {
               {[
                 ["Basic", "$299/mo + $399/role", "20 interviews, 10-minute cap"],
                 ["Pro", "$599/mo + $699/role", "30 interviews, 12-minute cap"],
-                ["Enterprise", "Custom volume", "Contact Sales"],
+                ["Enterprise", "Custom membership", "Talk to sales"],
               ].map(([name, price, detail]) => (
                 <div key={name} className="grid grid-cols-[1fr_auto] gap-3 rounded-lg bg-[#F8F9FD] px-4 py-3">
                   <div>
@@ -1105,9 +1105,9 @@ export default function AlphaScreenPricingPage() {
         <div className="mx-auto max-w-7xl px-6 lg:px-8">
           <div className="mb-8 grid gap-5 lg:grid-cols-[1fr_auto] lg:items-end">
             <div className="max-w-3xl">
-              <p className="text-sm font-black uppercase tracking-[0.18em] text-[#02ABE0]">Packages</p>
+              <p className="text-sm font-black uppercase tracking-[0.18em] text-[#02ABE0]">Memberships</p>
               <h2 className="mt-3 text-3xl font-black leading-tight text-[#0A1547] lg:text-4xl">
-                Pick the screening capacity that matches your hiring motion.
+                Choose the screening membership that matches your hiring motion.
               </h2>
             </div>
             <div className="rounded-lg border border-[#0A1547]/10 bg-[#F8F9FD] p-1">
@@ -1164,7 +1164,7 @@ export default function AlphaScreenPricingPage() {
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.18em] text-[#A380F6]">alphaScreen signup</p>
                 <h2 id="signup-modal-title" className="mt-1 text-xl font-black text-[#0A1547] sm:text-2xl">
-                  Start package signup
+                  Start membership signup
                 </h2>
                 <p className="mt-1 text-sm font-semibold text-[#0A1547]/55">
                   Agreement review comes next. Payment is not collected here.
@@ -1204,14 +1204,14 @@ export default function AlphaScreenPricingPage() {
           <div className="grid gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
             <div>
               <p className="text-sm font-black uppercase tracking-[0.18em] text-[#A380F6]">Signup workflow</p>
-              <h2 className="mt-3 text-3xl font-black leading-tight text-[#0A1547]">How package signup works</h2>
+              <h2 className="mt-3 text-3xl font-black leading-tight text-[#0A1547]">How membership signup works</h2>
               <p className="mt-4 text-sm leading-relaxed text-[#0A1547]/60">
-                Package signup starts here, continues through agreement review, and moves to secure Stripe Checkout after signing. Dashboard access stays gated until payment is confirmed.
+                Membership signup starts here, continues through agreement review, and moves to secure Stripe Checkout after signing. Dashboard access stays gated until payment is confirmed.
               </p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               {[
-                ["1", "Choose a package", "Select Basic, Pro, or contact Sales for custom terms."],
+                ["1", "Choose a membership", "Select Basic, Pro, or talk to sales for custom terms."],
                 ["2", "Review agreement", "Review and sign your membership agreement."],
                 ["3", "Complete payment", "Continue to secure Stripe Checkout after signing."],
                 ["4", "Set up dashboard", "Activation happens only after payment is confirmed."],
@@ -1237,7 +1237,7 @@ export default function AlphaScreenPricingPage() {
               Need a custom rollout or Enterprise volume?
             </h2>
             <p className="mt-4 text-sm leading-relaxed text-[#0A1547]/60">
-              Request a demo and the alphaSource team can help confirm package fit, implementation timing, and onboarding options.
+              Request a demo and the alphaSource team can help confirm membership fit, implementation timing, and onboarding options.
             </p>
           </div>
           <div className="rounded-lg border border-[#0A1547]/10 bg-[#F8F9FD] p-6 shadow-sm">
@@ -1247,7 +1247,7 @@ export default function AlphaScreenPricingPage() {
               formTestId="alphascreen-pricing-demo-form"
               productInterest="alphascreen"
               successTitle="We'll be in touch!"
-              successBody="Our team will reach out to discuss alphaScreen package fit."
+              successBody="Our team will reach out to discuss alphaScreen membership fit."
               ctaLabel="Request pricing demo"
             />
           </div>
