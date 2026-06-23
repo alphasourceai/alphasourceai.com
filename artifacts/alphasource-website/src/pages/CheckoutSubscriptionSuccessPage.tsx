@@ -24,7 +24,7 @@ const STATUS_COPY: Record<ReturnStatus, {
   ready: {
     eyebrow: "Payment confirmed",
     title: "Your alphaScreen membership is ready.",
-    body: "Your payment is confirmed and account setup is ready. Open the dashboard if you are already signed in, or sign in to continue.",
+    body: "Your payment is confirmed and account setup is ready. Check your email to set your password, or sign in if you already have an account.",
     tone: "success",
     primaryLabel: "Open dashboard",
     primaryHref: "/dashboard",
