@@ -134,7 +134,7 @@ interface PublicPurchasesPayload {
   };
 }
 
-type PurchaseAction = "setup" | "welcome" | "checkout" | "copy_summary";
+type PurchaseAction = "agreement" | "setup" | "welcome" | "checkout" | "copy_summary";
 
 interface ActionState {
   loading?: boolean;
@@ -259,6 +259,13 @@ function canSendSetupOrWelcome(item: PublicPurchaseItem): boolean {
   return status === "setup_pending" || status === "completed";
 }
 
+function canSendAgreementLink(item: PublicPurchaseItem): boolean {
+  const status = String(item.status?.key || "").toLowerCase();
+  const agreementStatus = String(item.agreement?.status || "").toLowerCase();
+  const checkoutStatus = String(item.agreement?.checkout_status || item.payment?.checkout_status || "").toLowerCase();
+  return status === "agreement_pending" && ["sent", "pending_signature", "signature_pending"].includes(agreementStatus) && checkoutStatus !== "paid";
+}
+
 function canSendCheckoutLink(item: PublicPurchaseItem): boolean {
   const status = String(item.status?.key || "").toLowerCase();
   return status === "signed_unpaid" || status === "checkout_pending";
@@ -345,11 +352,13 @@ function PurchaseRow({
     item.membership?.interview_duration_minutes ? `${item.membership.interview_duration_minutes}-minute cap` : "",
     item.membership?.additional_interview_price ? `${formatMoney(item.membership.additional_interview_price)} overage` : "",
   ].filter(Boolean).join(" · ");
+  const statusKey = String(item.status?.key || "").toLowerCase();
   const setupState = actionStates[actionKey(rowId, "setup")] || {};
+  const agreementState = actionStates[actionKey(rowId, "agreement")] || {};
   const welcomeState = actionStates[actionKey(rowId, "welcome")] || {};
   const checkoutState = actionStates[actionKey(rowId, "checkout")] || {};
   const copyState = actionStates[actionKey(rowId, "copy_summary")] || {};
-  const hasRecoveryActions = canSendSetupOrWelcome(item) || canSendCheckoutLink(item);
+  const hasRecoveryActions = canSendAgreementLink(item) || canSendSetupOrWelcome(item) || canSendCheckoutLink(item);
   const renderActionFeedback = (state: ActionState) => {
     if (state.error) return <p className="text-xs font-semibold text-rose-700 dark:text-rose-300">{state.error}</p>;
     if (state.success) return <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">{state.success}</p>;
@@ -420,8 +429,28 @@ function PurchaseRow({
                 <p className="mt-1 text-xs font-semibold leading-relaxed" style={mutedTextStyle}>
                   Email sends are admin-only and do not change payment, billing, agreement, or access status.
                 </p>
+                {statusKey === "agreement_pending" && (
+                  <p className="mt-2 text-xs font-semibold leading-relaxed text-sky-700 dark:text-sky-300">
+                    Agreement sent; signature is pending. Checkout is unavailable until the buyer signs.
+                  </p>
+                )}
+                {statusKey === "setup_pending" && (
+                  <p className="mt-2 text-xs font-semibold leading-relaxed text-[#7C5FCC] dark:text-[#D7CBFB]">
+                    Payment appears complete. Password setup or member user linking is still pending.
+                  </p>
+                )}
               </div>
               <div className="flex flex-wrap gap-2">
+                {canSendAgreementLink(item) && (
+                  <button
+                    type="button"
+                    disabled={agreementState.loading}
+                    onClick={() => onRecoveryAction(item, "agreement")}
+                    className="rounded-full border border-[#A380F6]/35 px-3 py-2 text-xs font-black text-[#4E40A5] transition hover:bg-[#A380F6]/10 disabled:cursor-not-allowed disabled:opacity-50 dark:text-[#D7CBFB]"
+                  >
+                    {agreementState.loading ? "Sending..." : "Resend agreement link"}
+                  </button>
+                )}
                 {canSendSetupOrWelcome(item) && (
                   <>
                     <button
@@ -469,6 +498,7 @@ function PurchaseRow({
                   Email recovery actions are not available for this current status.
                 </p>
               )}
+              {renderActionFeedback(agreementState)}
               {renderActionFeedback(setupState)}
               {renderActionFeedback(welcomeState)}
               {renderActionFeedback(checkoutState)}
@@ -561,7 +591,9 @@ export default function AdminPublicPurchasesPage() {
     if (!itemId) return;
     const email = safeText(item.buyer?.email, "this buyer");
     const confirmation =
-      action === "setup"
+      action === "agreement"
+        ? `Send membership agreement link to ${email}?`
+        : action === "setup"
         ? `Send password setup email to ${redactEmail(email)}?`
         : action === "welcome"
           ? `Send welcome email to ${email}?`
@@ -572,7 +604,9 @@ export default function AdminPublicPurchasesPage() {
       return;
     }
     const endpoint =
-      action === "setup"
+      action === "agreement"
+        ? "resend-agreement-link"
+        : action === "setup"
         ? "resend-setup-email"
         : action === "welcome"
           ? "resend-welcome-email"
@@ -591,7 +625,9 @@ export default function AdminPublicPurchasesPage() {
       }
       const data = parseJsonSafe(text) as { message?: unknown; recipient?: unknown } | null;
       const fallback =
-        action === "setup"
+        action === "agreement"
+          ? "Agreement link sent."
+          : action === "setup"
           ? "Password setup email sent."
           : action === "welcome"
             ? "Welcome email sent."
