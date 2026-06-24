@@ -58,6 +58,12 @@ function checkoutStatusEndpoint(lookup: CheckoutLookup): string {
 function readSetPasswordUrl(): string {
   if (typeof window === "undefined") return "";
   const raw = String(new URLSearchParams(window.location.search || "").get("set_password_url") || "").trim();
+  return normalizeSetPasswordUrl(raw);
+}
+
+function normalizeSetPasswordUrl(rawValue: unknown): string {
+  if (typeof window === "undefined") return "";
+  const raw = String(rawValue || "").trim();
   if (!raw) return "";
   try {
     const parsed = new URL(raw, window.location.origin);
@@ -89,15 +95,15 @@ const STATUS_COPY: Record<ReturnStatus, {
   password_required: {
     eyebrow: "Payment confirmed",
     title: "Set your password to continue.",
-    body: "Your payment is confirmed. Set your password before opening the dashboard so your account is protected.",
+    body: "Your payment is confirmed. Set your password to finish account setup and access your alphaScreen dashboard.",
     tone: "success",
-    primaryLabel: "Set password",
+    primaryLabel: "Set your password",
     secondaryLabel: "Refresh status",
   },
   setup_email_sent: {
     eyebrow: "Payment confirmed",
     title: "Check your email to set your password.",
-    body: "Your payment is confirmed and your account has been prepared. Use the secure password setup email from alphaSource to finish account access.",
+    body: "Check your email to set your password. If it does not arrive, refresh this page or contact alphaSource support.",
     tone: "success",
     primaryLabel: "Check your email to set password",
     secondaryLabel: "Refresh status",
@@ -144,9 +150,13 @@ export default function CheckoutSubscriptionSuccessPage() {
   const [status, setStatus] = useState<ReturnStatus>(initialStatus);
   const [statusError, setStatusError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
-  const setPasswordUrl = useMemo(() => readSetPasswordUrl(), []);
+  const [setPasswordUrl, setSetPasswordUrl] = useState(() => readSetPasswordUrl());
   const copy = STATUS_COPY[status];
   const Icon = copy.tone === "success" ? CheckCircle : copy.tone === "cancelled" ? AlertCircle : Clock3;
+
+  const shouldPoll = useCallback((nextStatus: ReturnStatus) => {
+    return POLLABLE_STATUSES.has(nextStatus) || (nextStatus === "password_required" && !setPasswordUrl);
+  }, [setPasswordUrl]);
 
   const loadCheckoutStatus = useCallback(async (manual = false): Promise<ReturnStatus | null> => {
     if (!statusEndpoint) {
@@ -162,9 +172,11 @@ export default function CheckoutSubscriptionSuccessPage() {
         credentials: "omit",
         cache: "no-store",
       });
-      const data = await response.json().catch(() => null) as { status?: unknown } | null;
+      const data = await response.json().catch(() => null) as { status?: unknown; set_password_url?: unknown } | null;
       if (!response.ok) throw new Error("Status refresh failed.");
       const nextStatus = normalizeStatus(data?.status);
+      const nextSetPasswordUrl = normalizeSetPasswordUrl(data?.set_password_url);
+      if (nextSetPasswordUrl) setSetPasswordUrl(nextSetPasswordUrl);
       setStatus(nextStatus);
       setStatusError("");
       return nextStatus;
@@ -177,7 +189,7 @@ export default function CheckoutSubscriptionSuccessPage() {
   }, [statusEndpoint]);
 
   useEffect(() => {
-    if (!statusEndpoint || !POLLABLE_STATUSES.has(status)) return undefined;
+    if (!statusEndpoint || !shouldPoll(status)) return undefined;
 
     let cancelled = false;
     let attempts = 0;
@@ -188,7 +200,7 @@ export default function CheckoutSubscriptionSuccessPage() {
       const nextStatus = await loadCheckoutStatus(false);
       if (cancelled) return;
       const currentStatus = nextStatus || status;
-      if (attempts < MAX_STATUS_POLLS && POLLABLE_STATUSES.has(currentStatus)) {
+      if (attempts < MAX_STATUS_POLLS && shouldPoll(currentStatus)) {
         timer = window.setTimeout(poll, STATUS_POLL_INTERVAL_MS);
       }
     };
@@ -198,7 +210,7 @@ export default function CheckoutSubscriptionSuccessPage() {
       cancelled = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [loadCheckoutStatus, status, statusEndpoint]);
+  }, [loadCheckoutStatus, shouldPoll, status, statusEndpoint]);
 
   const refresh = () => {
     void loadCheckoutStatus(true);
@@ -216,7 +228,9 @@ export default function CheckoutSubscriptionSuccessPage() {
         ? "/"
         : "";
   const nextStepCopy = isPasswordSetupStatus
-    ? "Set your password before opening the dashboard."
+    ? status === "password_required" && setPasswordUrl
+      ? "Set your password to continue to account access."
+      : "Check your email for the secure setup link, or refresh this page."
     : status === "ready"
       ? "Open the dashboard or sign in when you are ready."
       : statusEndpoint && POLLABLE_STATUSES.has(status)
