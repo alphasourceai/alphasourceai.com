@@ -1,21 +1,58 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, ArrowRight, CheckCircle, Clock3, RefreshCw, ShieldCheck } from "lucide-react";
+import { getPublicBackendBase, joinUrl } from "@/lib/urlConfig";
 
 type ReturnStatus = "ready" | "password_required" | "setup_email_sent" | "setup_pending" | "activation_pending" | "payment_pending" | "cancelled";
+
+type CheckoutLookup = {
+  sessionId: string;
+  agreementId: string;
+  clientId: string;
+};
+
+const POLLABLE_STATUSES = new Set<ReturnStatus>(["payment_pending", "activation_pending", "setup_pending"]);
+const MAX_STATUS_POLLS = 12;
+const STATUS_POLL_INTERVAL_MS = 4000;
 
 function readStatus(): ReturnStatus {
   if (typeof window === "undefined") return "setup_pending";
   const status = String(new URLSearchParams(window.location.search || "").get("status") || "").trim().toLowerCase();
-  if (status === "cancelled" || status === "canceled") return "cancelled";
-  if (status === "pending") return "payment_pending";
+  return normalizeStatus(status);
+}
+
+function normalizeStatus(status: unknown): ReturnStatus {
+  const normalized = String(status || "").trim().toLowerCase();
+  if (normalized === "cancelled" || normalized === "canceled") return "cancelled";
+  if (normalized === "pending") return "payment_pending";
   if (
-    status === "ready" ||
-    status === "password_required" ||
-    status === "setup_email_sent" ||
-    status === "activation_pending" ||
-    status === "payment_pending"
-  ) return status;
+    normalized === "ready" ||
+    normalized === "password_required" ||
+    normalized === "setup_email_sent" ||
+    normalized === "setup_pending" ||
+    normalized === "activation_pending" ||
+    normalized === "payment_pending"
+  ) return normalized;
   return "setup_pending";
+}
+
+function readCheckoutLookup(): CheckoutLookup {
+  if (typeof window === "undefined") return { sessionId: "", agreementId: "", clientId: "" };
+  const params = new URLSearchParams(window.location.search || "");
+  return {
+    sessionId: String(params.get("session_id") || "").trim(),
+    agreementId: String(params.get("agreement_id") || "").trim(),
+    clientId: String(params.get("client_id") || "").trim(),
+  };
+}
+
+function checkoutStatusEndpoint(lookup: CheckoutLookup): string {
+  const params = new URLSearchParams();
+  if (lookup.sessionId) params.set("session_id", lookup.sessionId);
+  if (lookup.agreementId) params.set("agreement_id", lookup.agreementId);
+  if (lookup.clientId) params.set("client_id", lookup.clientId);
+  const query = params.toString();
+  if (!query) return "";
+  return `${joinUrl(getPublicBackendBase(), "/api/alphascreen/checkout-status")}?${query}`;
 }
 
 function readSetPasswordUrl(): string {
@@ -101,13 +138,70 @@ const STATUS_COPY: Record<ReturnStatus, {
 };
 
 export default function CheckoutSubscriptionSuccessPage() {
-  const status = useMemo(() => readStatus(), []);
+  const initialStatus = useMemo(() => readStatus(), []);
+  const lookup = useMemo(() => readCheckoutLookup(), []);
+  const statusEndpoint = useMemo(() => checkoutStatusEndpoint(lookup), [lookup]);
+  const [status, setStatus] = useState<ReturnStatus>(initialStatus);
+  const [statusError, setStatusError] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
   const setPasswordUrl = useMemo(() => readSetPasswordUrl(), []);
   const copy = STATUS_COPY[status];
   const Icon = copy.tone === "success" ? CheckCircle : copy.tone === "cancelled" ? AlertCircle : Clock3;
 
+  const loadCheckoutStatus = useCallback(async (manual = false): Promise<ReturnStatus | null> => {
+    if (!statusEndpoint) {
+      if (manual && typeof window !== "undefined") window.location.reload();
+      return null;
+    }
+
+    if (manual) setRefreshing(true);
+    try {
+      const response = await fetch(statusEndpoint, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        credentials: "omit",
+        cache: "no-store",
+      });
+      const data = await response.json().catch(() => null) as { status?: unknown } | null;
+      if (!response.ok) throw new Error("Status refresh failed.");
+      const nextStatus = normalizeStatus(data?.status);
+      setStatus(nextStatus);
+      setStatusError("");
+      return nextStatus;
+    } catch (_) {
+      setStatusError("Status refresh is temporarily unavailable. Try again in a moment.");
+      return null;
+    } finally {
+      if (manual) setRefreshing(false);
+    }
+  }, [statusEndpoint]);
+
+  useEffect(() => {
+    if (!statusEndpoint || !POLLABLE_STATUSES.has(status)) return undefined;
+
+    let cancelled = false;
+    let attempts = 0;
+    let timer: number | undefined;
+
+    const poll = async () => {
+      attempts += 1;
+      const nextStatus = await loadCheckoutStatus(false);
+      if (cancelled) return;
+      const currentStatus = nextStatus || status;
+      if (attempts < MAX_STATUS_POLLS && POLLABLE_STATUSES.has(currentStatus)) {
+        timer = window.setTimeout(poll, STATUS_POLL_INTERVAL_MS);
+      }
+    };
+
+    timer = window.setTimeout(poll, 2000);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [loadCheckoutStatus, status, statusEndpoint]);
+
   const refresh = () => {
-    if (typeof window !== "undefined") window.location.reload();
+    void loadCheckoutStatus(true);
   };
 
   const isPasswordSetupStatus = status === "password_required" || status === "setup_email_sent";
@@ -125,7 +219,9 @@ export default function CheckoutSubscriptionSuccessPage() {
     ? "Set your password before opening the dashboard."
     : status === "ready"
       ? "Open the dashboard or sign in when you are ready."
-      : "Refresh this page shortly for the next step.";
+      : statusEndpoint && POLLABLE_STATUSES.has(status)
+        ? "We are checking for the next step automatically."
+        : "Refresh this page shortly for the next step.";
 
   return (
     <section className="min-h-[calc(100vh-160px)] bg-[#F8F9FD] px-6 py-16 lg:py-20">
@@ -183,10 +279,11 @@ export default function CheckoutSubscriptionSuccessPage() {
               <button
                 type="button"
                 onClick={refresh}
+                disabled={refreshing}
                 className="inline-flex items-center justify-center gap-2 rounded-full bg-[#0A1547] px-6 py-3.5 text-sm font-black text-white transition-opacity hover:opacity-90"
               >
-                <RefreshCw className="h-4 w-4" />
-                {copy.primaryLabel}
+                <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                {refreshing ? "Refreshing..." : copy.primaryLabel}
               </button>
             ) : (
               <a
@@ -208,23 +305,29 @@ export default function CheckoutSubscriptionSuccessPage() {
               <button
                 type="button"
                 onClick={refresh}
+                disabled={refreshing}
                 className="inline-flex items-center justify-center gap-2 rounded-full border border-[#0A1547]/12 bg-white px-6 py-3.5 text-sm font-black text-[#0A1547] transition-colors hover:border-[#A380F6] hover:text-[#A380F6]"
               >
-                <RefreshCw className="h-4 w-4" />
-                {copy.secondaryLabel}
+                <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                {refreshing ? "Refreshing..." : copy.secondaryLabel}
               </button>
             )}
             {secondaryHref && !primaryIsRefresh ? (
               <button
                 type="button"
                 onClick={refresh}
+                disabled={refreshing}
                 className="inline-flex items-center justify-center gap-2 rounded-full border border-[#0A1547]/12 bg-white px-6 py-3.5 text-sm font-black text-[#0A1547]/65 transition-colors hover:border-[#02ABE0] hover:text-[#02ABE0]"
               >
-                <RefreshCw className="h-4 w-4" />
-                Refresh status
+                <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                {refreshing ? "Refreshing..." : "Refresh status"}
               </button>
             ) : null}
           </div>
+
+          {statusError ? (
+            <p className="mt-4 text-sm font-semibold text-red-600">{statusError}</p>
+          ) : null}
 
           <div className="mt-8 flex items-start gap-3 border-t border-[#0A1547]/10 pt-5 text-sm font-semibold leading-relaxed text-[#0A1547]/55">
             <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0 text-[#02D99D]" />

@@ -862,8 +862,8 @@ export default function RolesPage() {
       const data = parseJsonSafe(text) as { url?: unknown } | null;
       const url = typeof data?.url === "string" ? data.url.trim() : "";
       if (!url) throw new Error("Could not open Job Description.");
-      const opened = window.open(url, "_blank", "noopener,noreferrer");
-      if (!opened) throw new Error("Could not open Job Description.");
+      // Some browsers return null even when the new tab opens; signed-url failures above remain hard errors.
+      window.open(url, "_blank", "noopener,noreferrer");
       setActionNotice({ tone: "success", text: "Job description opened." });
     } catch (error) {
       setActionNotice({
