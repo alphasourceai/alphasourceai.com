@@ -13,6 +13,7 @@ type CheckoutLookup = {
 const POLLABLE_STATUSES = new Set<ReturnStatus>(["payment_pending", "activation_pending", "setup_pending"]);
 const MAX_STATUS_POLLS = 12;
 const STATUS_POLL_INTERVAL_MS = 4000;
+const PASSWORD_SETUP_PREVIEW_PATH = "/checkout/password-setup-preview";
 
 function readStatus(): ReturnStatus {
   if (typeof window === "undefined") return "setup_pending";
@@ -68,10 +69,29 @@ function normalizeSetPasswordUrl(rawValue: unknown): string {
   try {
     const parsed = new URL(raw, window.location.origin);
     if (!["http:", "https:"].includes(parsed.protocol)) return "";
+    if (isPlaceholderSetupUrl(parsed)) return passwordSetupPreviewUrl();
     return parsed.href;
   } catch (_) {
     return "";
   }
+}
+
+function isPlaceholderSetupUrl(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  return host === "example.com" ||
+    host === "www.example.com" ||
+    host === "example.org" ||
+    host === "example.net" ||
+    host.includes("placeholder") ||
+    host.endsWith(".invalid");
+}
+
+function passwordSetupPreviewUrl(): string {
+  if (typeof window === "undefined") return PASSWORD_SETUP_PREVIEW_PATH;
+  const currentPath = `${window.location.pathname}${window.location.search}`;
+  const params = new URLSearchParams();
+  params.set("return_to", currentPath || "/checkout/subscription-success?status=password_required");
+  return `${PASSWORD_SETUP_PREVIEW_PATH}?${params.toString()}`;
 }
 
 const STATUS_COPY: Record<ReturnStatus, {
