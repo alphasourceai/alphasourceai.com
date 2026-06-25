@@ -493,13 +493,13 @@ export function AlphaScreenRoiPage() {
   const numericInputs: Array<{ label: string; value: number; setValue: (value: number) => void }> = [
     { label: "Roles opened per month", value: roles, setValue: setRoles },
     { label: "Candidates screened per role", value: candidatesPerRole, setValue: setCandidatesPerRole },
-    { label: "Average minutes per initial screen", value: minutesPerScreen, setValue: setMinutesPerScreen },
+    { label: "Average minutes per initial screen, including pre- and post-call admin time", value: minutesPerScreen, setValue: setMinutesPerScreen },
     { label: "Manager or recruiter hourly cost", value: hourlyCost, setValue: setHourlyCost },
   ];
 
   const resultCards: Array<{ label: string; value: string; icon: ReactNode }> = [
     { label: "Screening hours represented", value: `${estimate.hours.toFixed(1)} hrs`, icon: <Clock3 className="h-4 w-4" /> },
-    { label: "Labor value represented", value: formatUsd(estimate.value), icon: <BadgeDollarSign className="h-4 w-4" /> },
+    { label: "Estimated labor cost of initial screening", value: formatUsd(estimate.value), icon: <BadgeDollarSign className="h-4 w-4" /> },
     {
       label: "Platform cost",
       value: `${formatUsd(estimate.platformMonthly)} / mo${cadence === "annual" ? " equivalent" : ""}`,
@@ -507,15 +507,16 @@ export function AlphaScreenRoiPage() {
     },
     { label: "Role fees", value: formatUsd(estimate.roleFees), icon: <ClipboardCheck className="h-4 w-4" /> },
     { label: "Additional interviews", value: `${estimate.additionalInterviews} x ${formatUsd(estimate.selected.additional)}`, icon: <Users className="h-4 w-4" /> },
-    { label: "Estimated alphaScreen cost", value: formatUsd(estimate.totalCost), icon: <BadgeDollarSign className="h-4 w-4" /> },
+    { label: "Total estimated alphaScreen cost", value: formatUsd(estimate.totalCost), icon: <BadgeDollarSign className="h-4 w-4" /> },
   ];
+  const potentialSavings = Math.max(0, estimate.net);
 
   return (
     <div className="bg-white">
       <PageHero
-        eyebrow="ROI estimator"
-        title="Estimate screening time and membership cost."
-        body="Use this lightweight calculator to compare manual first-pass screening time with alphaScreen membership costs. The result is an estimate, not a guarantee."
+        eyebrow="Value estimator"
+        title="alphaScreen Value Estimator"
+        body="Estimate how much manual screening time and labor cost your team may be able to redirect with structured AI-assisted screenings."
       >
         <CtaRow />
       </PageHero>
@@ -575,6 +576,16 @@ export function AlphaScreenRoiPage() {
           </div>
 
           <div className="rounded-lg border border-[#0A1547]/10 bg-white p-6 shadow-sm">
+            <div className="mb-5 rounded-lg border border-[#0A1547]/10 bg-[#F8F9FD] p-5">
+              <h2 className="text-base font-black text-[#0A1547]">How this estimate works</h2>
+              <p className="mt-2 text-sm leading-relaxed text-[#0A1547]/60">
+                The calculator estimates the labor cost of manual initial screens by multiplying roles, candidates per role, screening minutes, and hourly cost. It then compares that estimate with the selected alphaScreen membership and role fees.
+              </p>
+              <p className="mt-3 text-xs font-semibold leading-relaxed text-[#0A1547]/50">
+                This estimate does not include downstream hiring outcomes, offer acceptance, retention, or the operational value of faster manager review.
+              </p>
+            </div>
+
             <div className="mb-6 flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#02D99D]/10 text-[#02D99D]">
                 <LineChart className="h-5 w-5" />
@@ -596,12 +607,14 @@ export function AlphaScreenRoiPage() {
             </div>
 
             <div className="mt-5 rounded-lg border border-[#02D99D]/25 bg-[#02D99D]/10 p-5">
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#0A1547]/45">Estimate</p>
-              <p className="mt-2 text-2xl font-black text-[#0A1547]">
-                {estimate.net >= 0 ? `${formatUsd(estimate.net)} more labor value represented` : `${formatUsd(Math.abs(estimate.net))} above labor value represented`}
-              </p>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#0A1547]/45">Estimated potential savings</p>
+              <p className="mt-2 text-3xl font-black text-[#0A1547]">{formatUsd(potentialSavings)}</p>
               <p className="mt-2 text-sm leading-relaxed text-[#0A1547]/60">
-                This calculator estimates first-pass screening time represented by the manual process. It does not guarantee savings, outcomes, candidate quality, or hiring results.
+                Estimated difference between manual initial-screening labor cost and the selected alphaScreen membership, role, and additional-interview costs.
+                {estimate.net < 0 ? ` At these inputs, selected alphaScreen costs are ${formatUsd(Math.abs(estimate.net))} higher than the estimated manual initial-screening labor cost.` : ""}
+              </p>
+              <p className="mt-3 text-xs font-semibold leading-relaxed text-[#0A1547]/50">
+                This estimate compares the labor cost of manual initial screening against the selected alphaScreen membership and role costs. It is not a guarantee of savings, hiring outcomes, or candidate quality. Actual value may also come from efficiency gains when hiring managers can spend recovered screening time on higher-value work.
               </p>
             </div>
 

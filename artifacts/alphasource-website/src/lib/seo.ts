@@ -325,15 +325,15 @@ const PUBLIC_ROUTES: Record<string, Omit<SeoConfig, "robots" | "imagePath" | "ty
     ],
   },
   "/alphascreen/roi": {
-    title: "alphaScreen ROI Estimator | Screening Time and Membership Cost",
+    title: "alphaScreen Value Estimator | Screening Time and Membership Cost",
     description:
-      "Estimate screening hours, labor value, membership platform cost, role fees, and additional interview fees for alphaScreen Basic and Pro memberships.",
+      "Estimate manual screening time, initial-screening labor cost, membership platform cost, role fees, and additional interview fees for alphaScreen Basic and Pro memberships.",
     path: "/alphascreen/roi",
     jsonLd: [
       alphaScreenWebPageSchema(
         "/alphascreen/roi",
-        "alphaScreen ROI Estimator",
-        "Estimate screening time, labor value, and alphaScreen membership costs without guarantee of savings or outcomes.",
+        "alphaScreen Value Estimator",
+        "Estimate screening time, initial-screening labor cost, and alphaScreen membership costs without guarantee of savings or outcomes.",
       ),
       breadcrumbSchema([
         { name: "Home", path: "/" },
