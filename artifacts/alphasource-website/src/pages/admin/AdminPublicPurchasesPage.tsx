@@ -55,6 +55,16 @@ interface PublicPurchaseItem {
     interview_duration_minutes?: number | null;
     additional_interview_price?: number | null;
   };
+  first_role_prepay?: {
+    first_role_prepay_selected?: boolean | null;
+    first_role_prepay_amount_cents?: number | null;
+    first_role_normal_role_fee_cents?: number | null;
+    first_role_prepay_discount_percent?: number | null;
+    first_role_prepay_credit_type?: string | null;
+    first_role_credit_status?: string | null;
+    used_by_role_id?: string | null;
+    used_at?: string | null;
+  } | null;
   source?: { path?: string | null };
   agreement?: {
     id?: string | null;
@@ -231,6 +241,12 @@ function formatMoney(value: unknown): string {
   }).format(numeric);
 }
 
+function formatMoneyFromCents(value: unknown): string {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "Not available";
+  return formatMoney(numeric / 100);
+}
+
 function formatDateTime(value: unknown): string {
   const raw = String(value || "").trim();
   if (!raw) return "Not available";
@@ -250,6 +266,20 @@ function redactEmail(value: unknown): string {
   if (!user || !domain) return email || "this buyer";
   if (user.length <= 3) return `${user.slice(0, 1)}***@${domain}`;
   return `${user.slice(0, 2)}***@${domain}`;
+}
+
+function formatFirstRolePrepayStatus(item: PublicPurchaseItem): string {
+  const prepay = item.first_role_prepay || null;
+  if (prepay?.first_role_prepay_selected !== true) return "First role prepay: Not selected";
+  const amount = formatMoneyFromCents(prepay.first_role_prepay_amount_cents);
+  const status = String(prepay.first_role_credit_status || "").trim().toLowerCase();
+  if (status === "used") {
+    const usedBy = safeText(prepay.used_by_role_id, "unknown role");
+    const usedAt = formatDateTime(prepay.used_at);
+    return `First role prepay: Selected — ${amount} credit used by role ${usedBy} on ${usedAt}`;
+  }
+  if (status === "unused") return `First role prepay: Selected — ${amount} credit unused`;
+  return `First role prepay: Selected — ${amount} credit ${safeText(status, "status unavailable")}`;
 }
 
 function actionKey(itemId: string, action: PurchaseAction): string {
@@ -412,6 +442,7 @@ function PurchaseRow({
             <DetailRow label="Buyer title" value={item.buyer?.title} />
             <DetailRow label="Buyer phone" value={item.buyer?.phone} />
             <DetailRow label="Membership" value={`${membershipName} · ${cadenceLabel}`} />
+            <DetailRow label="First role prepay" value={formatFirstRolePrepayStatus(item)} />
             <DetailRow label="Usage" value={usage} />
             <DetailRow label="Agreement" value={item.agreement?.id} />
             <DetailRow label="Agreement status" value={`${safeText(item.agreement?.status)} · checkout ${safeText(item.agreement?.checkout_status)}`} />

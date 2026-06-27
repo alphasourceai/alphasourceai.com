@@ -21,6 +21,7 @@ interface SignerSession {
   billing_option: string;
   auto_renew: boolean;
   notice_deadline_days: number;
+  first_role_prepay_selected: boolean | null;
   initial_term_start: string;
   initial_renewal_date: string;
   expires_at: string;
@@ -133,6 +134,47 @@ function toDisplayText(value: unknown): string {
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
     .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+function booleanOrNull(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (raw === "true" || raw === "1" || raw === "yes") return true;
+  if (raw === "false" || raw === "0" || raw === "no") return false;
+  return null;
+}
+
+function objectOrNull(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? value as Record<string, unknown> : null;
+}
+
+function resolveFirstRolePrepaySelected(source: Record<string, unknown>): boolean | null {
+  const direct = booleanOrNull(source.first_role_prepay_selected);
+  if (direct !== null) return direct;
+  const firstRolePrepay = objectOrNull(source.first_role_prepay);
+  const fromFirstRolePrepay = firstRolePrepay ? booleanOrNull(firstRolePrepay.selected) : null;
+  if (fromFirstRolePrepay !== null) return fromFirstRolePrepay;
+  const selectedPackage = objectOrNull(source.selected_package);
+  const selectedPackagePrepay = selectedPackage ? objectOrNull(selectedPackage.first_role_prepay) : null;
+  const fromSelectedPackage = selectedPackagePrepay ? booleanOrNull(selectedPackagePrepay.selected) : null;
+  if (fromSelectedPackage !== null) return fromSelectedPackage;
+  const packageSnapshot = objectOrNull(source.package_snapshot);
+  const packageSnapshotPrepay = packageSnapshot ? objectOrNull(packageSnapshot.first_role_prepay) : null;
+  const fromPackageSnapshot = packageSnapshotPrepay ? booleanOrNull(packageSnapshotPrepay.selected) : null;
+  if (fromPackageSnapshot !== null) return fromPackageSnapshot;
+  const templateSnapshot = objectOrNull(source.template_snapshot);
+  if (templateSnapshot) return resolveFirstRolePrepaySelected(templateSnapshot);
+  return null;
+}
+
+function firstRolePrepayAgreementCopy(selected: boolean | null): string {
+  if (selected === true) {
+    return "Your first role is prepaid at the discounted website signup rate. You will not be charged again when you open your first role. Additional roles are billed at the standard role fee.";
+  }
+  if (selected === false) {
+    return "You did not prepay your first role. Role fees are charged when roles are opened.";
+  }
+  return "";
 }
 
 export default function MembershipAgreementSignerPage({ params }: SignerPageProps) {
@@ -328,6 +370,7 @@ export default function MembershipAgreementSignerPage({ params }: SignerPageProp
         billing_option: String(sessionPayload.billing_option || "").trim(),
         auto_renew: Boolean(sessionPayload.auto_renew),
         notice_deadline_days: Number(sessionPayload.notice_deadline_days || 0) || 0,
+        first_role_prepay_selected: resolveFirstRolePrepaySelected(sessionPayload),
         initial_term_start: String(sessionPayload.initial_term_start || "").trim(),
         initial_renewal_date: String(sessionPayload.initial_renewal_date || "").trim(),
         expires_at: String(sessionPayload.expires_at || "").trim(),
@@ -366,6 +409,7 @@ export default function MembershipAgreementSignerPage({ params }: SignerPageProp
   const isActivationCompleteSession = sessionState === "activation_complete";
   const isAgreementSignedPendingPaymentSetupSession = sessionState === "agreement_signed_pending_payment_setup";
   const checkoutCanceled = checkoutReturnState === "cancel";
+  const firstRolePrepayCopy = firstRolePrepayAgreementCopy(session?.first_role_prepay_selected ?? null);
 
   const handleSubmit = async () => {
     if (submitBusy) return;
@@ -678,6 +722,11 @@ export default function MembershipAgreementSignerPage({ params }: SignerPageProp
                   <p className="text-[11px] text-emerald-800/75">Billing: {toDisplayText(session.billing_option)}</p>
                 </div>
               </div>
+              {firstRolePrepayCopy ? (
+                <p className="mt-3 rounded-xl border border-emerald-200 bg-white/70 px-3.5 py-3 text-xs font-semibold leading-relaxed text-emerald-800">
+                  {firstRolePrepayCopy}
+                </p>
+              ) : null}
               <div className="mt-3 flex flex-wrap items-center gap-2.5">
                 <button
                   type="button"
@@ -729,6 +778,11 @@ export default function MembershipAgreementSignerPage({ params }: SignerPageProp
                   <p className="text-[11px] text-emerald-800/75">Billing: {toDisplayText(session.billing_option)}</p>
                 </div>
               </div>
+              {firstRolePrepayCopy ? (
+                <p className="mt-3 rounded-xl border border-emerald-200 bg-white/70 px-3.5 py-3 text-xs font-semibold leading-relaxed text-emerald-800">
+                  {firstRolePrepayCopy}
+                </p>
+              ) : null}
               <div className="mt-3 flex flex-wrap items-center gap-2.5">
                 <button
                   type="button"
@@ -766,6 +820,11 @@ export default function MembershipAgreementSignerPage({ params }: SignerPageProp
               <p className="mt-2 text-xs text-emerald-700/90">
                 If you are a new user, continue from your set-password email or refresh your login flow.
               </p>
+              {firstRolePrepayCopy ? (
+                <p className="mt-3 rounded-xl border border-emerald-200 bg-white/70 px-3.5 py-3 text-xs font-semibold leading-relaxed text-emerald-800">
+                  {firstRolePrepayCopy}
+                </p>
+              ) : null}
               {session.executed_pdf_url ? (
                 <div className="mt-3">
                   <a
@@ -803,6 +862,11 @@ export default function MembershipAgreementSignerPage({ params }: SignerPageProp
                   <p className="text-[11px] text-[#0A1547]/55">Notice deadline: {session.notice_deadline_days || 30} days</p>
                 </div>
               </div>
+              {firstRolePrepayCopy ? (
+                <p className="rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-3 text-xs font-semibold leading-relaxed text-[#0A1547]/65">
+                  {firstRolePrepayCopy}
+                </p>
+              ) : null}
 
               <div>
                 <p className="mb-2 text-xs font-black uppercase tracking-widest text-[#0A1547]/40">Agreement Preview</p>

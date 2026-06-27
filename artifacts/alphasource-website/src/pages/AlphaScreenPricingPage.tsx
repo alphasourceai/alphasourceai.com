@@ -26,6 +26,18 @@ type BillingCadence = {
   stripe_price_configured?: boolean;
 };
 
+type FirstRolePrepay = {
+  enabled: boolean;
+  selected?: boolean;
+  credit_type?: string;
+  normal_role_fee_cents: number;
+  discounted_credit_amount_cents: number;
+  discount_percent: number;
+  non_refundable: boolean;
+  expires: boolean;
+  stripe_price_configured?: boolean;
+};
+
 type AlphaScreenPackage = {
   plan_key: string;
   display_name: string;
@@ -42,6 +54,7 @@ type AlphaScreenPackage = {
   additional_interview_fee: number;
   overage_price: number;
   per_role_fee: number;
+  first_role_prepay: FirstRolePrepay;
   billing_cadences: BillingCadence[];
 };
 
@@ -54,6 +67,7 @@ type PurchaseIntentForm = {
   buyer_phone: string;
   buyer_title: string;
   billing_cadence: string;
+  first_role_prepay_selected: boolean;
   agreement_acknowledged: boolean;
   contact_acknowledged: boolean;
 };
@@ -80,6 +94,7 @@ type PurchaseIntentResult = {
     additional_interview_price?: number;
     additional_interview_fee?: number;
     per_role_fee?: number;
+    first_role_prepay?: Partial<FirstRolePrepay>;
   };
   next_step_message?: string;
 };
@@ -116,6 +131,17 @@ const FALLBACK_PACKAGES: AlphaScreenPackage[] = [
     additional_interview_fee: 30,
     overage_price: 30,
     per_role_fee: 399,
+    first_role_prepay: {
+      enabled: true,
+      selected: false,
+      credit_type: "first_role_prepay",
+      normal_role_fee_cents: 39900,
+      discounted_credit_amount_cents: 35900,
+      discount_percent: 10,
+      non_refundable: true,
+      expires: false,
+      stripe_price_configured: false,
+    },
     billing_cadences: [
       { key: "monthly", display_name: "Monthly", stripe_price_configured: false },
       { key: "annual", display_name: "Annual", stripe_price_configured: false },
@@ -137,6 +163,17 @@ const FALLBACK_PACKAGES: AlphaScreenPackage[] = [
     additional_interview_fee: 35,
     overage_price: 35,
     per_role_fee: 699,
+    first_role_prepay: {
+      enabled: true,
+      selected: false,
+      credit_type: "first_role_prepay",
+      normal_role_fee_cents: 69900,
+      discounted_credit_amount_cents: 62900,
+      discount_percent: 10,
+      non_refundable: true,
+      expires: false,
+      stripe_price_configured: false,
+    },
     billing_cadences: [
       { key: "monthly", display_name: "Monthly", stripe_price_configured: false },
       { key: "annual", display_name: "Annual", stripe_price_configured: false },
@@ -171,6 +208,7 @@ const EMPTY_PURCHASE_FORM: PurchaseIntentForm = {
   buyer_phone: "",
   buyer_title: "",
   billing_cadence: "monthly",
+  first_role_prepay_selected: false,
   agreement_acknowledged: false,
   contact_acknowledged: false,
 };
@@ -178,6 +216,21 @@ const EMPTY_PURCHASE_FORM: PurchaseIntentForm = {
 function asNumber(value: unknown, fallback = 0): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeFirstRolePrepay(raw: unknown, fallback: FirstRolePrepay): FirstRolePrepay {
+  const source = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+  return {
+    enabled: source.enabled === false ? false : fallback.enabled,
+    selected: source.selected === true,
+    credit_type: String(source.credit_type || fallback.credit_type || "first_role_prepay").trim(),
+    normal_role_fee_cents: asNumber(source.normal_role_fee_cents, fallback.normal_role_fee_cents),
+    discounted_credit_amount_cents: asNumber(source.discounted_credit_amount_cents, fallback.discounted_credit_amount_cents),
+    discount_percent: asNumber(source.discount_percent, fallback.discount_percent),
+    non_refundable: source.non_refundable === false ? false : fallback.non_refundable,
+    expires: source.expires === true,
+    stripe_price_configured: source.stripe_price_configured === true,
+  };
 }
 
 function purchaseIntentEndpoint(): string {
@@ -232,6 +285,7 @@ function normalizePackage(raw: unknown): AlphaScreenPackage | null {
     additional_interview_fee: asNumber(source.additional_interview_fee, fallback.additional_interview_fee),
     overage_price: asNumber(source.overage_price, fallback.overage_price),
     per_role_fee: asNumber(source.per_role_fee, fallback.per_role_fee),
+    first_role_prepay: normalizeFirstRolePrepay(source.first_role_prepay, fallback.first_role_prepay),
     billing_cadences: billingCadences,
   };
 }
@@ -252,6 +306,28 @@ function formatUsd(value: number): string {
     currency: "USD",
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+function centsToDollars(cents: unknown): number {
+  const numeric = Number(cents);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.round(numeric) / 100;
+}
+
+function firstRoleStandardFee(plan: AlphaScreenPackage): number {
+  const fromCents = centsToDollars(plan.first_role_prepay.normal_role_fee_cents);
+  return fromCents > 0 ? fromCents : plan.per_role_fee;
+}
+
+function firstRolePrepayFee(plan: AlphaScreenPackage): number {
+  const fromCents = centsToDollars(plan.first_role_prepay.discounted_credit_amount_cents);
+  if (fromCents > 0) return fromCents;
+  return Math.round(firstRoleStandardFee(plan) * 0.9);
+}
+
+function firstRoleDiscountPercent(plan: AlphaScreenPackage): number {
+  const configured = Number(plan.first_role_prepay.discount_percent);
+  return Number.isFinite(configured) && configured > 0 ? configured : 10;
 }
 
 function platformFeeForCadence(plan: AlphaScreenPackage, billingCadence: string): number {
@@ -356,6 +432,9 @@ function PlanCard({
           <span className="pb-1.5 text-sm font-bold text-[#0A1547]/55">{platformSuffix}</span>
         </div>
         <p className="mt-2 text-sm font-black text-[#0A1547]">+ {formatUsd(plan.per_role_fee)} / role</p>
+        <p className="mt-1 text-xs font-bold text-[#0A1547]/55">
+          New self-serve buyers can optionally prepay their first role during signup and save 10% on that first role.
+        </p>
         {billingCadence === "annual" ? (
           <p className="mt-1 text-xs font-bold text-[#0A1547]/55">
             Annual platform pricing is discounted and billed upfront.
@@ -550,6 +629,11 @@ function PurchaseIntentPanel({
   const billingCadence = form.billing_cadence === "annual" ? "annual" : "monthly";
   const selectedPlatformFee = result?.selected_package?.platform_fee ?? platformFeeForCadence(selectedPlan, billingCadence);
   const selectedPlatformFeeLabel = formatUsd(selectedPlatformFee);
+  const standardFirstRoleFee = firstRoleStandardFee(selectedPlan);
+  const discountedFirstRoleFee = firstRolePrepayFee(selectedPlan);
+  const firstRoleDiscount = firstRoleDiscountPercent(selectedPlan);
+  const prepaySelected = form.first_role_prepay_selected === true;
+  const totalDueToday = selectedPlatformFee + (prepaySelected ? discountedFirstRoleFee : 0);
 
   if (status === "success" && result) {
     const signingUrl = String(agreementResult?.agreement?.signing_url || "").trim();
@@ -582,6 +666,11 @@ function PurchaseIntentPanel({
               {selectedPlatformFeeLabel} platform, {formatUsd(selectedPlan.per_role_fee)} / role
             </p>
             <p className="mt-1 text-xs font-semibold text-[#0A1547]/55">
+              {prepaySelected
+                ? `First role prepaid at ${formatUsd(discountedFirstRoleFee)} today.`
+                : "First role billed later when opened."}
+            </p>
+            <p className="mt-1 text-xs font-semibold text-[#0A1547]/55">
               {included} interviews, {duration}-minute cap, {formatUsd(overage)} additional interviews
             </p>
           </div>
@@ -596,6 +685,30 @@ function PurchaseIntentPanel({
               {form.buyer_first_name} {form.buyer_last_name}
             </p>
             <p className="mt-1 text-xs font-semibold text-[#0A1547]/55">{form.buyer_email}</p>
+          </div>
+        </div>
+        <div className="mt-6 rounded-lg border border-[#0A1547]/10 bg-[#F8F9FD] p-4">
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-[#0A1547]/45">Order summary</p>
+          <div className="mt-3 space-y-2 text-sm font-semibold text-[#0A1547]/65">
+            <div className="flex items-center justify-between gap-3">
+              <span>{planName} membership - {cadenceLabel(selectedPlan, form.billing_cadence)}</span>
+              <span className="font-black text-[#0A1547]">{selectedPlatformFeeLabel}</span>
+            </div>
+            {prepaySelected ? (
+              <div className="flex items-center justify-between gap-3">
+                <span>Discounted first-role prepay</span>
+                <span className="font-black text-[#0A1547]">{formatUsd(discountedFirstRoleFee)}</span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-3">
+                <span>First role</span>
+                <span className="font-black text-[#0A1547]">Billed when opened</span>
+              </div>
+            )}
+          </div>
+          <div className="mt-3 flex items-center justify-between border-t border-[#0A1547]/10 pt-3">
+            <span className="text-sm font-black text-[#0A1547]">Total due today</span>
+            <span className="text-base font-black text-[#0A1547]">{formatUsd(totalDueToday)}</span>
           </div>
         </div>
         <div className="mt-6 grid gap-3 rounded-lg border border-[#0A1547]/10 bg-[#F8F9FD] p-4 md:grid-cols-3">
@@ -665,7 +778,7 @@ function PurchaseIntentPanel({
           </p>
         </div>
         <div className="rounded-lg bg-[#F8F9FD] px-4 py-3 text-sm font-bold text-[#0A1547]/65">
-          {selectedPlatformFeeLabel} platform - {formatUsd(selectedPlan.per_role_fee)} / role - {included} interviews per role
+          {selectedPlatformFeeLabel} membership today - {prepaySelected ? `${formatUsd(discountedFirstRoleFee)} first role today` : `${formatUsd(selectedPlan.per_role_fee)} role fee later`}
         </div>
       </div>
 
@@ -745,6 +858,87 @@ function PurchaseIntentPanel({
             ))}
           </select>
         </label>
+      </div>
+
+      <div className="mt-6 grid gap-3 rounded-lg border border-[#0A1547]/10 bg-[#F8F9FD] p-4">
+        <div>
+          <p className="text-sm font-black text-[#0A1547]">First role payment</p>
+          <p className="mt-1 text-xs font-semibold leading-relaxed text-[#0A1547]/55">
+            Choose how you want to handle the first paid role under this billing account.
+          </p>
+        </div>
+        <div className="grid gap-3 lg:grid-cols-2" role="radiogroup" aria-label="First role payment choice">
+          <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-colors ${
+            !prepaySelected ? "border-[#A380F6] bg-white" : "border-[#0A1547]/10 bg-white/70 hover:border-[#A380F6]/45"
+          }`}>
+            <input
+              type="radio"
+              name="first_role_prepay_selected"
+              checked={!prepaySelected}
+              onChange={() => onChange("first_role_prepay_selected", false)}
+              className="mt-1 h-4 w-4 border-[#0A1547]/25 text-[#A380F6] focus:ring-[#A380F6]"
+            />
+            <span>
+              <span className="block text-sm font-black text-[#0A1547]">Pay when I open my first role later</span>
+              <span className="mt-1 block text-xs font-semibold leading-relaxed text-[#0A1547]/60">
+                Skip the first-role prepayment and pay the standard role fee when you open a role in alphaScreen.
+              </span>
+            </span>
+          </label>
+          <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-colors ${
+            prepaySelected ? "border-[#A380F6] bg-white" : "border-[#0A1547]/10 bg-white/70 hover:border-[#A380F6]/45"
+          }`}>
+            <input
+              type="radio"
+              name="first_role_prepay_selected"
+              checked={prepaySelected}
+              onChange={() => onChange("first_role_prepay_selected", true)}
+              className="mt-1 h-4 w-4 border-[#0A1547]/25 text-[#A380F6] focus:ring-[#A380F6]"
+            />
+            <span>
+              <span className="block text-sm font-black text-[#0A1547]">Purchase first role now and save {firstRoleDiscount}%</span>
+              <span className="mt-1 block text-xs font-semibold leading-relaxed text-[#0A1547]/60">
+                Add your first role to today&apos;s checkout at a one-time {firstRoleDiscount}% discount. Your first role will be prepaid, and additional roles are billed at the standard role fee.
+              </span>
+              <span className="mt-2 block text-xs font-black text-[#0A1547]">
+                {formatUsd(discountedFirstRoleFee)} now instead of {formatUsd(standardFirstRoleFee)}
+              </span>
+            </span>
+          </label>
+        </div>
+        <p className="text-xs font-semibold leading-relaxed text-[#0A1547]/55">
+          If selected, your initial Stripe Checkout includes the membership fee plus the discounted first-role fee. This one-time website signup offer creates a non-refundable first-role credit with no expiration, usable by the parent or child entity under the same billing account.
+        </p>
+      </div>
+
+      <div className="mt-6 rounded-lg border border-[#0A1547]/10 bg-white p-4">
+        <p className="text-sm font-black text-[#0A1547]">Order summary</p>
+        <div className="mt-3 space-y-2 text-sm font-semibold text-[#0A1547]/65">
+          <div className="flex items-center justify-between gap-3">
+            <span>{selectedPlan.display_name} membership - {cadenceLabel(selectedPlan, form.billing_cadence)}</span>
+            <span className="font-black text-[#0A1547]">{selectedPlatformFeeLabel}</span>
+          </div>
+          {prepaySelected ? (
+            <div className="flex items-center justify-between gap-3">
+              <span>Discounted first-role prepay</span>
+              <span className="font-black text-[#0A1547]">{formatUsd(discountedFirstRoleFee)}</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-3">
+              <span>First role</span>
+              <span className="font-black text-[#0A1547]">Billed when opened</span>
+            </div>
+          )}
+        </div>
+        <div className="mt-3 flex items-center justify-between border-t border-[#0A1547]/10 pt-3">
+          <span className="text-sm font-black text-[#0A1547]">Total due today</span>
+          <span className="text-base font-black text-[#0A1547]">{formatUsd(totalDueToday)}</span>
+        </div>
+        <p className="mt-2 text-xs font-semibold leading-relaxed text-[#0A1547]/50">
+          {prepaySelected
+            ? "Today's checkout includes the membership fee and discounted first-role fee."
+            : "Today's checkout includes the membership fee only. Role fees are billed when roles are opened."}
+        </p>
       </div>
 
       <div className="mt-6 grid gap-3">
@@ -930,6 +1124,7 @@ export default function AlphaScreenPricingPage() {
       buyer_email: cleanText(purchaseForm.buyer_email, 160),
       buyer_phone: cleanText(purchaseForm.buyer_phone, 40),
       buyer_title: cleanText(purchaseForm.buyer_title, 100),
+      first_role_prepay_selected: purchaseForm.first_role_prepay_selected === true,
       source_path: typeof window !== "undefined" ? window.location.pathname : "/alphascreen/pricing",
       agreement_acknowledged: purchaseForm.agreement_acknowledged,
       contact_acknowledged: purchaseForm.contact_acknowledged,
@@ -1138,6 +1333,8 @@ export default function AlphaScreenPricingPage() {
           </div>
           <p className="mt-5 max-w-3xl text-sm leading-relaxed text-[#0A1547]/55">
             Annual platform pricing is discounted and billed upfront. Role fees are billed separately when roles are created. Basic additional interviews are fixed at $30 each. Pro additional interviews are fixed at $35 each. Secure checkout opens after agreement signing.
+            {" "}
+            New self-serve buyers can optionally prepay their first role during signup and save 10% on that first role.
             {" "}
             For product and workflow questions, review the <a href="/faq" className="font-black text-[#0A1547] underline decoration-[#A380F6]/35 underline-offset-4 transition-colors hover:text-[#A380F6]">alphaScreen FAQ</a> or <a href="/alphascreen" className="font-black text-[#0A1547] underline decoration-[#A380F6]/35 underline-offset-4 transition-colors hover:text-[#A380F6]">alphaScreen overview</a>.
           </p>

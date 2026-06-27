@@ -71,8 +71,9 @@ Active work moves left to right. Agreement signing is the gate before checkout. 
 5. Buyer continues to secure Stripe Checkout.
 6. Stripe confirms checkout through the webhook.
 7. alphaScreen activates the client account and member access.
-8. Buyer receives password setup and welcome emails when applicable.
-9. Buyer sets a password and enters the alphaScreen dashboard.
+8. If the buyer selected first-role prepay, alphaScreen creates one unused first-role credit under the billing client.
+9. Buyer receives password setup and welcome emails when applicable.
+10. Buyer sets a password and enters the alphaScreen dashboard.
 
 ### Operating principle
 
@@ -86,6 +87,7 @@ Use the admin page for self-serve purchase review and recovery. The page is admi
 
 - Buyer and company details, including buyer name, email, phone, and title when available.
 - Membership and cadence, including Basic or Pro membership, monthly or annual cadence, platform fee, per-role fee, included interviews, duration cap, and additional interview price when available.
+- First-role prepay state when available: not selected, selected with unused credit, or selected with used role id and used time.
 - Source path showing where the buyer started the purchase.
 - Agreement status, sent/opened/signed timing, and checkout status tied to the agreement.
 - Checkout session and Stripe indicators for internal review.
@@ -125,6 +127,7 @@ Email sends are admin-only. They do not change payment, billing, agreement, or a
 - It cannot mark a checkout paid.
 - It cannot activate billing manually.
 - It cannot edit Stripe subscriptions.
+- It cannot manually apply, move, or alter first-role credit records.
 - It cannot delete, void, cancel, or refund a public purchase.
 - It cannot override customer, client, or member state without escalation.
 
@@ -403,6 +406,8 @@ Add screenshots after the QA or production admin view is stable. Use sanitized r
 - Buyer asks to cancel before payment.
 - Buyer asks for refund after payment.
 - Buyer wants to change membership, cadence, company, or billing details.
+- Buyer selected first-role prepay and asks how the prepaid credit applies after a membership or billing change.
+- Buyer opened a first role but says the prepaid credit was not applied or was tied to the wrong billing account.
 
 ### Support action
 
@@ -410,13 +415,19 @@ Add screenshots after the QA or production admin view is stable. Use sanitized r
 2. Copy the support summary.
 3. Confirm receipt of the request without promising the outcome.
 4. Escalate to the approved billing/admin owner.
-5. Keep the buyer updated after the billing/admin review completes.
+5. If first-role prepay is involved, include whether the credit is unused or used, the used role id if present, and the billing client shown in Admin Public Purchases.
+6. Keep the buyer updated after the billing/admin review completes.
+
+If the buyer changes membership before using the prepaid credit, client success should review and help apply or adjust the credit. Do not manually change credit records without approved escalation.
+
+If the buyer reports that the first-role credit was not applied, first confirm whether the role was opened under the same billing account, including child entities. Escalate wrong-billing-account or credit-not-applied cases with the support summary and do not ask the buyer to pay again until review confirms it is safe.
 
 ### Do not
 
 - Do not promise a refund, cancellation, or billing change.
 - Do not edit Stripe subscriptions directly.
 - Do not void agreements or cancel payment records from this workflow.
+- Do not manually change first-role credit records without approved escalation.
 
 ### Suggested wording
 

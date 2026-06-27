@@ -10,6 +10,15 @@ type CheckoutLookup = {
   clientId: string;
 };
 
+type CheckoutStatusResponse = {
+  status?: unknown;
+  set_password_url?: unknown;
+  first_role_prepay_selected?: unknown;
+  first_role_prepay?: unknown;
+  selected_package?: unknown;
+  package_snapshot?: unknown;
+};
+
 const POLLABLE_STATUSES = new Set<ReturnStatus>(["payment_pending", "activation_pending", "setup_pending"]);
 const MAX_STATUS_POLLS = 12;
 const STATUS_POLL_INTERVAL_MS = 4000;
@@ -60,6 +69,48 @@ function readSetPasswordUrl(): string {
   if (typeof window === "undefined") return "";
   const raw = String(new URLSearchParams(window.location.search || "").get("set_password_url") || "").trim();
   return normalizeSetPasswordUrl(raw);
+}
+
+function readInitialFirstRolePrepaySelected(): boolean | null {
+  if (typeof window === "undefined") return null;
+  return booleanOrNull(new URLSearchParams(window.location.search || "").get("first_role_prepay_selected"));
+}
+
+function booleanOrNull(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (raw === "true" || raw === "1" || raw === "yes") return true;
+  if (raw === "false" || raw === "0" || raw === "no") return false;
+  return null;
+}
+
+function objectOrNull(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? value as Record<string, unknown> : null;
+}
+
+function resolveFirstRolePrepaySelected(source: Record<string, unknown>): boolean | null {
+  const direct = booleanOrNull(source.first_role_prepay_selected);
+  if (direct !== null) return direct;
+  const firstRolePrepay = objectOrNull(source.first_role_prepay);
+  const fromFirstRolePrepay = firstRolePrepay ? booleanOrNull(firstRolePrepay.selected) : null;
+  if (fromFirstRolePrepay !== null) return fromFirstRolePrepay;
+  const selectedPackage = objectOrNull(source.selected_package);
+  const selectedPackagePrepay = selectedPackage ? objectOrNull(selectedPackage.first_role_prepay) : null;
+  const fromSelectedPackage = selectedPackagePrepay ? booleanOrNull(selectedPackagePrepay.selected) : null;
+  if (fromSelectedPackage !== null) return fromSelectedPackage;
+  const packageSnapshot = objectOrNull(source.package_snapshot);
+  const packageSnapshotPrepay = packageSnapshot ? objectOrNull(packageSnapshot.first_role_prepay) : null;
+  return packageSnapshotPrepay ? booleanOrNull(packageSnapshotPrepay.selected) : null;
+}
+
+function firstRoleCheckoutSuccessCopy(selected: boolean | null): string {
+  if (selected === true) {
+    return "Your first role is prepaid. After setup, you can open your first role without another role charge.";
+  }
+  if (selected === false) {
+    return "You can open roles after setup. Role fees are billed when roles are opened.";
+  }
+  return "";
 }
 
 function normalizeSetPasswordUrl(rawValue: unknown): string {
@@ -171,8 +222,10 @@ export default function CheckoutSubscriptionSuccessPage() {
   const [statusError, setStatusError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [setPasswordUrl, setSetPasswordUrl] = useState(() => readSetPasswordUrl());
+  const [firstRolePrepaySelected, setFirstRolePrepaySelected] = useState<boolean | null>(() => readInitialFirstRolePrepaySelected());
   const copy = STATUS_COPY[status];
   const Icon = copy.tone === "success" ? CheckCircle : copy.tone === "cancelled" ? AlertCircle : Clock3;
+  const firstRoleCopy = firstRoleCheckoutSuccessCopy(firstRolePrepaySelected);
 
   const shouldPoll = useCallback((nextStatus: ReturnStatus) => {
     return POLLABLE_STATUSES.has(nextStatus) || (nextStatus === "password_required" && !setPasswordUrl);
@@ -192,11 +245,13 @@ export default function CheckoutSubscriptionSuccessPage() {
         credentials: "omit",
         cache: "no-store",
       });
-      const data = await response.json().catch(() => null) as { status?: unknown; set_password_url?: unknown } | null;
+      const data = await response.json().catch(() => null) as CheckoutStatusResponse | null;
       if (!response.ok) throw new Error("Status refresh failed.");
       const nextStatus = normalizeStatus(data?.status);
       const nextSetPasswordUrl = normalizeSetPasswordUrl(data?.set_password_url);
+      const nextFirstRolePrepaySelected = data && typeof data === "object" ? resolveFirstRolePrepaySelected(data as Record<string, unknown>) : null;
       if (nextSetPasswordUrl) setSetPasswordUrl(nextSetPasswordUrl);
+      if (nextFirstRolePrepaySelected !== null) setFirstRolePrepaySelected(nextFirstRolePrepaySelected);
       setStatus(nextStatus);
       setStatusError("");
       return nextStatus;
@@ -302,6 +357,11 @@ export default function CheckoutSubscriptionSuccessPage() {
               </p>
             </div>
           </div>
+          {firstRoleCopy ? (
+            <div className="mt-4 rounded-lg border border-[#02D99D]/25 bg-[#02D99D]/5 px-4 py-3">
+              <p className="text-sm font-semibold leading-relaxed text-[#0A1547]/70">{firstRoleCopy}</p>
+            </div>
+          ) : null}
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             {primaryIsGuidance ? (
