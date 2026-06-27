@@ -24,6 +24,14 @@ const MAX_STATUS_POLLS = 12;
 const STATUS_POLL_INTERVAL_MS = 4000;
 const PASSWORD_SETUP_PREVIEW_PATH = "/checkout/password-setup-preview";
 
+function envText(key: string): string {
+  const env = typeof import.meta !== "undefined" && import.meta.env
+    ? import.meta.env as Record<string, unknown>
+    : {};
+  const value = env[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function readStatus(): ReturnStatus {
   if (typeof window === "undefined") return "setup_pending";
   const status = String(new URLSearchParams(window.location.search || "").get("status") || "").trim().toLowerCase();
@@ -121,10 +129,59 @@ function normalizeSetPasswordUrl(rawValue: unknown): string {
     const parsed = new URL(raw, window.location.origin);
     if (!["http:", "https:"].includes(parsed.protocol)) return "";
     if (isPlaceholderSetupUrl(parsed)) return passwordSetupPreviewUrl();
-    return parsed.href;
+    return isTrustedSetupUrl(parsed) ? parsed.href : "";
   } catch (_) {
     return "";
   }
+}
+
+function isLocalDevelopmentHost(host: string): boolean {
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
+function isAlphaSourceHost(host: string): boolean {
+  return host === "alphasourceai.com" || host.endsWith(".alphasourceai.com");
+}
+
+function isPasswordSetupPath(pathname: string): boolean {
+  return pathname === "/pwreset" || pathname.startsWith("/pwreset/");
+}
+
+function configuredSupabaseAuthHost(): string {
+  const configuredUrl = envText("VITE_SUPABASE_URL");
+  if (!configuredUrl) return "";
+  try {
+    return new URL(configuredUrl).hostname.toLowerCase();
+  } catch (_) {
+    return "";
+  }
+}
+
+function isTrustedPasswordSetupDestination(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  return isPasswordSetupPath(url.pathname) && (
+    host === window.location.hostname.toLowerCase() ||
+    isAlphaSourceHost(host) ||
+    isLocalDevelopmentHost(host)
+  );
+}
+
+function isTrustedSupabaseAuthActionUrl(url: URL): boolean {
+  const supabaseHost = configuredSupabaseAuthHost();
+  if (!supabaseHost || url.hostname.toLowerCase() !== supabaseHost) return false;
+  if (!url.pathname.startsWith("/auth/v1/")) return false;
+
+  const redirectTo = url.searchParams.get("redirect_to");
+  if (!redirectTo) return true;
+  try {
+    return isTrustedPasswordSetupDestination(new URL(redirectTo, window.location.origin));
+  } catch (_) {
+    return false;
+  }
+}
+
+function isTrustedSetupUrl(url: URL): boolean {
+  return isTrustedPasswordSetupDestination(url) || isTrustedSupabaseAuthActionUrl(url);
 }
 
 function isPlaceholderSetupUrl(url: URL): boolean {
