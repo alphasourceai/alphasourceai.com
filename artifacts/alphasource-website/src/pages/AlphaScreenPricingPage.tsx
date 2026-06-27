@@ -114,6 +114,9 @@ type PurchaseAgreementResult = {
   next_step_message?: string;
 };
 
+const SIGNUP_ALREADY_EXISTS_MESSAGE =
+  "This email is already associated with an alphaScreen account or signup. Sign in, check your email, or contact support for help.";
+
 const FALLBACK_PACKAGES: AlphaScreenPackage[] = [
   {
     plan_key: "basic",
@@ -1138,14 +1141,18 @@ export default function AlphaScreenPricingPage() {
       });
       const body = await response.json().catch(() => ({})) as PurchaseIntentResult & {
         detail?: string;
+        message?: string;
         code?: string;
         error?: string;
       };
 
       if (!response.ok) {
-        const detail = body.detail || (response.status === 429
-          ? "Too many signup attempts. Please wait a few minutes and try again."
-          : "We could not save these signup details. Please try again.");
+        const errorCode = String(body.code || body.error || "").trim();
+        const detail = errorCode === "SIGNUP_ALREADY_EXISTS" || errorCode === "signup_already_exists"
+          ? SIGNUP_ALREADY_EXISTS_MESSAGE
+          : body.detail || body.message || (response.status === 429
+            ? "Too many signup attempts. Please wait a few minutes and try again."
+            : "We could not save these signup details. Please try again.");
         setPurchaseStatus("idle");
         setPurchaseError(detail);
         trackEvent("lead_form_submit_failed", {
