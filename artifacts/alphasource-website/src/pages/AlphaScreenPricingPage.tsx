@@ -1017,7 +1017,12 @@ function PurchaseIntentPanel({
               className="mt-1 h-4 w-4 border-[#0A1547]/25 text-[#A380F6] focus:ring-[#A380F6]"
             />
             <span>
-              <span className="block text-sm font-black text-[#0A1547]">Purchase first role now and save {firstRoleDiscount}%</span>
+              <span className="block text-sm font-black text-[#0A1547]">
+                <span className="relative inline-flex px-1 text-[#0A1547]">
+                  <span className="absolute inset-x-0 bottom-0 h-2 rounded bg-yellow-200/75" aria-hidden="true" />
+                  <span className="relative">Purchase first role now and save {firstRoleDiscount}%</span>
+                </span>
+              </span>
               <span className="mt-1 block text-xs font-semibold leading-relaxed text-[#0A1547]/60">
                 Add your first role to today&apos;s checkout at a one-time {firstRoleDiscount}% discount. Your first role will be prepaid, and additional roles are billed at the standard role fee.
               </span>
