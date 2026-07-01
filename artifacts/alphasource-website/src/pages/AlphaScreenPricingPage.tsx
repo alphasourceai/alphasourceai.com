@@ -1018,8 +1018,8 @@ function PurchaseIntentPanel({
             />
             <span>
               <span className="block text-sm font-black text-[#0A1547]">
-                <span className="relative inline-flex px-1 text-[#0A1547]">
-                  <span className="absolute inset-x-0 bottom-0 h-2 rounded bg-yellow-200/75" aria-hidden="true" />
+                <span className="relative inline-flex px-2 text-[#0A1547]">
+                  <span className="absolute -inset-x-0.5 inset-y-0 rounded-md bg-yellow-200/80" aria-hidden="true" />
                   <span className="relative">Purchase first role now and save {firstRoleDiscount}%</span>
                 </span>
               </span>
