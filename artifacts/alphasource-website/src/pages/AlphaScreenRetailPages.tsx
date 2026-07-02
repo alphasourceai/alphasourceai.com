@@ -609,7 +609,7 @@ export function AlphaScreenRoiPage() {
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <div>
                     <p className="text-3xl font-black text-[#0A1547]">{formatUsd(potentialSavings)}</p>
-                    <p className="mt-1 text-xs font-black uppercase tracking-[0.14em] text-[#0A1547]/45">Estimated cost difference</p>
+                    <p className="mt-1 text-xs font-black uppercase tracking-[0.14em] text-[#0A1547]/45">Estimated cost savings</p>
                   </div>
                   <div>
                     <p className="text-3xl font-black text-[#0A1547]">{estimate.hours.toFixed(1)} hrs</p>
