@@ -52,8 +52,8 @@ const footerLinks = [
   ["ROI", "/alphascreen/roi"],
   ["FAQ", "/faq"],
   ["Support", "/support"],
-  ["Privacy", "/privacy"],
-  ["Terms", "/terms"],
+  ["Privacy", "/privacy/"],
+  ["Terms", "/terms/"],
 ];
 
 const faqItems = [
@@ -507,7 +507,7 @@ const routeContent = {
       ["/faq", "Security FAQ"],
       ["/alphascreen/candidate-experience", "Candidate experience"],
       ["/alphascreen", "alphaScreen overview"],
-      ["/privacy", "Privacy Policy"],
+      ["/privacy/", "Privacy Policy"],
     ],
     schemas: [
       organizationSchema,
@@ -774,7 +774,7 @@ function privacyRoute() {
       ]),
     ],
     links: [
-      ["/terms", "Terms & Conditions"],
+      ["/terms/", "Terms & Conditions"],
       ["/support", "Support"],
       ["/faq", "FAQ"],
     ],
@@ -817,7 +817,7 @@ function termsRoute() {
       ]),
     ],
     links: [
-      ["/privacy", "Privacy Policy"],
+      ["/privacy/", "Privacy Policy"],
       ["/support", "Support"],
       ["/faq", "FAQ"],
     ],
