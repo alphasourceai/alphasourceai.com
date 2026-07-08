@@ -6,25 +6,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
 const distRoot = path.join(projectRoot, "dist");
 const indexPath = path.join(distRoot, "index.html");
+const routingManifestPath = path.join(projectRoot, "render-routes.json");
 
 const SITE_URL = "https://www.alphasourceai.com";
 const LAST_UPDATED = "June 2026";
 
-const publicRoutes = [
-  "/",
-  "/about",
-  "/faq",
-  "/support",
-  "/privacy",
-  "/terms",
-  "/alphascreen",
-  "/alphascreen/pricing",
-  "/alphascreen/how-it-works",
-  "/alphascreen/security",
-  "/alphascreen/candidate-experience",
-  "/alphascreen/for-dental-groups",
-  "/alphascreen/roi",
-];
+const routingManifest = JSON.parse(fs.readFileSync(routingManifestPath, "utf8"));
+const publicRoutes = routingManifest.publicRoutes;
 
 const trailingSlashPublicRoutes = new Set(publicRoutes.filter((route) => route !== "/"));
 
@@ -643,7 +631,9 @@ for (const route of publicRoutes) {
   writeRoute(route, renderRouteHtml(baseHtml, route, content));
 }
 
-writeSpaShellRoute("/checkout/subscription-success");
+for (const route of routingManifest.spaShellRoutes) {
+  writeSpaShellRoute(route);
+}
 writeStaticRoutingFile();
 
 console.log(`Prerendered ${publicRoutes.length} public route HTML snapshots.`);
@@ -1076,60 +1066,30 @@ function writeSpaShellRoute(route) {
 }
 
 function writeStaticRoutingFile() {
-  const legalAliasRedirectRules = [
-    "/privacy-policy /privacy/ 301",
-    "/privacy-policy/ /privacy/ 301",
-    "/terms-and-conditions /terms/ 301",
-    "/terms-and-conditions/ /terms/ 301",
-  ];
-  const spaRouteRules = [
-    "/dashboard /index.html 200",
-    "/dashboard/* /index.html 200",
-    "/admin /index.html 200",
-    "/admin/* /index.html 200",
-    "/checkout /index.html 200",
-    "/checkout/subscription-success /checkout/subscription-success/index.html 200",
-    "/checkout/subscription-success/ /checkout/subscription-success/index.html 200",
-    "/checkout/subscription-success/index.html /checkout/subscription-success/index.html 200",
-    "/checkout/* /index.html 200",
-    "/membership-agreement /index.html 200",
-    "/membership-agreement/* /index.html 200",
-    "/interview /index.html 200",
-    "/interview/* /index.html 200",
-    "/interview-access /index.html 200",
-    "/interview-access/* /index.html 200",
-    "/interview-host /index.html 200",
-    "/interview-host/* /index.html 200",
-    "/text-interview /index.html 200",
-    "/text-interview/* /index.html 200",
-    "/candidate /index.html 200",
-    "/candidate/* /index.html 200",
-    "/automation /index.html 200",
-    "/automation/* /index.html 200",
-    "/pwreset /index.html 200",
-    "/pwreset/ /index.html 200",
-    "/accommodation /index.html 200",
-    "/accommodation/* /index.html 200",
-    "/accommodation-request /index.html 200",
-    "/accommodation-request/* /index.html 200",
-  ];
   const lines = [
-    "# Public prerendered routes. Keep these before the SPA fallback.",
-    ...publicRoutes
-      .filter((route) => route !== "/")
-      .flatMap((route) => [
-        `${route} ${crawlableHref(route)} 301`,
-        `${route}/ ${route}/index.html 200`,
-        `${route}/index.html ${route}/index.html 200`,
-      ]),
-    ...legalAliasRedirectRules,
+    "# Code-owned Render static routing. Source: render-routes.json.",
+    "# Public bare-route redirects.",
+    ...routingManifest.publicRedirects.map(formatRouteRule),
+    "",
+    "# Public trailing-slash prerender rewrites.",
+    ...routingManifest.publicRewrites.map(formatRouteRule),
+    "",
+    "# Checkout success uses a copied SPA shell to avoid zero-byte static responses.",
+    ...routingManifest.spaShellRewrites.map(formatRouteRule),
     "",
     "# Authenticated and dynamic app routes remain client-rendered SPA routes.",
-    ...spaRouteRules,
-    "/* /index.html 200",
+    ...routingManifest.dynamicSpaRewrites.map(formatRouteRule),
+    formatRouteRule(routingManifest.catchAll),
     "",
   ];
   fs.writeFileSync(path.join(distRoot, "_redirects"), lines.join("\n"));
+}
+
+function formatRouteRule(rule) {
+  if (!rule?.source || !rule?.destination || !rule?.status) {
+    throw new Error(`Invalid routing rule: ${JSON.stringify(rule)}`);
+  }
+  return `${rule.source} ${rule.destination} ${rule.status}`;
 }
 
 function crawlableHref(href) {
