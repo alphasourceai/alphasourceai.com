@@ -643,6 +643,7 @@ for (const route of publicRoutes) {
   writeRoute(route, renderRouteHtml(baseHtml, route, content));
 }
 
+writeSpaShellRoute("/checkout/subscription-success");
 writeStaticRoutingFile();
 
 console.log(`Prerendered ${publicRoutes.length} public route HTML snapshots.`);
@@ -1068,6 +1069,12 @@ function writeRoute(route, html) {
   fs.writeFileSync(target, html);
 }
 
+function writeSpaShellRoute(route) {
+  const target = path.join(distRoot, ...route.split("/").filter(Boolean), "index.html");
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.copyFileSync(indexPath, target);
+}
+
 function writeStaticRoutingFile() {
   const legalAliasRedirectRules = [
     "/privacy-policy /privacy/ 301",
@@ -1081,6 +1088,9 @@ function writeStaticRoutingFile() {
     "/admin /index.html 200",
     "/admin/* /index.html 200",
     "/checkout /index.html 200",
+    "/checkout/subscription-success /checkout/subscription-success/index.html 200",
+    "/checkout/subscription-success/ /checkout/subscription-success/index.html 200",
+    "/checkout/subscription-success/index.html /checkout/subscription-success/index.html 200",
     "/checkout/* /index.html 200",
     "/membership-agreement /index.html 200",
     "/membership-agreement/* /index.html 200",
