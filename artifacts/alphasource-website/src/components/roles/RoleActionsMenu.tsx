@@ -1,4 +1,4 @@
-import { ChevronDown, Copy, FileText, RefreshCw, Trash2 } from "lucide-react";
+import { ChevronDown, Copy, FileText, ListChecks, RefreshCw, Trash2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,6 +30,7 @@ export default function RoleActionsMenu({
   onCopyInterviewLink,
   onViewJobDescription,
   onViewRubric,
+  onEditRubricQuestions,
   onReplaceJobDescription,
   onToggleRoleStatus,
   onDeleteRole,
@@ -52,6 +53,7 @@ export default function RoleActionsMenu({
   onCopyInterviewLink: () => void;
   onViewJobDescription: () => void;
   onViewRubric: () => void;
+  onEditRubricQuestions?: () => void;
   onReplaceJobDescription: () => void;
   onToggleRoleStatus: () => void;
   onDeleteRole: () => void;
@@ -110,6 +112,15 @@ export default function RoleActionsMenu({
           <FileText className="h-4 w-4 text-[#A380F6]" />
           <span>{loadingRubric ? "Loading rubric..." : "View rubric"}</span>
         </DropdownMenuItem>
+        {canManageRole && onEditRubricQuestions && (
+          <DropdownMenuItem
+            onSelect={onEditRubricQuestions}
+            className="gap-2.5 rounded-md px-2.5 py-2 text-sm font-semibold focus:bg-[#A380F6]/10 focus:text-[#7C5FCC]"
+          >
+            <ListChecks className="h-4 w-4 text-[#A380F6]" />
+            <span>Edit rubric questions</span>
+          </DropdownMenuItem>
+        )}
 
         {canManageRole && (
           <>

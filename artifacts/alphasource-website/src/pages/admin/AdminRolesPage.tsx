@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, FileText, Upload } from "lucide-react";
 import AdminLayout from "@/components/AdminLayout";
 import InfoTooltip from "@/components/InfoTooltip";
+import EditRoleRubricModal from "@/components/roles/EditRoleRubricModal";
 import RoleActionsMenu from "@/components/roles/RoleActionsMenu";
 import ReplaceJobDescriptionModal from "@/components/roles/ReplaceJobDescriptionModal";
 import {
@@ -236,10 +237,12 @@ export default function AdminRolesPage() {
   const [rubricModal, setRubricModal] = useState<{ roleName: string; questions: string[] } | null>(null);
   const [roleStatusConfirm, setRoleStatusConfirm] = useState<{ role: Role; nextStatus: "active" | "inactive" } | null>(null);
   const [roleDeleteConfirm, setRoleDeleteConfirm] = useState<{ role: Role } | null>(null);
+  const [editingRubricRole, setEditingRubricRole] = useState<Role | null>(null);
+  const [rubricEditorSession, setRubricEditorSession] = useState(0);
   const [replacementRole, setReplacementRole] = useState<Role | null>(null);
   const [openRoleActionsId, setOpenRoleActionsId] = useState<string | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
-  const replacementTriggerRef = useRef<HTMLButtonElement>(null);
+  const roleActionsTriggerRef = useRef<HTMLButtonElement>(null);
   const [form, setForm] = useState({ title: "", type: "Basic", jdFileName: "" });
   const hierarchyClients = useMemo(
     () => adminClients.filter((client) => client.id !== "all"),
@@ -271,6 +274,7 @@ export default function AdminRolesPage() {
     setRoleSearch("");
     setRoleStatusConfirm(null);
     setRoleDeleteConfirm(null);
+    setEditingRubricRole(null);
     setReplacementRole(null);
     setOpenRoleActionsId(null);
   }, [selectedClientId]);
@@ -780,6 +784,8 @@ export default function AdminRolesPage() {
       </div>
       {actionNotice && (
         <div
+          role="status"
+          aria-live="polite"
           className="mb-4 px-4 py-2.5 rounded-xl text-sm font-semibold"
           style={{
             border: actionNotice.tone === "error" ? "1px solid rgba(239,68,68,0.25)" : "1px solid rgba(2,217,157,0.25)",
@@ -1101,13 +1107,20 @@ export default function AdminRolesPage() {
                       updatingStatus={updatingRoleStatus[role.id] === true}
                       deleting={deletingRoles[role.id] === true}
                       isInactive={Boolean(role.isInactive)}
-                      onTriggerFocus={(trigger) => { replacementTriggerRef.current = trigger; }}
+                      onTriggerFocus={(trigger) => { roleActionsTriggerRef.current = trigger; }}
                       onCopyInterviewLink={() => { void handleCopy(role); }}
                       onViewJobDescription={() => { void openRoleJd(role); }}
                       onViewRubric={() => { void openRoleRubric(role); }}
+                      onEditRubricQuestions={() => {
+                        setOpenRoleActionsId(null);
+                        setReplacementRole(null);
+                        setRubricEditorSession((value) => value + 1);
+                        setEditingRubricRole(role);
+                      }}
                       onReplaceJobDescription={() => {
                         if (!role.jobDescriptionReplacement.eligible) return;
                         setOpenRoleActionsId(null);
+                        setEditingRubricRole(null);
                         setReplacementRole(role);
                       }}
                       onToggleRoleStatus={() => setRoleStatusConfirm({ role, nextStatus: role.isInactive ? "active" : "inactive" })}
@@ -1134,6 +1147,26 @@ export default function AdminRolesPage() {
           )}
         </div>
       </div>
+      <EditRoleRubricModal
+        open={Boolean(editingRubricRole)}
+        role={editingRubricRole ? {
+          id: editingRubricRole.id,
+          clientId: editingRubricRole.clientId,
+          title: editingRubricRole.name,
+          entityName: editingRubricRole.entityName,
+          parentClientName: editingRubricRole.parentClientName,
+          status: editingRubricRole.status,
+        } : null}
+        sessionKey={rubricEditorSession}
+        backendBase={backendBase}
+        getSessionToken={getSessionToken}
+        onClose={() => setEditingRubricRole(null)}
+        onSuccess={() => {
+          setRefreshNonce((value) => value + 1);
+          setActionNotice({ tone: "success", text: "Rubric questions updated." });
+        }}
+        getRestoreFocusTarget={() => roleActionsTriggerRef.current}
+      />
       <ReplaceJobDescriptionModal
         open={Boolean(replacementRole)}
         role={replacementRole ? {
@@ -1149,7 +1182,7 @@ export default function AdminRolesPage() {
           setRefreshNonce((value) => value + 1);
           setActionNotice({ tone: "success", text: "Job description replaced and role configuration rebuilt." });
         }}
-        getRestoreFocusTarget={() => replacementTriggerRef.current}
+        getRestoreFocusTarget={() => roleActionsTriggerRef.current}
       />
       {roleStatusConfirm && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-6">
