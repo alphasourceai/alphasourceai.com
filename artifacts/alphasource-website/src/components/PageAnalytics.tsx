@@ -9,15 +9,15 @@ import {
 type PageAnalyticsProps = { location: string };
 
 export default function PageAnalytics({ location }: PageAnalyticsProps) {
-  const { optionalTrackingAllowed } = useTrackingConsent();
+  const { analyticsEnabled } = useTrackingConsent();
 
   useEffect(() => {
     const path = normalizeTrackingPath(location);
-    if (optionalTrackingAllowed && isPublicOptionalTrackingRoute(path)) trackPageView(path);
-  }, [location, optionalTrackingAllowed]);
+    if (analyticsEnabled && isPublicOptionalTrackingRoute(path)) trackPageView(path);
+  }, [analyticsEnabled, location]);
 
   useEffect(() => {
-    if (!optionalTrackingAllowed) return;
+    if (!analyticsEnabled) return;
     const onClick = (event: MouseEvent) => {
       if (!isPublicOptionalTrackingRoute(window.location.pathname || "/")) return;
       const target = event.target;
@@ -31,7 +31,7 @@ export default function PageAnalytics({ location }: PageAnalyticsProps) {
 
     document.addEventListener("click", onClick);
     return () => document.removeEventListener("click", onClick);
-  }, [optionalTrackingAllowed]);
+  }, [analyticsEnabled]);
 
   return null;
 }

@@ -1,10 +1,17 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
-export type TrackingConsentChoice = "granted" | "denied";
-
-const TRACKING_CONSENT_STORAGE_KEY = "alphasource:tracking-consent:v1";
-const OPTIONAL_ANALYTICS_ID_KEY = "alphasource:anonymous_id";
-const OPTIONAL_SESSION_ID_KEY = "alphasource:session_id";
+const TRACKING_PREFERENCES_STORAGE_KEY = "alphasource:tracking-preferences:v2";
+const LEGACY_TRACKING_CONSENT_STORAGE_KEY = "alphasource:tracking-consent:v1";
+const ANALYTICS_ANONYMOUS_ID_STORAGE_KEY = "alphasource:anonymous_id";
+const ANALYTICS_SESSION_ID_STORAGE_KEY = "alphasource:session_id";
 
 export const PUBLIC_OPTIONAL_TRACKING_ROUTES = new Set([
   "/",
@@ -22,6 +29,48 @@ export const PUBLIC_OPTIONAL_TRACKING_ROUTES = new Set([
   "/privacy",
 ]);
 
+export type OptionalTrackingPreferences = {
+  analytics: boolean;
+  marketingAttribution: boolean;
+  visitorChat: boolean;
+  updatedAt: string;
+};
+
+export type OptionalTrackingSelection = Pick<
+  OptionalTrackingPreferences,
+  "analytics" | "marketingAttribution" | "visitorChat"
+>;
+
+type LegacyTrackingConsentChoice = "granted" | "denied";
+
+type TrackingConsentContextValue = {
+  analyticsEnabled: boolean;
+  allowAllOptionalTracking: () => void;
+  closeTrackingPreferences: () => void;
+  hasSavedPreferences: boolean;
+  marketingAttributionEnabled: boolean;
+  openTrackingPreferences: () => void;
+  preferences: OptionalTrackingPreferences | null;
+  preferencesOpen: boolean;
+  rejectOptionalTracking: () => void;
+  savePreferences: (selection: OptionalTrackingSelection) => void;
+  visitorChatEnabled: boolean;
+};
+
+const EMPTY_OPTIONAL_TRACKING_SELECTION: OptionalTrackingSelection = {
+  analytics: false,
+  marketingAttribution: false,
+  visitorChat: false,
+};
+
+const ALL_OPTIONAL_TRACKING_SELECTION: OptionalTrackingSelection = {
+  analytics: true,
+  marketingAttribution: true,
+  visitorChat: true,
+};
+
+const TrackingConsentContext = createContext<TrackingConsentContextValue | null>(null);
+
 export function normalizeTrackingPath(path: string): string {
   const clean = String(path || "/").split("?")[0].split("#")[0] || "/";
   return clean.length > 1 ? clean.replace(/\/+$/, "") : "/";
@@ -31,92 +80,158 @@ export function isPublicOptionalTrackingRoute(path: string): boolean {
   return PUBLIC_OPTIONAL_TRACKING_ROUTES.has(normalizeTrackingPath(path));
 }
 
-function readStoredConsent(): TrackingConsentChoice | null {
-  if (typeof window === "undefined") return null;
+function isValidUpdatedAt(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const timestamp = new Date(value);
+  return Number.isFinite(timestamp.getTime()) && timestamp.toISOString() === value;
+}
+
+function parseStoredPreferences(value: string | null): OptionalTrackingPreferences | null {
+  if (!value) return null;
+
   try {
-    const value = window.localStorage.getItem(TRACKING_CONSENT_STORAGE_KEY);
-    return value === "granted" || value === "denied" ? value : null;
+    const parsed: unknown = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object") return null;
+
+    const preferences = parsed as Partial<OptionalTrackingPreferences>;
+    if (
+      typeof preferences.analytics !== "boolean" ||
+      typeof preferences.marketingAttribution !== "boolean" ||
+      typeof preferences.visitorChat !== "boolean" ||
+      !isValidUpdatedAt(preferences.updatedAt)
+    ) {
+      return null;
+    }
+
+    return preferences as OptionalTrackingPreferences;
   } catch {
     return null;
   }
 }
 
-function persistConsent(choice: TrackingConsentChoice): void {
-  if (typeof window === "undefined") return;
+function savePreferencesToStorage(preferences: OptionalTrackingPreferences): boolean {
   try {
-    window.localStorage.setItem(TRACKING_CONSENT_STORAGE_KEY, choice);
+    window.localStorage.setItem(TRACKING_PREFERENCES_STORAGE_KEY, JSON.stringify(preferences));
+    return true;
   } catch {
-    // Optional tracking remains disabled when preference storage is unavailable.
+    return false;
   }
 }
 
 function clearOptionalTrackingIdentifiers(): void {
-  if (typeof window === "undefined") return;
   try {
-    window.localStorage.removeItem(OPTIONAL_ANALYTICS_ID_KEY);
-    window.sessionStorage.removeItem(OPTIONAL_SESSION_ID_KEY);
+    window.localStorage.removeItem(ANALYTICS_ANONYMOUS_ID_STORAGE_KEY);
+    window.sessionStorage.removeItem(ANALYTICS_SESSION_ID_STORAGE_KEY);
   } catch {
-    // Third-party storage is outside this site's safe deletion scope.
+    // Storage can be unavailable in restrictive browser contexts.
   }
 }
 
-interface TrackingConsentContextType {
-  choice: TrackingConsentChoice | null;
-  optionalTrackingAllowed: boolean;
-  preferencesOpen: boolean;
-  allowOptionalTracking: () => void;
-  declineOptionalTracking: () => void;
-  openTrackingPreferences: () => void;
-  closeTrackingPreferences: () => void;
-}
+function readInitialPreferences(): OptionalTrackingPreferences | null {
+  try {
+    const storedPreferences = parseStoredPreferences(
+      window.localStorage.getItem(TRACKING_PREFERENCES_STORAGE_KEY),
+    );
+    if (storedPreferences) return storedPreferences;
 
-const TrackingConsentContext = createContext<TrackingConsentContextType>({
-  choice: null,
-  optionalTrackingAllowed: false,
-  preferencesOpen: false,
-  allowOptionalTracking: () => {},
-  declineOptionalTracking: () => {},
-  openTrackingPreferences: () => {},
-  closeTrackingPreferences: () => {},
-});
+    const legacyConsent = window.localStorage.getItem(LEGACY_TRACKING_CONSENT_STORAGE_KEY);
+    if (legacyConsent !== "granted" && legacyConsent !== "denied") return null;
+
+    const legacySelection: OptionalTrackingSelection =
+      (legacyConsent as LegacyTrackingConsentChoice) === "granted"
+        ? ALL_OPTIONAL_TRACKING_SELECTION
+        : EMPTY_OPTIONAL_TRACKING_SELECTION;
+    const migratedPreferences: OptionalTrackingPreferences = {
+      ...legacySelection,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (savePreferencesToStorage(migratedPreferences)) {
+      window.localStorage.removeItem(LEGACY_TRACKING_CONSENT_STORAGE_KEY);
+    }
+
+    return migratedPreferences;
+  } catch {
+    return null;
+  }
+}
 
 export function TrackingConsentProvider({ children }: { children: ReactNode }) {
-  const [choice, setChoice] = useState<TrackingConsentChoice | null>(() => readStoredConsent());
-  const [preferencesOpen, setPreferencesOpen] = useState(false);
-
-  const allowOptionalTracking = useCallback(() => {
-    persistConsent("granted");
-    setChoice("granted");
-    setPreferencesOpen(false);
-  }, []);
-
-  const declineOptionalTracking = useCallback(() => {
-    persistConsent("denied");
-    clearOptionalTrackingIdentifiers();
-    setChoice("denied");
-    setPreferencesOpen(false);
-  }, []);
-
-  const openTrackingPreferences = useCallback(() => setPreferencesOpen(true), []);
-  const closeTrackingPreferences = useCallback(() => setPreferencesOpen(false), []);
-
-  return (
-    <TrackingConsentContext.Provider
-      value={{
-        choice,
-        optionalTrackingAllowed: choice === "granted",
-        preferencesOpen,
-        allowOptionalTracking,
-        declineOptionalTracking,
-        openTrackingPreferences,
-        closeTrackingPreferences,
-      }}
-    >
-      {children}
-    </TrackingConsentContext.Provider>
+  const [preferences, setPreferences] = useState<OptionalTrackingPreferences | null>(() =>
+    typeof window === "undefined" ? null : readInitialPreferences(),
   );
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const triggerRef = useRef<HTMLElement | null>(null);
+
+  const closeTrackingPreferences = useCallback(() => {
+    setPreferencesOpen(false);
+    window.requestAnimationFrame(() => {
+      if (triggerRef.current?.isConnected) triggerRef.current.focus();
+    });
+  }, []);
+
+  const openTrackingPreferences = useCallback(() => {
+    if (document.activeElement instanceof HTMLElement) {
+      triggerRef.current = document.activeElement;
+    }
+    setPreferencesOpen(true);
+  }, []);
+
+  const savePreferences = useCallback(
+    (selection: OptionalTrackingSelection) => {
+      const nextPreferences: OptionalTrackingPreferences = {
+        analytics: Boolean(selection.analytics),
+        marketingAttribution: Boolean(selection.marketingAttribution),
+        visitorChat: Boolean(selection.visitorChat),
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (!nextPreferences.analytics) clearOptionalTrackingIdentifiers();
+      savePreferencesToStorage(nextPreferences);
+      setPreferences(nextPreferences);
+      closeTrackingPreferences();
+    },
+    [closeTrackingPreferences],
+  );
+
+  const allowAllOptionalTracking = useCallback(() => {
+    savePreferences(ALL_OPTIONAL_TRACKING_SELECTION);
+  }, [savePreferences]);
+
+  const rejectOptionalTracking = useCallback(() => {
+    savePreferences(EMPTY_OPTIONAL_TRACKING_SELECTION);
+  }, [savePreferences]);
+
+  const value = useMemo<TrackingConsentContextValue>(
+    () => ({
+      analyticsEnabled: preferences?.analytics === true,
+      allowAllOptionalTracking,
+      closeTrackingPreferences,
+      hasSavedPreferences: preferences !== null,
+      marketingAttributionEnabled: preferences?.marketingAttribution === true,
+      openTrackingPreferences,
+      preferences,
+      preferencesOpen,
+      rejectOptionalTracking,
+      savePreferences,
+      visitorChatEnabled: preferences?.visitorChat === true,
+    }),
+    [
+      allowAllOptionalTracking,
+      closeTrackingPreferences,
+      openTrackingPreferences,
+      preferences,
+      preferencesOpen,
+      rejectOptionalTracking,
+      savePreferences,
+    ],
+  );
+
+  return <TrackingConsentContext.Provider value={value}>{children}</TrackingConsentContext.Provider>;
 }
 
-export function useTrackingConsent() {
-  return useContext(TrackingConsentContext);
+export function useTrackingConsent(): TrackingConsentContextValue {
+  const context = useContext(TrackingConsentContext);
+  if (!context) throw new Error("useTrackingConsent must be used within TrackingConsentProvider");
+  return context;
 }

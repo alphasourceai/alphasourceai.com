@@ -45,7 +45,7 @@ export default function PrivacyPage() {
 
           <Section number="2" title="PUBLIC WEBSITE ANALYTICS">
             <p>
-              If you select Allow in Privacy choices, we collect public page view information for pages such as the home page, alphaScreen page, about page, support and FAQ pages, terms and privacy pages, and other public landing pages. This may include page path, timestamp, referrer or source, campaign parameters, CTA interactions, device and browser-level technical information, and similar site-performance signals.
+              If you enable Analytics in Privacy choices, we collect public page view information for pages such as the home page, alphaScreen page, about page, support and FAQ pages, terms and privacy pages, and other public landing pages. This may include page path, timestamp, referrer or source, campaign parameters, CTA interactions, device and browser-level technical information, and similar site-performance signals.
             </p>
             <p>
               We use first-party public analytics to understand site performance, improve product messaging, measure interest, troubleshoot abuse or spam, and prepare self-serve purchasing workflows.
@@ -57,7 +57,7 @@ export default function PrivacyPage() {
 
           <Section number="3" title="CTA AND EVENT TRACKING">
             <p>
-              Public call-to-action interactions may be tracked, including demo requests, contact links, signup or self-serve interest, navigation links, footer links, and hero calls to action. We use this information to understand visitor interest and improve the public website experience.
+              When Analytics is enabled, public call-to-action interactions may be tracked, including demo requests, contact links, signup or self-serve interest, navigation links, footer links, and hero calls to action. We use this information to understand visitor interest and improve the public website experience.
             </p>
           </Section>
 
@@ -75,13 +75,13 @@ export default function PrivacyPage() {
 
           <Section number="5" title="COOKIES AND SIMILAR TECHNOLOGIES">
             <p>
-              If you select Allow in Privacy choices, public marketing pages may use Identity Pixel for marketing attribution and to understand where traffic originates and how visitors navigate through the public website. We also use first-party public analytics for site-use measurement and may load optional Tawk chat when it is configured for the public site.
+              Optional technologies are blocked until you enable the relevant category in Privacy choices. Analytics enables first-party public-site event measurement. Marketing attribution enables Identity Pixel when configured to understand where traffic originates and how visitors navigate through the public website. Visitor chat enables optional Tawk chat when it is configured for the public site.
             </p>
             <p>
-              We store your Allow or Decline decision using the first-party preference key <code>alphasource:tracking-consent:v1</code>. Identity Pixel, first-party public analytics, and optional public Tawk chat remain blocked until you select Allow. If you later select Decline, we stop future application-controlled optional tracking and remove application-owned optional analytics identifiers where feasible. Cookies or storage already set by a third party may not be directly removable by this site.
+              We store your category preferences using the first-party preference key <code>alphasource:tracking-preferences:v2</code>. Each optional technology remains blocked until its category is enabled. Turning off Analytics clears application-owned optional analytics identifiers where feasible. Changing a preference stops future application-controlled loading; cookies or storage already set by a third party may not be directly removable by this site.
             </p>
             <p>
-              You can reopen Privacy choices from the footer to change your selection. alphaScreen candidate interview, admin, and client workflow access do not require public marketing pixels to function. We do not use session replay for this public analytics workflow.
+              You can reopen Privacy choices from the footer to change your preferences. alphaScreen candidate interview, admin, and client workflow access do not require public marketing pixels to function. Essential sign-in, security, and core website functions remain active regardless of optional technology preferences. We do not use session replay for this public analytics workflow.
             </p>
           </Section>
 

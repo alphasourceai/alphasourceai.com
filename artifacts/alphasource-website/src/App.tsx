@@ -521,7 +521,7 @@ function InterviewCompletePage() {
 /* ── Router ─────────────────────────────────────────────── */
 function Router() {
   const [location] = useLocation();
-  const { optionalTrackingAllowed } = useTrackingConsent();
+  const { visitorChatEnabled } = useTrackingConsent();
   const normalizedLocation = location.length > 1 ? location.replace(/\/+$/, "") : location;
   const isDashboard = location === "/dashboard" || location.startsWith("/dashboard/");
   const isAdmin     = location === "/admin"     || location.startsWith("/admin/");
@@ -642,7 +642,7 @@ function Router() {
       <Footer />
       {isPublicTawkRoute && (
         <TawkWidget
-          enabled={optionalTrackingAllowed && (env as Record<string, unknown>).VITE_TAWK_PUBLIC_ENABLED === "true"}
+          enabled={visitorChatEnabled && (env as Record<string, unknown>).VITE_TAWK_PUBLIC_ENABLED === "true"}
           propertyId={String((env as Record<string, unknown>).VITE_TAWK_PUBLIC_PROPERTY_ID || "")}
           widgetId={String((env as Record<string, unknown>).VITE_TAWK_PUBLIC_WIDGET_ID || "")}
           variant="public"
