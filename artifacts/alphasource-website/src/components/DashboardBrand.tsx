@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 type DashboardBrandMode = "dark" | "light";
 type DashboardBrandVariant = "compact" | "full";
-type LogoStage = "compact" | "full" | "text";
+type LogoStage = "full" | "symbol" | "text";
 
 type DashboardBrandProps = {
   mode: DashboardBrandMode;
@@ -12,11 +12,11 @@ type DashboardBrandProps = {
 const COMPACT_LOGO_SRC = "/alpha-symbol.png";
 
 function initialStage(variant: DashboardBrandVariant): LogoStage {
-  return variant === "compact" ? "compact" : "full";
+  return variant === "compact" ? "symbol" : "full";
 }
 
 export default function DashboardBrand({ mode, variant }: DashboardBrandProps) {
-  const fullLogoSrc = mode === "dark" ? "/logo-dark-mode.png" : "/logo-dark-text.png";
+  const fullLogoSrc = mode === "dark" ? "/logo-dark-mode.png" : "/logo-dark-text-clear.png";
   const [stage, setStage] = useState<LogoStage>(() => initialStage(variant));
 
   useEffect(() => {
@@ -25,10 +25,7 @@ export default function DashboardBrand({ mode, variant }: DashboardBrandProps) {
 
   const handleImageError = (event: React.SyntheticEvent<HTMLImageElement>) => {
     event.currentTarget.style.display = "none";
-    setStage((current) => {
-      if (current === "full") return "compact";
-      return "text";
-    });
+    setStage("text");
   };
 
   if (stage === "text") {
@@ -36,11 +33,12 @@ export default function DashboardBrand({ mode, variant }: DashboardBrandProps) {
       return (
         <span
           aria-label="alphaSource AI"
+          role="img"
           data-dashboard-brand-stage="text"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[#A380F6]/20 text-[10px] font-black text-[#5D43CC]"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[#A380F6]/20 text-lg font-black text-[#5D43CC]"
           title="alphaSource AI"
         >
-          AI
+          α
         </span>
       );
     }
@@ -48,6 +46,7 @@ export default function DashboardBrand({ mode, variant }: DashboardBrandProps) {
     return (
       <span
         aria-label="alphaSource AI"
+        role="img"
         data-dashboard-brand-stage="text"
         className="inline-flex h-8 w-[135px] items-center text-sm font-black text-[var(--as-text)]"
       >

@@ -157,17 +157,9 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
             </button>
           ) : (
             <>
-              <div className="flex flex-col min-w-0">
-                <Link href="/" onClick={() => setMobileOpen(false)}>
-                  <DashboardBrand mode={resolvedMode} variant="full" />
-                </Link>
-                <span
-                  className="text-[9px] font-black uppercase tracking-widest mt-0.5"
-                  style={{ color: "#A380F6" }}
-                >
-                  Admin
-                </span>
-              </div>
+              <Link href="/" onClick={() => setMobileOpen(false)}>
+                <DashboardBrand mode={resolvedMode} variant="full" />
+              </Link>
               <div className="flex items-center gap-1 flex-shrink-0">
                 <button
                   className="hidden lg:flex p-1.5 rounded-lg transition-colors"
