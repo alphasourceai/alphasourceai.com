@@ -20,6 +20,7 @@ type PurchaseIntentStatus = "idle" | "submitting" | "success";
 type AgreementPrepStatus = "idle" | "preparing" | "ready";
 type EmailVerificationStatus = "idle" | "loading" | "sending" | "sent" | "verifying" | "verified";
 type BillingCadenceKey = "monthly" | "annual";
+type EmailVerificationOperation = "send" | "verify" | "status";
 
 type BillingCadence = {
   key?: string;
@@ -100,6 +101,7 @@ type PurchaseIntentResult = {
   email_verification?: {
     verified?: boolean;
     status?: string;
+    code_active?: boolean;
     expires_in_seconds?: number;
     resend_cooldown_seconds?: number;
   };
@@ -292,24 +294,55 @@ function maskEmail(value: string): string {
   return `${local.slice(0, 2)}***${email.slice(atIndex)}`;
 }
 
-function retailVerificationErrorMessage(code: string, fallback: string): string {
+function retryAfterSeconds(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.ceil(parsed)) : 0;
+}
+
+function retailVerificationErrorMessage(
+  code: string,
+  fallback: string,
+  operation: EmailVerificationOperation,
+  retryAfter = 0,
+): string {
   switch (code) {
-    case "RETAIL_EMAIL_VERIFICATION_COOLDOWN":
+    case "RETAIL_EMAIL_VERIFICATION_COOLDOWN": {
+      const seconds = Math.max(1, retryAfter);
+      return `Please wait ${seconds} seconds before requesting another code.`;
+    }
+    case "RETAIL_EMAIL_VERIFICATION_SEND_LIMIT":
     case "RETAIL_EMAIL_VERIFICATION_HOURLY_LIMIT":
-      return "Please wait before requesting another code.";
+      return "Too many codes were requested for this signup. Try again later.";
     case "RETAIL_EMAIL_VERIFICATION_SEND_FAILED":
       return "We couldn't send the verification code. Try again in a moment.";
     case "RETAIL_EMAIL_VERIFICATION_EXPIRED":
       return "That code has expired. Request a new code.";
+    case "RETAIL_EMAIL_VERIFICATION_ATTEMPTS_EXCEEDED":
     case "RETAIL_EMAIL_VERIFICATION_ATTEMPT_LIMIT":
       return "Too many unsuccessful attempts. Request a new code.";
     case "RETAIL_EMAIL_VERIFICATION_INVALID_CODE":
       return "That code is not valid. Check the code and try again.";
     case "RETAIL_EMAIL_VERIFICATION_REQUIRED":
       return "Verify the buyer email before continuing to the agreement.";
+    case "RETAIL_PUBLIC_RATE_LIMITED":
+    case "RETAIL_EMAIL_VERIFICATION_RATE_LIMITED":
+      return operation === "verify" || operation === "status"
+        ? "Please wait before trying again."
+        : retryAfter > 0
+          ? `Please wait ${retryAfter} seconds before requesting another code.`
+          : "Please wait before requesting another code.";
     default:
       return fallback;
   }
+}
+
+function retailSignupErrorMessage(code: string, fallback: string, retryAfter = 0): string {
+  if (code === "RETAIL_SIGNUP_RATE_LIMITED" || code === "RETAIL_PUBLIC_RATE_LIMITED") {
+    return retryAfter > 0
+      ? `Too many signup attempts were made from this browser or network. Try again in ${retryAfter} seconds.`
+      : "Too many signup attempts were made from this browser or network. Try again later.";
+  }
+  return fallback;
 }
 
 function cleanText(value: string, max: number): string {
@@ -754,6 +787,8 @@ function PurchaseIntentPanel({
   emailVerificationError,
   emailVerificationCode,
   resendCooldownSeconds,
+  emailSendLoading,
+  emailVerifyLoading,
   onChange,
   onSubmit,
   onSendEmailVerification,
@@ -775,6 +810,8 @@ function PurchaseIntentPanel({
   emailVerificationError: string;
   emailVerificationCode: string;
   resendCooldownSeconds: number;
+  emailSendLoading: boolean;
+  emailVerifyLoading: boolean;
   onChange: <K extends keyof PurchaseIntentForm>(field: K, value: PurchaseIntentForm[K]) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onSendEmailVerification: () => void;
@@ -812,7 +849,7 @@ function PurchaseIntentPanel({
   if (status === "success" && result) {
     const signingUrl = agreementSigningHref(agreementResult);
     const emailVerified = emailVerificationStatus === "verified";
-    const codeEntryVisible = emailVerificationStatus === "sent" || emailVerificationStatus === "verifying";
+    const codeEntryVisible = emailVerificationStatus === "sent" || emailVerifyLoading;
     return (
       <div className="rounded-lg border border-[#02D99D]/35 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
@@ -973,6 +1010,14 @@ function PurchaseIntentPanel({
                 maxLength={6}
                 value={emailVerificationCode}
                 onChange={(event) => onEmailVerificationCodeChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    if (emailVerificationCode.length === 6 && !emailSendLoading && !emailVerifyLoading) {
+                      onVerifyEmailVerification();
+                    }
+                  }
+                }}
                 aria-describedby="retail-email-verification-help"
                 className="mt-2 w-full max-w-xs rounded-lg border border-[#0A1547]/15 bg-white px-4 py-3 text-lg font-black tracking-[0.2em] text-[#0A1547] outline-none transition focus:border-[#A380F6] focus:ring-2 focus:ring-[#A380F6]/20"
               />
@@ -983,15 +1028,15 @@ function PurchaseIntentPanel({
                 <button
                   type="button"
                   onClick={onVerifyEmailVerification}
-                  disabled={emailVerificationStatus === "verifying" || emailVerificationCode.length !== 6}
+                  disabled={emailSendLoading || emailVerifyLoading || emailVerificationCode.length !== 6}
                   className="inline-flex items-center justify-center rounded-full bg-[#0A1547] px-5 py-3 text-sm font-black text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {emailVerificationStatus === "verifying" ? "Verifying..." : "Verify code"}
+                  {emailVerifyLoading ? "Verifying..." : "Verify code"}
                 </button>
                 <button
                   type="button"
                   onClick={onSendEmailVerification}
-                  disabled={resendCooldownSeconds > 0 || emailVerificationStatus === "verifying"}
+                  disabled={resendCooldownSeconds > 0 || emailSendLoading || emailVerifyLoading}
                   className="text-sm font-black text-[#A380F6] transition-colors hover:text-[#0A1547] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Send a new code
@@ -1009,10 +1054,10 @@ function PurchaseIntentPanel({
               <button
                 type="button"
                 onClick={onSendEmailVerification}
-                disabled={emailVerificationStatus === "loading" || emailVerificationStatus === "sending"}
+                disabled={emailVerificationStatus === "loading" || emailSendLoading || emailVerifyLoading || resendCooldownSeconds > 0}
                 className="inline-flex items-center justify-center gap-2 rounded-full border border-[#8E6EE0] bg-[#A380F6] px-6 py-3.5 text-sm font-black text-white shadow-[0_10px_24px_rgba(163,128,246,0.26)] transition-colors hover:border-[#7B5FD4] hover:bg-[#8E6EE0] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {emailVerificationStatus === "sending" ? "Sending code..." : emailVerificationStatus === "loading" ? "Checking verification..." : "Verify email with one-time code"}
+                {emailSendLoading ? "Sending code..." : emailVerificationStatus === "loading" ? "Checking verification..." : "Verify email with one-time code"}
                 <ArrowRight className="h-4 w-4" />
               </button>
               <p className="max-w-md text-xs font-semibold leading-relaxed text-[#0A1547]/55">
@@ -1290,6 +1335,9 @@ export default function AlphaScreenPricingPage() {
   const [packages, setPackages] = useState<AlphaScreenPackage[]>(FALLBACK_PACKAGES);
   const [loadState, setLoadState] = useState<PackageLoadState>("loading");
   const purchaseFormStartedRef = useRef(false);
+  const purchaseSubmitInFlightRef = useRef(false);
+  const emailSendInFlightRef = useRef(false);
+  const emailVerifyInFlightRef = useRef(false);
   const [selectedBillingCadence, setSelectedBillingCadence] = useState<BillingCadenceKey>("monthly");
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
   const [selectedPlanKey, setSelectedPlanKey] = useState("");
@@ -1305,6 +1353,8 @@ export default function AlphaScreenPricingPage() {
   const [emailVerificationError, setEmailVerificationError] = useState("");
   const [emailVerificationCode, setEmailVerificationCode] = useState("");
   const [resendCooldownSeconds, setResendCooldownSeconds] = useState(0);
+  const [emailSendLoading, setEmailSendLoading] = useState(false);
+  const [emailVerifyLoading, setEmailVerifyLoading] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1352,6 +1402,8 @@ export default function AlphaScreenPricingPage() {
     setEmailVerificationError("");
     setEmailVerificationCode("");
     setResendCooldownSeconds(0);
+    setEmailSendLoading(false);
+    setEmailVerifyLoading(false);
     clearCheckoutRecoveryState();
     setPurchaseForm((prev) => ({ ...prev, billing_cadence: cadence }));
     trackEvent("signup_started", { plan: plan.plan_key, step: "plan_selection" });
@@ -1379,6 +1431,8 @@ export default function AlphaScreenPricingPage() {
     setEmailVerificationError("");
     setEmailVerificationCode("");
     setResendCooldownSeconds(0);
+    setEmailSendLoading(false);
+    setEmailVerifyLoading(false);
     trackEvent("signup_back_clicked", {
       plan: selectedPlanKey,
       step: "agreement_created",
@@ -1404,6 +1458,8 @@ export default function AlphaScreenPricingPage() {
     setEmailVerificationError("");
     setEmailVerificationCode("");
     setResendCooldownSeconds(0);
+    setEmailSendLoading(false);
+    setEmailVerifyLoading(false);
     setPurchaseStatus("success");
     setCheckoutModalOpen(true);
     setPurchaseError("");
@@ -1430,10 +1486,39 @@ export default function AlphaScreenPricingPage() {
           signal: controller.signal,
         });
         const body = await response.json().catch(() => ({})) as {
-          email_verification?: { verified?: boolean };
+          code?: string;
+          retry_after_seconds?: number;
+          email_verification?: {
+            verified?: boolean;
+            status?: string;
+            code_active?: boolean;
+            resend_cooldown_seconds?: number;
+          };
         };
         if (controller.signal.aborted) return;
-        setEmailVerificationStatus(body.email_verification?.verified === true ? "verified" : "idle");
+        const retryAfter = retryAfterSeconds(body.retry_after_seconds);
+        if (!response.ok) {
+          setEmailVerificationStatus("idle");
+          setResendCooldownSeconds(retryAfter);
+          if (response.status === 429) {
+            setEmailVerificationError(retailVerificationErrorMessage(
+              String(body.code || "").trim(),
+              "Please wait before trying again.",
+              "status",
+              retryAfter,
+            ));
+          }
+          return;
+        }
+        const verification = body.email_verification;
+        setEmailVerificationStatus(
+          verification?.verified === true
+            ? "verified"
+            : verification?.code_active === true || verification?.status === "code_sent"
+              ? "sent"
+              : "idle",
+        );
+        setResendCooldownSeconds(retryAfterSeconds(verification?.resend_cooldown_seconds));
       } catch (_) {
         if (controller.signal.aborted) return;
         setEmailVerificationStatus("idle");
@@ -1484,6 +1569,8 @@ export default function AlphaScreenPricingPage() {
       setEmailVerificationError("The buyer email changed. Verify the new email before continuing.");
       setEmailVerificationCode("");
       setResendCooldownSeconds(0);
+      setEmailSendLoading(false);
+      setEmailVerifyLoading(false);
       clearCheckoutRecoveryState();
     }
     setPurchaseForm((prev) => ({ ...prev, [field]: value }));
@@ -1491,6 +1578,7 @@ export default function AlphaScreenPricingPage() {
 
   const handlePurchaseSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (purchaseSubmitInFlightRef.current) return;
     const validationMessage = validatePurchaseForm(purchaseForm, selectedPlan);
     trackEvent("lead_form_submit_attempted", {
       form_id: "alphascreen-signup-profile",
@@ -1509,6 +1597,7 @@ export default function AlphaScreenPricingPage() {
       return;
     }
 
+    purchaseSubmitInFlightRef.current = true;
     setPurchaseStatus("submitting");
     setPurchaseError("");
 
@@ -1526,6 +1615,7 @@ export default function AlphaScreenPricingPage() {
         agreementResult,
         purchaseSubmissionKey,
       });
+      purchaseSubmitInFlightRef.current = false;
       return;
     }
 
@@ -1540,15 +1630,21 @@ export default function AlphaScreenPricingPage() {
         message?: string;
         code?: string;
         error?: string;
+        retry_after_seconds?: number;
       };
 
       if (!response.ok) {
         const errorCode = String(body.code || body.error || "").trim();
+        const retryAfter = retryAfterSeconds(body.retry_after_seconds);
         const detail = errorCode === "SIGNUP_ALREADY_EXISTS" || errorCode === "signup_already_exists"
           ? SIGNUP_ALREADY_EXISTS_MESSAGE
-          : body.detail || body.message || (response.status === 429
-            ? "Too many signup attempts. Please wait a few minutes and try again."
-            : "We could not save these signup details. Please try again.");
+          : response.status === 429
+            ? retailSignupErrorMessage(
+              errorCode,
+              body.detail || body.message || "Too many signup attempts were made from this browser or network. Try again later.",
+              retryAfter,
+            )
+            : body.detail || body.message || "We could not save these signup details. Please try again.";
         setPurchaseStatus("idle");
         setPurchaseError(detail);
         trackEvent("lead_form_submit_failed", {
@@ -1596,18 +1692,29 @@ export default function AlphaScreenPricingPage() {
         product_interest: "alphascreen",
         error_type: "network",
       });
+    } finally {
+      purchaseSubmitInFlightRef.current = false;
     }
   };
 
   const handleSendEmailVerification = async () => {
     const purchaseIntentId = String(purchaseResult?.purchase_intent_id || "").trim();
-    if (!purchaseIntentId || emailVerificationStatus === "sending" || emailVerificationStatus === "verifying") return;
+    if (
+      !purchaseIntentId ||
+      emailSendInFlightRef.current ||
+      emailVerifyInFlightRef.current ||
+      emailSendLoading ||
+      emailVerifyLoading ||
+      resendCooldownSeconds > 0
+    ) return;
     if (!validEmail(purchaseForm.buyer_email)) {
       setEmailVerificationStatus("idle");
       setEmailVerificationError("The buyer email changed. Verify the new email before continuing.");
       return;
     }
 
+    emailSendInFlightRef.current = true;
+    setEmailSendLoading(true);
     setEmailVerificationStatus("sending");
     setEmailVerificationError("");
     try {
@@ -1622,16 +1729,22 @@ export default function AlphaScreenPricingPage() {
       };
       if (!response.ok) {
         const code = String(body.code || "").trim();
+        const retryAfter = retryAfterSeconds(body.retry_after_seconds);
         setEmailVerificationStatus(code === "RETAIL_EMAIL_VERIFICATION_COOLDOWN" ? "sent" : "idle");
-        setEmailVerificationError(retailVerificationErrorMessage(code, "We couldn't send the verification code. Try again in a moment."));
-        setResendCooldownSeconds(Math.max(0, Number(body.retry_after_seconds || 0)));
+        setEmailVerificationError(retailVerificationErrorMessage(
+          code,
+          "We couldn't send the verification code. Try again in a moment.",
+          "send",
+          retryAfter,
+        ));
+        setResendCooldownSeconds(retryAfter);
         return;
       }
 
       const verified = body.email_verification?.verified === true;
       setEmailVerificationStatus(verified ? "verified" : "sent");
       setEmailVerificationCode("");
-      setResendCooldownSeconds(Math.max(0, Number(body.email_verification?.resend_cooldown_seconds || 60)));
+      setResendCooldownSeconds(retryAfterSeconds(body.email_verification?.resend_cooldown_seconds || 60));
       trackEvent("signup_step_completed", {
         plan: selectedPlanKey,
         step: "email_verification_code_sent",
@@ -1640,17 +1753,22 @@ export default function AlphaScreenPricingPage() {
     } catch (_) {
       setEmailVerificationStatus("idle");
       setEmailVerificationError("We couldn't send the verification code. Try again in a moment.");
+    } finally {
+      emailSendInFlightRef.current = false;
+      setEmailSendLoading(false);
     }
   };
 
   const handleVerifyEmailVerification = async () => {
     const purchaseIntentId = String(purchaseResult?.purchase_intent_id || "").trim();
-    if (!purchaseIntentId || emailVerificationStatus === "verifying") return;
+    if (!purchaseIntentId || emailVerifyInFlightRef.current || emailSendInFlightRef.current || emailVerifyLoading || emailSendLoading) return;
     if (!/^\d{6}$/.test(emailVerificationCode)) {
       setEmailVerificationError("Enter the 6-digit code from the verification email.");
       return;
     }
 
+    emailVerifyInFlightRef.current = true;
+    setEmailVerifyLoading(true);
     setEmailVerificationStatus("verifying");
     setEmailVerificationError("");
     try {
@@ -1661,12 +1779,22 @@ export default function AlphaScreenPricingPage() {
       });
       const body = await response.json().catch(() => ({})) as {
         code?: string;
+        retry_after_seconds?: number;
         email_verification?: { verified?: boolean };
       };
       if (!response.ok || body.email_verification?.verified !== true) {
         const code = String(body.code || "").trim();
+        const retryAfter = retryAfterSeconds(body.retry_after_seconds);
         setEmailVerificationStatus("sent");
-        setEmailVerificationError(retailVerificationErrorMessage(code, "Email verification could not be completed. No agreement was created."));
+        setEmailVerificationError(retailVerificationErrorMessage(
+          code,
+          "Email verification could not be completed. No agreement was created.",
+          "verify",
+          retryAfter,
+        ));
+        if (code === "RETAIL_EMAIL_VERIFICATION_ATTEMPTS_EXCEEDED" || code === "RETAIL_EMAIL_VERIFICATION_ATTEMPT_LIMIT") {
+          setEmailVerificationCode("");
+        }
         return;
       }
 
@@ -1681,6 +1809,9 @@ export default function AlphaScreenPricingPage() {
     } catch (_) {
       setEmailVerificationStatus("sent");
       setEmailVerificationError("Email verification could not be completed. No agreement was created.");
+    } finally {
+      emailVerifyInFlightRef.current = false;
+      setEmailVerifyLoading(false);
     }
   };
 
@@ -1718,7 +1849,11 @@ export default function AlphaScreenPricingPage() {
 
       if (!response.ok) {
         const code = String(body.code || body.error || "").trim();
-        const detail = retailVerificationErrorMessage(code, "We could not prepare the membership agreement. Please try again.");
+        const detail = retailVerificationErrorMessage(
+          code,
+          "We could not prepare the membership agreement. Please try again.",
+          "verify",
+        );
         setAgreementStatus("idle");
         setAgreementError(detail);
         if (code === "RETAIL_EMAIL_VERIFICATION_REQUIRED") {
@@ -1937,6 +2072,8 @@ export default function AlphaScreenPricingPage() {
                 emailVerificationError={emailVerificationError}
                 emailVerificationCode={emailVerificationCode}
                 resendCooldownSeconds={resendCooldownSeconds}
+                emailSendLoading={emailSendLoading}
+                emailVerifyLoading={emailVerifyLoading}
                 onChange={updatePurchaseField}
                 onSubmit={handlePurchaseSubmit}
                 onSendEmailVerification={handleSendEmailVerification}
