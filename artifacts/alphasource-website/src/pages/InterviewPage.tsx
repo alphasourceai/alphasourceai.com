@@ -11,6 +11,7 @@ import {
   normalizeCandidatePhoneCountry,
   type CandidatePhoneCountry,
 } from "../lib/candidatePhone";
+import { alphaSourceLogo } from "@/assets/branding";
 
 /* ── Checklist copy (verbatim) ───────────────────────────────────── */
 const CHECKLIST = [
@@ -397,7 +398,7 @@ export default function InterviewPage() {
     setNetworkCheck({ checking: true, bars: 0, latencyMs: null });
 
     try {
-      const response = await fetch(`/logo-dark-text-clear.png?network_check=${Date.now()}`, {
+      const response = await fetch(`${alphaSourceLogo}?network_check=${Date.now()}`, {
         cache: "no-store",
         signal: controller.signal,
       });
@@ -1003,7 +1004,7 @@ export default function InterviewPage() {
         className="bg-white flex-shrink-0 flex items-center px-6 h-14"
         style={{ borderBottom: "1px solid rgba(10,21,71,0.07)" }}
       >
-        <img src="/logo-dark-text.png" alt="alphaSource AI" className="h-8 w-auto" />
+        <img src={alphaSourceLogo} alt="alphaSource AI" className="h-8 w-auto" />
       </header>
 
       {/* ── Centered workflow area ────────────────────────────── */}

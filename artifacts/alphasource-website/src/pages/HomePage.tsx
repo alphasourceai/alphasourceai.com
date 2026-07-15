@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { ArrowRight, CheckCircle, Target, Sprout, Clock, Scale } from "lucide-react";
 import LeadCaptureForm from "@/components/LeadCaptureForm";
+import { alphaSourceSymbol } from "@/assets/branding";
 
 const EASE_OUT = "easeOut" as const;
 
@@ -174,7 +175,7 @@ function HeroSection() {
                   {/* Agent row */}
                   <div className="flex items-start gap-3 p-3 bg-[#F8F9FD] rounded-xl">
                     <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "#A380F615" }}>
-                      <img src="/alpha-symbol.png" alt="alpha" className="w-5 h-5" />
+                      <img src={alphaSourceSymbol} alt="alpha" className="w-5 h-5" />
                     </div>
                     <div>
                       <div className="text-sm font-bold text-[#0A1547]">Custom AI Agent</div>
@@ -426,7 +427,7 @@ function AlphaScreenFeatureSection() {
               {/* Card header */}
               <div className="flex items-center gap-3 pb-4 mb-4 border-b border-gray-100">
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "#A380F618" }}>
-                  <img src="/alpha-symbol.png" alt="alpha" className="w-6 h-6" />
+                  <img src={alphaSourceSymbol} alt="alpha" className="w-6 h-6" />
                 </div>
                 <div>
                   <div className="text-sm font-bold text-[#0A1547]">alphaScreen</div>
